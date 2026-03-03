@@ -13,11 +13,14 @@ require_cmd() {
 }
 
 main() {
-  local script_dir repo_root artifact_path tag_name release_title commit_sha timestamp
+  local script_dir repo_root builds_dir build_meta
+  local artifact_path artifact_name build_platform
+  local tag_name release_title commit_sha timestamp
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   repo_root="$(cd "$script_dir/.." && pwd)"
-  artifact_path=""
+  builds_dir="$repo_root/builds"
+  build_meta="$builds_dir/latest-build.env"
 
   # Always publish to one fixed release tag to avoid accumulating many releases.
   tag_name="latest"
@@ -30,13 +33,33 @@ main() {
     exit 1
   fi
 
-  log "Building Debian package"
+  log "Building local platform artifact"
   "$repo_root/DevUtils/BuildDeb.sh"
 
-  artifact_path="$(ls -1t "$repo_root"/builds/*.deb 2>/dev/null | head -n1 || true)"
-  if [[ -z "$artifact_path" || ! -f "$artifact_path" ]]; then
-    echo "[export-github] Expected .deb artifact not found in $repo_root/builds" >&2
+  if [[ ! -f "$build_meta" ]]; then
+    echo "[export-github] Build metadata file not found: $build_meta" >&2
     exit 1
+  fi
+
+  # shellcheck disable=SC1090
+  source "$build_meta"
+
+  artifact_path="${BUILD_ARTIFACT_PATH:-}"
+  artifact_name="${BUILD_ARTIFACT_NAME:-}"
+  build_platform="${BUILD_PLATFORM:-}"
+
+  if [[ -z "$artifact_path" || ! -f "$artifact_path" ]]; then
+    echo "[export-github] Local build artifact path is invalid: ${artifact_path:-<empty>}" >&2
+    exit 1
+  fi
+
+  if [[ -z "$build_platform" ]]; then
+    echo "[export-github] Build metadata missing BUILD_PLATFORM" >&2
+    exit 1
+  fi
+
+  if [[ -z "$artifact_name" ]]; then
+    artifact_name="$(basename "$artifact_path")"
   fi
 
   timestamp="$(date -u +"%Y-%m-%d %H:%M:%S UTC")"
@@ -50,12 +73,19 @@ main() {
 
   log "Creating new '$tag_name' release"
   gh release create "$tag_name" \
-    "$artifact_path" \
+    "$artifact_path#$artifact_name" \
     --title "$release_title" \
-    --notes "Automated Basalt build exported on $timestamp.\nCommit: $commit_sha"
+    --notes "Automated Basalt build exported on $timestamp.\nCommit: $commit_sha\nLocal platform: $build_platform"
+
+  log "Triggering CI workflow for remaining platforms"
+  gh workflow run "release-macos-dmg.yml" \
+    -f release_tag="$tag_name" \
+    -f skip_platform="$build_platform"
 
   log "Done"
   echo "Release published and replaced at tag: $tag_name"
+  echo "Uploaded local artifact: $artifact_name"
+  echo "Triggered workflow: release-macos-dmg.yml (skip platform: $build_platform)"
 }
 
 main "$@"

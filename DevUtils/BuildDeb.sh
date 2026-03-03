@@ -2,98 +2,79 @@
 set -euo pipefail
 
 log() {
-  printf "\n[deb-build] %s\n" "$1"
+  printf "\n[build-dispatch] %s\n" "$1"
 }
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
-    echo "[deb-build] Missing required command: $1" >&2
+    echo "[build-dispatch] Missing required command: $1" >&2
     exit 1
   fi
 }
 
+detect_platform() {
+  local os_name machine_arch
+
+  os_name="$(uname -s)"
+  machine_arch="$(uname -m)"
+
+  case "$os_name/$machine_arch" in
+    Linux/x86_64)
+      echo "linux-amd64"
+      ;;
+    Darwin/arm64|Darwin/aarch64)
+      echo "macos-arm64"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 main() {
-  local script_dir repo_root builds_dir legacy_build_dir cargo_toml version arch
-  local package_root control_file deb_path desktop_file icon_file
+  local script_dir repo_root builds_dir platform build_script build_meta
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   repo_root="$(cd "$script_dir/.." && pwd)"
   builds_dir="$repo_root/builds"
-  legacy_build_dir="$repo_root/Build"
-  cargo_toml="$repo_root/Cargo.toml"
+  build_meta="$builds_dir/latest-build.env"
 
-  require_cmd cargo
-  require_cmd dpkg-deb
-
-  if command -v dpkg >/dev/null 2>&1; then
-    arch="$(dpkg --print-architecture)"
-  else
-    arch="amd64"
-  fi
-
-  version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]\+\)"/\1/p' "$cargo_toml" | head -n1)"
-  if [[ -z "$version" ]]; then
-    echo "[deb-build] Unable to determine version from $cargo_toml" >&2
+  require_cmd uname
+  platform="$(detect_platform || true)"
+  if [[ -z "$platform" ]]; then
+    echo "[build-dispatch] Unsupported platform: $(uname -s)/$(uname -m)" >&2
+    echo "[build-dispatch] Add a matching build script under DevUtils/BuildScripts/." >&2
     exit 1
   fi
 
-  log "Clearing builds directory"
-  rm -rf "$builds_dir"
-  mkdir -p "$builds_dir"
-
-  if [[ -d "$legacy_build_dir" ]]; then
-    log "Removing legacy Flatpak artifacts from Build/"
-    rm -rf "$legacy_build_dir/flatpak-build" "$legacy_build_dir/flatpak-repo"
-    find "$legacy_build_dir" -maxdepth 1 -type f -name '*.flatpak' -delete
-  fi
-
-  log "Building Rust release binary"
-  cargo build --manifest-path "$cargo_toml" --release
-
-  package_root="$builds_dir/pkgroot"
-  mkdir -p \
-    "$package_root/DEBIAN" \
-    "$package_root/usr/bin" \
-    "$package_root/usr/share/applications" \
-    "$package_root/usr/share/icons/hicolor/scalable/apps"
-
-  install -m 755 "$repo_root/target/release/basalt" "$package_root/usr/bin/basalt"
-
-  desktop_file="$repo_root/packaging/linux/basalt.desktop"
-  if [[ ! -f "$desktop_file" ]]; then
-    echo "[deb-build] Missing desktop entry file: $desktop_file" >&2
+  build_script="$repo_root/DevUtils/BuildScripts/build-${platform}.sh"
+  if [[ ! -f "$build_script" ]]; then
+    echo "[build-dispatch] Missing build script for platform '$platform': $build_script" >&2
     exit 1
   fi
-  install -m 644 "$desktop_file" "$package_root/usr/share/applications/basalt.desktop"
 
-  icon_file="$repo_root/assets/icons/basalt.svg"
-  if [[ ! -f "$icon_file" ]]; then
-    echo "[deb-build] Missing icon file: $icon_file" >&2
-    echo "[deb-build] Place the icon SVG at assets/icons/basalt.svg" >&2
+  log "Detected platform: $platform"
+  log "Delegating to: $build_script"
+  BASALT_BUILD_META="$build_meta" bash "$build_script"
+
+  if [[ ! -f "$build_meta" ]]; then
+    echo "[build-dispatch] Build metadata not generated: $build_meta" >&2
     exit 1
   fi
-  install -m 644 "$icon_file" "$package_root/usr/share/icons/hicolor/scalable/apps/basalt.svg"
 
-  control_file="$package_root/DEBIAN/control"
-  cat > "$control_file" <<EOF
-Package: basalt
-Version: $version
-Section: utils
-Priority: optional
-Architecture: $arch
-Maintainer: Basalt Maintainers
-Description: Basalt game launcher CLI
-EOF
+  # shellcheck disable=SC1090
+  source "$build_meta"
 
-  deb_path="$builds_dir/basalt_${version}_${arch}.deb"
-
-  log "Building Debian package"
-  dpkg-deb --root-owner-group --build "$package_root" "$deb_path"
+  if [[ -z "${BUILD_ARTIFACT_PATH:-}" || ! -f "$BUILD_ARTIFACT_PATH" ]]; then
+    echo "[build-dispatch] Build metadata is missing a valid BUILD_ARTIFACT_PATH" >&2
+    exit 1
+  fi
 
   log "Done"
-  echo "Package created: $deb_path"
-  echo "Install with: sudo apt install -y $deb_path"
-  echo "Use with: basalt list"
+  echo "Built platform: ${BUILD_PLATFORM:-unknown}"
+  echo "Artifact type: ${BUILD_ARTIFACT_TYPE:-unknown}"
+  echo "Artifact path: $BUILD_ARTIFACT_PATH"
+  echo "Metadata file: $build_meta"
 }
 
 main "$@"
