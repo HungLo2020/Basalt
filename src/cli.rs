@@ -1,17 +1,17 @@
-use std::env;
-
 use crate::core;
 
-pub fn run() -> Result<(), String> {
-    let args: Vec<String> = env::args().collect();
-
-    match args.get(1).map(String::as_str) {
+pub fn run(args: &[String]) -> Result<(), String> {
+    match args.first().map(String::as_str) {
+        Some("help") | Some("-h") | Some("--help") => {
+            println!("{}", full_usage());
+            Ok(())
+        }
         Some("add") => {
-            if args.len() != 4 {
+            if args.len() != 3 {
                 return Err(usage_add());
             }
 
-            core::add_game(args[2].trim(), args[3].trim())?;
+            core::add_game(args[1].trim(), args[2].trim())?;
             println!("Game added successfully.");
             Ok(())
         }
@@ -30,13 +30,14 @@ pub fn run() -> Result<(), String> {
             Ok(())
         }
         Some("launch") => {
-            if args.len() != 3 {
+            if args.len() != 2 {
                 return Err(usage_launch());
             }
 
-            core::launch_game(args[2].trim())
+            core::launch_game(args[1].trim())
         }
-        _ => Err(full_usage()),
+        Some(other) => Err(format!("Unknown command: {}\n\n{}", other, full_usage())),
+        None => Err(full_usage()),
     }
 }
 
@@ -52,9 +53,15 @@ fn full_usage() -> String {
     [
         "Basalt CLI",
         "Usage:",
+        "  basalt                        Launch GUI (default when no switch is provided)",
+        "  basalt help                   Show this help message",
+        "  basalt -h | --help           Show this help message",
         "  basalt add <name> <script_path>",
+        "                               Add a game backed by a bash script (.sh)",
         "  basalt list",
+        "                               List all added games",
         "  basalt launch <name>",
+        "                               Launch a saved game script by name",
     ]
     .join("\n")
 }
