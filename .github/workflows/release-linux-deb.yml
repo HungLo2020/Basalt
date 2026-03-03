@@ -1,10 +1,10 @@
-name: Build macOS arm64 DMG
+name: Build Linux amd64 DEB
 
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Existing release tag to upload built macOS DMG to"
+        description: "Existing release tag to upload built DEB to"
         required: true
         type: string
 
@@ -12,8 +12,8 @@ permissions:
   contents: write
 
 jobs:
-  build-macos-arm64-dmg:
-    runs-on: macos-14
+  build-linux-amd64-deb:
+    runs-on: ubuntu-24.04
     env:
       RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
@@ -22,11 +22,16 @@ jobs:
         with:
           ref: refs/tags/${{ env.RELEASE_TAG }}
 
+      - name: Install Linux packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build macOS arm64 DMG
-        run: bash DevUtils/BuildScripts/build-macos-arm64.sh
+      - name: Build Linux amd64 DEB
+        run: bash DevUtils/BuildScripts/build-linux-amd64.sh
 
       - name: Read build metadata
         id: metadata
@@ -36,7 +41,7 @@ jobs:
           source builds/latest-build.env
           echo "artifact_path=$BUILD_ARTIFACT_PATH" >> "$GITHUB_OUTPUT"
 
-      - name: Upload macOS DMG to GitHub release
+      - name: Upload Linux DEB to GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}

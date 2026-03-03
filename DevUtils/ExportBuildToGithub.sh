@@ -77,15 +77,25 @@ main() {
     --title "$release_title" \
     --notes "Automated Basalt build exported on $timestamp.\nCommit: $commit_sha\nLocal platform: $build_platform"
 
-  log "Triggering CI workflow for remaining platforms"
-  gh workflow run "release-macos-dmg.yml" \
-    -f release_tag="$tag_name" \
-    -f skip_platform="$build_platform"
+  case "$build_platform" in
+    linux-amd64)
+      log "Triggering CI workflow for macOS arm64 DMG"
+      gh workflow run "release-macos-dmg.yml" -f release_tag="$tag_name"
+      ;;
+    macos-arm64)
+      log "Triggering CI workflow for Linux amd64 DEB"
+      gh workflow run "release-linux-deb.yml" -f release_tag="$tag_name"
+      ;;
+    *)
+      echo "[export-github] Unsupported BUILD_PLATFORM in metadata: $build_platform" >&2
+      exit 1
+      ;;
+  esac
 
   log "Done"
   echo "Release published and replaced at tag: $tag_name"
   echo "Uploaded local artifact: $artifact_name"
-  echo "Triggered workflow: release-macos-dmg.yml (skip platform: $build_platform)"
+  echo "Local platform: $build_platform"
 }
 
 main "$@"
