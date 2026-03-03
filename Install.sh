@@ -2,12 +2,12 @@
 set -euo pipefail
 
 log() {
-  printf "\n[flatpak-install] %s\n" "$1"
+  printf "\n[deb-install] %s\n" "$1"
 }
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
-    echo "[flatpak-install] Missing required command: $1" >&2
+    echo "[deb-install] Missing required command: $1" >&2
     exit 1
   fi
 }
@@ -34,55 +34,40 @@ extract_repo_slug() {
 }
 
 setup_cli_wrapper() {
-  local local_bin wrapper_path
+  :
+}
 
-  local_bin="$HOME/.local/bin"
-  wrapper_path="$local_bin/basalt"
+install_deb_package() {
+  local deb_path="$1"
 
-  mkdir -p "$local_bin"
+  require_cmd sudo
+  require_cmd apt-get
+  require_cmd dpkg
 
-  cat > "$wrapper_path" <<'EOF'
-#!/usr/bin/env bash
-exec flatpak run io.matt.Basalt "$@"
-EOF
+  log "Installing or upgrading Debian package: $deb_path"
+  if ! sudo dpkg -i "$deb_path"; then
+    log "Resolving dependencies"
+    sudo apt-get install -f -y
+    sudo dpkg -i "$deb_path"
+  fi
 
-  chmod +x "$wrapper_path"
-
-  log "Installed CLI wrapper: $wrapper_path"
-
-  if [[ ":$PATH:" != *":$local_bin:"* ]]; then
-    echo "Add this to your shell profile to use 'basalt' directly:"
-    echo "  export PATH=\"$HOME/.local/bin:\$PATH\""
-    echo "Then restart your shell or run: source ~/.bashrc"
+  if command -v basalt >/dev/null 2>&1; then
+    log "Installed successfully"
+    echo "Run with: basalt list"
+    echo "If your current shell still points to an old command path, run: hash -r"
+  else
+    echo "[deb-install] Install finished but 'basalt' is not on PATH in this shell yet." >&2
+    echo "[deb-install] Run 'hash -r' or open a new shell, then run: basalt list" >&2
   fi
 }
 
-install_bundle() {
-  local bundle_path="$1"
-
-  require_cmd flatpak
-
-  if flatpak info io.matt.Basalt >/dev/null 2>&1; then
-    log "Replacing existing Basalt Flatpak install (preserving app data/config)"
-    flatpak uninstall --user -y io.matt.Basalt
-  fi
-
-  log "Installing local bundle: $bundle_path"
-  flatpak install --user -y "$bundle_path"
-
-  setup_cli_wrapper
-
-  log "Installed"
-  echo "Run with: basalt list"
-}
-
-install_from_local_bundle() {
-  local bundle_path="$1"
-  install_bundle "$bundle_path"
+install_from_local_deb() {
+  local deb_path="$1"
+  install_deb_package "$deb_path"
 }
 
 install_from_github_release() {
-  local repo_slug api_url response download_url temp_bundle
+  local repo_slug api_url response download_url temp_deb
 
   require_cmd curl
   require_cmd grep
@@ -93,42 +78,42 @@ install_from_github_release() {
   log "Fetching latest GitHub release metadata from ${repo_slug}"
   response="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'User-Agent: Basalt-InstallScript' "$api_url")"
 
-  download_url="$(printf '%s' "$response" | grep -oE '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]+\.flatpak"' | head -n1 | sed -E 's/.*"(https:[^"]+\.flatpak)"/\1/')"
+  download_url="$(printf '%s' "$response" | grep -oE '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]+\.deb"' | head -n1 | sed -E 's/.*"(https:[^"]+\.deb)"/\1/')"
 
   if [[ -z "$download_url" ]]; then
-    echo "[flatpak-install] No .flatpak asset found in latest release for ${repo_slug}." >&2
-    echo "[flatpak-install] Expected an uploaded .flatpak artifact in GitHub releases." >&2
+    echo "[deb-install] No .deb asset found in latest release for ${repo_slug}." >&2
+    echo "[deb-install] Expected an uploaded .deb artifact in GitHub releases." >&2
     exit 1
   fi
 
-  temp_bundle="$(mktemp --suffix=.flatpak)"
-  trap "rm -f '$temp_bundle'" RETURN
+  temp_deb="$(mktemp --suffix=.deb)"
+  trap "rm -f '$temp_deb'" RETURN
 
-  log "Downloading latest release bundle"
-  curl -fL "$download_url" -o "$temp_bundle"
+  log "Downloading latest release package"
+  curl -fL "$download_url" -o "$temp_deb"
 
-  install_bundle "$temp_bundle"
+  install_deb_package "$temp_deb"
 }
 
 main() {
-  local script_dir repo_root build_dir bundle_path choice
+  local script_dir repo_root builds_dir deb_path choice
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   repo_root="$script_dir"
-  build_dir="$repo_root/Build"
-  bundle_path="$build_dir/Basalt.flatpak"
+  builds_dir="$repo_root/builds"
+  deb_path="$(ls -1t "$builds_dir"/*.deb 2>/dev/null | head -n1 || true)"
 
-  if [[ -f "$bundle_path" ]]; then
-    echo "A local Flatpak bundle was found at: $bundle_path"
+  if [[ -n "$deb_path" && -f "$deb_path" ]]; then
+    echo "A local Debian package was found at: $deb_path"
     echo "Choose an option:"
-    echo "  [1] Install local bundle"
+    echo "  [1] Install local package"
     echo "  [2] Fetch and install latest GitHub release"
 
     while true; do
       read -r -p "Enter choice [1/2]: " choice
       case "$choice" in
         1)
-          install_from_local_bundle "$bundle_path"
+          install_from_local_deb "$deb_path"
           return
           ;;
         2)

@@ -13,11 +13,11 @@ require_cmd() {
 }
 
 main() {
-  local script_dir repo_root bundle_path tag_name release_title commit_sha timestamp
+  local script_dir repo_root artifact_path tag_name release_title commit_sha timestamp
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   repo_root="$(cd "$script_dir/.." && pwd)"
-  bundle_path="$repo_root/Build/Basalt.flatpak"
+  artifact_path=""
 
   # Always publish to one fixed release tag to avoid accumulating many releases.
   tag_name="latest"
@@ -30,11 +30,12 @@ main() {
     exit 1
   fi
 
-  log "Building Flatpak bundle"
-  "$repo_root/DevUtils/BuildFlatpak.sh"
+  log "Building Debian package"
+  "$repo_root/DevUtils/BuildDeb.sh"
 
-  if [[ ! -f "$bundle_path" ]]; then
-    echo "[export-github] Expected bundle not found: $bundle_path" >&2
+  artifact_path="$(ls -1t "$repo_root"/builds/*.deb 2>/dev/null | head -n1 || true)"
+  if [[ -z "$artifact_path" || ! -f "$artifact_path" ]]; then
+    echo "[export-github] Expected .deb artifact not found in $repo_root/builds" >&2
     exit 1
   fi
 
@@ -49,7 +50,7 @@ main() {
 
   log "Creating new '$tag_name' release"
   gh release create "$tag_name" \
-    "$bundle_path" \
+    "$artifact_path" \
     --title "$release_title" \
     --notes "Automated Basalt build exported on $timestamp.\nCommit: $commit_sha"
 
