@@ -6,11 +6,18 @@ use std::process::Command;
 
 const APP_DIR_NAME: &str = ".basalt";
 const REGISTRY_FILE_NAME: &str = "games.tsv";
+const MATTMC_ENTRY_NAME: &str = "MattMC";
 
 #[derive(Clone)]
 pub struct GameEntry {
     pub name: String,
     pub script_path: String,
+}
+
+pub enum DiscoverResult {
+    Added,
+    AlreadyExists,
+    NotFound,
 }
 
 pub fn add_game(name: &str, raw_script_path: &str) -> Result<(), String> {
@@ -100,6 +107,37 @@ pub fn launch_game(name: &str) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+pub fn discover_mattmc() -> Result<DiscoverResult, String> {
+    let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
+    let mattmc_script = Path::new(&home)
+        .join("Documents")
+        .join("MattMC")
+        .join("run-mattmc.sh");
+
+    if !mattmc_script.exists() || !mattmc_script.is_file() {
+        return Ok(DiscoverResult::NotFound);
+    }
+
+    let canonical_script_path = fs::canonicalize(&mattmc_script)
+        .map_err(|err| format!("Failed to resolve MattMC script path: {}", err))?;
+
+    let canonical_script_path_str = canonical_script_path
+        .to_str()
+        .ok_or_else(|| "MattMC script path contains invalid UTF-8".to_string())?
+        .to_string();
+
+    let entries = load_entries()?;
+    if entries
+        .iter()
+        .any(|entry| entry.name == MATTMC_ENTRY_NAME || entry.script_path == canonical_script_path_str)
+    {
+        return Ok(DiscoverResult::AlreadyExists);
+    }
+
+    add_game(MATTMC_ENTRY_NAME, &canonical_script_path_str)?;
+    Ok(DiscoverResult::Added)
 }
 
 fn get_registry_path() -> Result<PathBuf, String> {

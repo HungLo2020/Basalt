@@ -29,6 +29,25 @@ pub fn run(args: &[String]) -> Result<(), String> {
 
             Ok(())
         }
+        Some("discover") => {
+            if args.len() != 1 {
+                return Err("Usage: basalt discover".to_string());
+            }
+
+            match core::discover_mattmc()? {
+                core::DiscoverResult::Added => {
+                    println!("Discovered MattMC and added it.");
+                }
+                core::DiscoverResult::AlreadyExists => {
+                    println!("MattMC entry already exists.");
+                }
+                core::DiscoverResult::NotFound => {
+                    println!("MattMC not found at ~/Documents/MattMC/run-mattmc.sh");
+                }
+            }
+
+            Ok(())
+        }
         Some("launch") => {
             if args.len() != 2 {
                 return Err(usage_launch());
@@ -60,6 +79,8 @@ fn full_usage() -> String {
         "                               Add a game backed by a bash script (.sh)",
         "  basalt list",
         "                               List all added games",
+        "  basalt discover",
+        "                               Discover ~/Documents/MattMC/run-mattmc.sh and add MattMC",
         "  basalt launch <name>",
         "                               Launch a saved game script by name",
     ]
