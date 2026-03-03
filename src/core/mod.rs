@@ -19,11 +19,23 @@ pub enum DiscoverResult {
     NotFound,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum DiscoverRunner {
+    Mattmc,
+    Steam,
+}
+
+pub const ALL_DISCOVER_RUNNERS: [DiscoverRunner; 2] = [DiscoverRunner::Mattmc, DiscoverRunner::Steam];
+
+pub struct SteamDiscoverReport {
+    pub found: usize,
+    pub added: usize,
+    pub already_exists: usize,
+}
+
 pub struct DiscoverReport {
-    pub mattmc: DiscoverResult,
-    pub steam_found: usize,
-    pub steam_added: usize,
-    pub steam_already_exists: usize,
+    pub mattmc: Option<DiscoverResult>,
+    pub steam: Option<SteamDiscoverReport>,
 }
 
 pub fn add_game(name: &str, raw_script_path: &str) -> Result<(), String> {
@@ -162,15 +174,38 @@ pub fn run_game_sibling_script(game_name: &str, sibling_script_name: &str) -> Re
 }
 
 pub fn discover_games() -> Result<DiscoverReport, String> {
-    let mattmc = discovery::mattmc::discover_mattmc_entry()?;
-    let (steam_found, steam_added, steam_already_exists) = discovery::steam::discover_steam_entries()?;
+    discover_with_runners(&ALL_DISCOVER_RUNNERS)
+}
 
-    Ok(DiscoverReport {
-        mattmc,
-        steam_found,
-        steam_added,
-        steam_already_exists,
-    })
+pub fn discover_with_runners(runners: &[DiscoverRunner]) -> Result<DiscoverReport, String> {
+    let mut should_run_mattmc = false;
+    let mut should_run_steam = false;
+
+    for runner in runners {
+        match runner {
+            DiscoverRunner::Mattmc => should_run_mattmc = true,
+            DiscoverRunner::Steam => should_run_steam = true,
+        }
+    }
+
+    let mattmc = if should_run_mattmc {
+        Some(discovery::mattmc::discover_mattmc_entry()?)
+    } else {
+        None
+    };
+
+    let steam = if should_run_steam {
+        let (found, added, already_exists) = discovery::steam::discover_steam_entries()?;
+        Some(SteamDiscoverReport {
+            found,
+            added,
+            already_exists,
+        })
+    } else {
+        None
+    };
+
+    Ok(DiscoverReport { mattmc, steam })
 }
 
 pub(crate) fn is_already_exists_error(error_message: &str) -> bool {

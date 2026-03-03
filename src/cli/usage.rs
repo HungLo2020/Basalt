@@ -14,6 +14,10 @@ pub fn usage_launch() -> String {
     "Usage: basalt launch <name>".to_string()
 }
 
+pub fn usage_discover() -> String {
+    "Usage: basalt discover [--steam] [--mattmc]".to_string()
+}
+
 pub fn full_usage() -> String {
     [
         "Basalt CLI",
@@ -29,10 +33,12 @@ pub fn full_usage() -> String {
         "                               Remove all saved games",
         "  basalt list",
         "                               List all added games",
-        "  basalt discover",
-        "                               Discover MattMC and Steam games, then add new entries",
+        "  basalt discover [--steam] [--mattmc]",
+        "                               Discover games and add new entries (no switches = all discover runners)",
+        "                               --steam discovers Steam games only",
+        "                               --mattmc discovers MattMC only",
         "  basalt install_mattmc",
-        "                               Ensure ~/Documents/MattMC/SyncGameData.sh is installed",
+        "                               Download latest MattMC release into ~/Documents/MattMC",
         "  basalt launch <name>",
         "                               Launch a saved game script by name",
         "  basalt backup-mattmc",

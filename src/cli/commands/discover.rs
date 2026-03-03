@@ -1,31 +1,48 @@
 use crate::core;
+use crate::core::DiscoverRunner;
+
+use super::super::usage;
 
 pub fn run(args: &[String]) -> Result<(), String> {
-    if args.len() != 1 {
-        return Err("Usage: basalt discover".to_string());
-    }
+    let mut runners = Vec::new();
 
-    let report = core::discover_games()?;
-
-    match report.mattmc {
-        core::DiscoverResult::Added => {
-            println!("Discovered MattMC and added it.");
-        }
-        core::DiscoverResult::AlreadyExists => {
-            println!("MattMC entry already exists.");
-        }
-        core::DiscoverResult::NotFound => {
-            println!("MattMC not found at ~/Documents/MattMC/run-mattmc.sh");
+    for argument in args.iter().skip(1) {
+        match argument.as_str() {
+            "--mattmc" => runners.push(DiscoverRunner::Mattmc),
+            "--steam" => runners.push(DiscoverRunner::Steam),
+            _ => return Err(usage::usage_discover()),
         }
     }
 
-    if report.steam_found == 0 {
-        println!("No Steam games discovered.");
+    let report = if runners.is_empty() {
+        core::discover_games()?
     } else {
-        println!(
-            "Steam discovery complete: found {}, added {}, already existed {}.",
-            report.steam_found, report.steam_added, report.steam_already_exists
-        );
+        core::discover_with_runners(&runners)?
+    };
+
+    if let Some(mattmc_result) = report.mattmc {
+        match mattmc_result {
+            core::DiscoverResult::Added => {
+                println!("Discovered MattMC and added it.");
+            }
+            core::DiscoverResult::AlreadyExists => {
+                println!("MattMC entry already exists.");
+            }
+            core::DiscoverResult::NotFound => {
+                println!("MattMC not found at ~/Documents/MattMC/run-mattmc.sh");
+            }
+        }
+    }
+
+    if let Some(steam_report) = report.steam {
+        if steam_report.found == 0 {
+            println!("No Steam games discovered.");
+        } else {
+            println!(
+                "Steam discovery complete: found {}, added {}, already existed {}.",
+                steam_report.found, steam_report.added, steam_report.already_exists
+            );
+        }
     }
 
     Ok(())
