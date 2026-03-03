@@ -37,7 +37,7 @@ pub fn full_usage() -> String {
         "                               Discover games and add new entries (no switches = all discover runners)",
         "                               --steam discovers Steam games only",
         "                               --mattmc discovers MattMC only",
-        "  basalt install_mattmc",
+        "  basalt install-mattmc",
         "                               Download latest MattMC release into ~/Documents/MattMC",
         "  basalt launch <name>",
         "                               Launch a saved game script by name",

@@ -11,7 +11,7 @@ const MATTMC_TAG_ARCHIVE_URL_PREFIX: &str = "https://github.com/HungLo2020/MattM
 
 pub fn run(args: &[String]) -> Result<(), String> {
     if args.len() != 1 {
-        return Err("Usage: basalt install_mattmc".to_string());
+        return Err("Usage: basalt install-mattmc".to_string());
     }
 
     let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
