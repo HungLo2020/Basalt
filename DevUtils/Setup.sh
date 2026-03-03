@@ -21,12 +21,11 @@ is_debian_based() {
   [[ "${ID:-}" == "debian" || "${ID_LIKE:-}" == *"debian"* || "${ID:-}" == "ubuntu" ]]
 }
 
-main() {
-  if ! is_debian_based; then
-    echo "[setup] This script currently supports Debian-based Linux distributions only." >&2
-    exit 1
-  fi
+is_macos() {
+  [[ "$(uname -s)" == "Darwin" ]]
+}
 
+setup_debian() {
   require_cmd sudo
   require_cmd apt-get
 
@@ -52,6 +51,52 @@ main() {
     libxinerama-dev \
     libwayland-dev \
     libxkbcommon-dev
+}
+
+ensure_homebrew() {
+  if command -v brew >/dev/null 2>&1; then
+    return 0
+  fi
+
+  log "Homebrew not found; installing Homebrew"
+  require_cmd curl
+
+  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+  if [[ -x /opt/homebrew/bin/brew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [[ -x /usr/local/bin/brew ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+
+  require_cmd brew
+}
+
+setup_macos() {
+  ensure_homebrew
+
+  log "Updating Homebrew"
+  brew update
+
+  log "Installing system dependencies"
+  brew install \
+    ca-certificates \
+    curl \
+    pkg-config \
+    git \
+    cmake \
+    llvm
+}
+
+main() {
+  if is_debian_based; then
+    setup_debian
+  elif is_macos; then
+    setup_macos
+  else
+    echo "[setup] This script currently supports Debian-based Linux distributions and macOS only." >&2
+    exit 1
+  fi
 
   if ! command -v rustup >/dev/null 2>&1; then
     log "Installing rustup (minimal profile)"
