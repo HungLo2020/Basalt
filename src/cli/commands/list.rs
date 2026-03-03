@@ -9,7 +9,12 @@ pub fn run(_args: &[String]) -> Result<(), String> {
     }
 
     for entry in entries {
-        println!("{}\t{}", entry.name, entry.script_path);
+        println!(
+            "{}\t{}\t{}",
+            entry.name,
+            entry.runner_kind.as_str(),
+            entry.launch_target
+        );
     }
 
     Ok(())

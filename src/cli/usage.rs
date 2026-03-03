@@ -22,7 +22,7 @@ pub fn full_usage() -> String {
         "  basalt help                   Show this help message",
         "  basalt -h | --help           Show this help message",
         "  basalt add <name> <script_path>",
-        "                               Add a game backed by a bash script (.sh)",
+        "                               Add a game via bash script (.sh) or Steam appid/URL",
         "  basalt remove <name>",
         "                               Remove a saved game by name",
         "  basalt remove-all",

@@ -4,6 +4,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
 use super::GameEntry;
+use super::runners::RunnerKind;
 
 const APP_DIR_NAME: &str = ".basalt";
 const REGISTRY_FILE_NAME: &str = "games.tsv";
@@ -43,12 +44,27 @@ pub(super) fn load_entries() -> Result<Vec<GameEntry>, String> {
             continue;
         }
 
-        let mut parts = line.splitn(2, '\t');
+        let mut parts = line.splitn(3, '\t');
         let name = parts.next().unwrap_or_default().to_string();
-        let script_path = parts.next().unwrap_or_default().to_string();
+        let second = parts.next().unwrap_or_default().to_string();
+        let third = parts.next().unwrap_or_default().to_string();
 
-        if !name.is_empty() && !script_path.is_empty() {
-            entries.push(GameEntry { name, script_path });
+        if !name.is_empty() {
+            if !third.is_empty() {
+                if let Some(runner_kind) = RunnerKind::from_str(&second) {
+                    entries.push(GameEntry {
+                        name,
+                        runner_kind,
+                        launch_target: third,
+                    });
+                }
+            } else if !second.is_empty() {
+                entries.push(GameEntry {
+                    name,
+                    runner_kind: RunnerKind::Bash,
+                    launch_target: second,
+                });
+            }
         }
     }
 
@@ -67,7 +83,12 @@ pub(super) fn save_entries(entries: &[GameEntry]) -> Result<(), String> {
         .map_err(|err| format!("Failed to open registry file for writing: {}", err))?;
 
     for entry in entries {
-        let line = format!("{}\t{}\n", entry.name, entry.script_path);
+        let line = format!(
+            "{}\t{}\t{}\n",
+            entry.name,
+            entry.runner_kind.as_str(),
+            entry.launch_target
+        );
         file.write_all(line.as_bytes())
             .map_err(|err| format!("Failed to write registry file: {}", err))?;
     }

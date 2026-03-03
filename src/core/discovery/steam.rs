@@ -3,7 +3,6 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::core::registry::get_app_dir;
 use crate::core::{add_game, is_already_exists_error};
 
 pub fn discover_steam_entries() -> Result<(usize, usize, usize), String> {
@@ -21,14 +20,9 @@ pub fn discover_steam_entries() -> Result<(usize, usize, usize), String> {
         steam_found += 1;
 
         let entry_name = name;
-        let script_path = ensure_steam_launch_script(&appid)?;
+        let steam_target = format!("steam://rungameid/{}", appid);
 
-        let script_path_str = script_path
-            .to_str()
-            .ok_or_else(|| "Steam script path contains invalid UTF-8".to_string())?
-            .to_string();
-
-        match add_game(&entry_name, &script_path_str) {
+        match add_game(&entry_name, &steam_target) {
             Ok(_) => {
                 steam_added += 1;
             }
@@ -169,24 +163,4 @@ fn extract_vdf_value(line: &str, key: &str) -> Option<String> {
     } else {
         None
     }
-}
-
-fn ensure_steam_launch_script(appid: &str) -> Result<PathBuf, String> {
-    let app_dir = get_app_dir()?;
-    let scripts_dir = app_dir.join("discovered").join("steam");
-
-    fs::create_dir_all(&scripts_dir)
-        .map_err(|err| format!("Failed to create Steam scripts directory: {}", err))?;
-
-    let script_path = scripts_dir.join(format!("steam_{}.sh", appid));
-    let script_contents = format!(
-        "#!/usr/bin/env bash\nset -euo pipefail\n\nif command -v steam >/dev/null 2>&1; then\n  steam -applaunch \"{}\"\nelif command -v flatpak >/dev/null 2>&1 && flatpak info com.valvesoftware.Steam >/dev/null 2>&1; then\n  flatpak run com.valvesoftware.Steam -applaunch \"{}\"\nelse\n  echo \"Steam is not installed or not on PATH.\" >&2\n  exit 1\nfi\n",
-        appid, appid
-    );
-
-    fs::write(&script_path, script_contents)
-        .map_err(|err| format!("Failed to write Steam launch script: {}", err))?;
-
-    fs::canonicalize(&script_path)
-        .map_err(|err| format!("Failed to resolve Steam launch script path: {}", err))
 }

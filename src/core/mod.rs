@@ -1,14 +1,16 @@
-use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 mod discovery;
 mod registry;
+mod runners;
+
+use runners::RunnerKind;
 
 #[derive(Clone)]
 pub struct GameEntry {
     pub name: String,
-    pub script_path: String,
+    pub runner_kind: RunnerKind,
+    pub launch_target: String,
 }
 
 pub enum DiscoverResult {
@@ -33,31 +35,7 @@ pub fn add_game(name: &str, raw_script_path: &str) -> Result<(), String> {
         return Err("Game name cannot contain tabs or newlines".to_string());
     }
 
-    let script_path = Path::new(raw_script_path);
-    if !script_path.exists() || !script_path.is_file() {
-        return Err(format!(
-            "Script does not exist or is not a file: {}",
-            raw_script_path
-        ));
-    }
-
-    let has_sh_extension = script_path
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(|value| value.eq_ignore_ascii_case("sh"))
-        .unwrap_or(false);
-
-    if !has_sh_extension {
-        return Err("Only bash scripts are supported right now (expected .sh file)".to_string());
-    }
-
-    let canonical_script_path = fs::canonicalize(script_path)
-        .map_err(|err| format!("Failed to resolve script path: {}", err))?;
-
-    let canonical_script_path_str = canonical_script_path
-        .to_str()
-        .ok_or_else(|| "Script path contains invalid UTF-8".to_string())?
-        .to_string();
+    let resolved_target = runners::resolve_add_target(raw_script_path)?;
 
     let mut entries = registry::load_entries()?;
     if entries.iter().any(|entry| entry.name == name) {
@@ -66,17 +44,21 @@ pub fn add_game(name: &str, raw_script_path: &str) -> Result<(), String> {
 
     if entries
         .iter()
-        .any(|entry| entry.script_path == canonical_script_path_str)
+        .any(|entry| {
+            entry.runner_kind == resolved_target.runner_kind
+                && entry.launch_target == resolved_target.launch_target
+        })
     {
         return Err(format!(
-            "A game with script '{}' already exists",
-            canonical_script_path_str
+            "A game with target '{}' already exists",
+            resolved_target.launch_target
         ));
     }
 
     entries.push(GameEntry {
         name: name.to_string(),
-        script_path: canonical_script_path_str,
+        runner_kind: resolved_target.runner_kind,
+        launch_target: resolved_target.launch_target,
     });
 
     registry::save_entries(&entries)
@@ -109,12 +91,6 @@ pub fn remove_all_games() -> Result<usize, String> {
 
     registry::save_entries(&[])?;
 
-    let discovered_steam_dir = registry::get_app_dir()?.join("discovered").join("steam");
-    if discovered_steam_dir.exists() {
-        fs::remove_dir_all(&discovered_steam_dir)
-            .map_err(|err| format!("Failed to clean discovered Steam scripts: {}", err))?;
-    }
-
     Ok(removed_count)
 }
 
@@ -129,15 +105,7 @@ pub fn launch_game(name: &str) -> Result<(), String> {
         .find(|game| game.name == name)
         .ok_or_else(|| format!("No game found with name '{}'", name))?;
 
-    let script_path = Path::new(&entry.script_path);
-    if !script_path.exists() || !script_path.is_file() {
-        return Err(format!(
-            "Saved script path does not exist or is not a file: {}",
-            entry.script_path
-        ));
-    }
-
-    run_script_with_bash(script_path)
+    runners::launch(entry.runner_kind, &entry.launch_target)
 }
 
 pub fn run_game_sibling_script(game_name: &str, sibling_script_name: &str) -> Result<(), String> {
@@ -155,18 +123,25 @@ pub fn run_game_sibling_script(game_name: &str, sibling_script_name: &str) -> Re
         .find(|game| game.name == game_name)
         .ok_or_else(|| format!("No game found with name '{}'", game_name))?;
 
-    let launch_script_path = Path::new(&entry.script_path);
+    if entry.runner_kind != RunnerKind::Bash {
+        return Err(format!(
+            "Game '{}' does not use the bash runner, so sibling scripts are not supported",
+            game_name
+        ));
+    }
+
+    let launch_script_path = Path::new(&entry.launch_target);
     if !launch_script_path.exists() || !launch_script_path.is_file() {
         return Err(format!(
             "Saved script path does not exist or is not a file: {}",
-            entry.script_path
+            entry.launch_target
         ));
     }
 
     let parent_directory = launch_script_path.parent().ok_or_else(|| {
         format!(
             "Could not determine parent directory for script: {}",
-            entry.script_path
+            entry.launch_target
         )
     })?;
 
@@ -179,26 +154,11 @@ pub fn run_game_sibling_script(game_name: &str, sibling_script_name: &str) -> Re
         ));
     }
 
-    run_script_with_bash(&sibling_script_path)
-}
-
-fn run_script_with_bash(script_path: &Path) -> Result<(), String> {
-    let status = Command::new("bash")
-        .arg(script_path)
-        .status()
-        .map_err(|err| format!("Failed to launch script: {}", err))?;
-
-    if !status.success() {
-        return Err(format!(
-            "Script exited with non-zero status: {}",
-            status
-                .code()
-                .map(|code| code.to_string())
-                .unwrap_or_else(|| "terminated by signal".to_string())
-        ));
-    }
-
-    Ok(())
+    runners::bashrunner::launch(
+        sibling_script_path
+            .to_str()
+            .ok_or_else(|| "Sibling script path contains invalid UTF-8".to_string())?,
+    )
 }
 
 pub fn discover_games() -> Result<DiscoverReport, String> {
@@ -216,5 +176,7 @@ pub fn discover_games() -> Result<DiscoverReport, String> {
 pub(crate) fn is_already_exists_error(error_message: &str) -> bool {
     (error_message.starts_with("A game with name '") && error_message.ends_with("' already exists"))
         || (error_message.starts_with("A game with script '")
+            && error_message.ends_with("' already exists"))
+        || (error_message.starts_with("A game with target '")
             && error_message.ends_with("' already exists"))
 }
