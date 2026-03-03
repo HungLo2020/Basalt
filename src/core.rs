@@ -68,6 +68,16 @@ pub fn add_game(name: &str, raw_script_path: &str) -> Result<(), String> {
         return Err(format!("A game with name '{}' already exists", name));
     }
 
+    if entries
+        .iter()
+        .any(|entry| entry.script_path == canonical_script_path_str)
+    {
+        return Err(format!(
+            "A game with script '{}' already exists",
+            canonical_script_path_str
+        ));
+    }
+
     entries.push(GameEntry {
         name: name.to_string(),
         script_path: canonical_script_path_str,
@@ -95,6 +105,21 @@ pub fn remove_game(name: &str) -> Result<(), String> {
     }
 
     save_entries(&entries)
+}
+
+pub fn remove_all_games() -> Result<usize, String> {
+    let entries = load_entries()?;
+    let removed_count = entries.len();
+
+    save_entries(&[])?;
+
+    let discovered_steam_dir = get_app_dir()?.join("discovered").join("steam");
+    if discovered_steam_dir.exists() {
+        fs::remove_dir_all(&discovered_steam_dir)
+            .map_err(|err| format!("Failed to clean discovered Steam scripts: {}", err))?;
+    }
+
+    Ok(removed_count)
 }
 
 pub fn launch_game(name: &str) -> Result<(), String> {
@@ -163,7 +188,7 @@ fn discover_mattmc_entry() -> Result<DiscoverResult, String> {
 
     match add_game(MATTMC_ENTRY_NAME, mattmc_script_str) {
         Ok(_) => Ok(DiscoverResult::Added),
-        Err(err) if is_duplicate_name_error(&err) => Ok(DiscoverResult::AlreadyExists),
+        Err(err) if is_already_exists_error(&err) => Ok(DiscoverResult::AlreadyExists),
         Err(err) => Err(err),
     }
 }
@@ -182,7 +207,7 @@ fn discover_steam_entries() -> Result<(usize, usize, usize), String> {
 
         steam_found += 1;
 
-        let entry_name = format!("Steam: {} ({})", name, appid);
+        let entry_name = name;
         let script_path = ensure_steam_launch_script(&appid)?;
 
         let script_path_str = script_path
@@ -194,7 +219,7 @@ fn discover_steam_entries() -> Result<(usize, usize, usize), String> {
             Ok(_) => {
                 steam_added += 1;
             }
-            Err(err) if is_duplicate_name_error(&err) => {
+            Err(err) if is_already_exists_error(&err) => {
                 steam_already_exists += 1;
             }
             Err(err) => return Err(err),
@@ -204,8 +229,10 @@ fn discover_steam_entries() -> Result<(usize, usize, usize), String> {
     Ok((steam_found, steam_added, steam_already_exists))
 }
 
-fn is_duplicate_name_error(error_message: &str) -> bool {
-    error_message.starts_with("A game with name '") && error_message.ends_with("' already exists")
+fn is_already_exists_error(error_message: &str) -> bool {
+    (error_message.starts_with("A game with name '") && error_message.ends_with("' already exists"))
+        || (error_message.starts_with("A game with script '")
+            && error_message.ends_with("' already exists"))
 }
 
 fn collect_steam_manifest_paths() -> Result<Vec<PathBuf>, String> {

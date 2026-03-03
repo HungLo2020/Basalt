@@ -24,6 +24,15 @@ pub fn run(args: &[String]) -> Result<(), String> {
             println!("Game removed successfully.");
             Ok(())
         }
+        Some("remove-all") => {
+            if args.len() != 1 {
+                return Err(usage_remove_all());
+            }
+
+            let removed_count = core::remove_all_games()?;
+            println!("Removed {} game entries.", removed_count);
+            Ok(())
+        }
         Some("list") => {
             let entries = core::list_games()?;
 
@@ -88,6 +97,10 @@ fn usage_remove() -> String {
     "Usage: basalt remove <name>".to_string()
 }
 
+fn usage_remove_all() -> String {
+    "Usage: basalt remove-all".to_string()
+}
+
 fn usage_launch() -> String {
     "Usage: basalt launch <name>".to_string()
 }
@@ -103,6 +116,8 @@ fn full_usage() -> String {
         "                               Add a game backed by a bash script (.sh)",
         "  basalt remove <name>",
         "                               Remove a saved game by name",
+        "  basalt remove-all",
+        "                               Remove all saved games",
         "  basalt list",
         "                               List all added games",
         "  basalt discover",
