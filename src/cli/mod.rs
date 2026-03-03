@@ -12,6 +12,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         Some("remove-all") => commands::remove_all::run(args),
         Some("list") => commands::list::run(args),
         Some("discover") => commands::discover::run(args),
+        Some("install_mattmc") => commands::install_mattmc::run(args),
         Some("launch") => commands::launch::run(args),
         Some("backup-mattmc") => commands::backup_mattmc::run(args),
         Some("sync-mattmc") => commands::sync_mattmc::run(args),

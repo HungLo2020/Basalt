@@ -31,6 +31,8 @@ pub fn full_usage() -> String {
         "                               List all added games",
         "  basalt discover",
         "                               Discover MattMC and Steam games, then add new entries",
+        "  basalt install_mattmc",
+        "                               Ensure ~/Documents/MattMC/SyncGameData.sh is installed",
         "  basalt launch <name>",
         "                               Launch a saved game script by name",
         "  basalt backup-mattmc",

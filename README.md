@@ -2,6 +2,12 @@
 
 Basalt is a minimal, clean game launcher intended to be reliable on Linux first, with cross-platform support for macOS and Windows.
 
+## Install
+
+Run this on Linux to download only `Install.sh` from this repository and execute it:
+
+`curl -fsSL https://raw.githubusercontent.com/HungLo2020/Basalt/main/Install.sh | bash`
+
 ## Project Goals
 
 - Keep the launcher simple and fast.

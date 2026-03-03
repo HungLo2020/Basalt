@@ -1,6 +1,7 @@
 pub mod add;
 pub mod backup_mattmc;
 pub mod discover;
+pub mod install_mattmc;
 pub mod launch;
 pub mod list;
 pub mod remove;
