@@ -72,6 +72,23 @@ pub fn list_games() -> Result<Vec<GameEntry>, String> {
     load_entries()
 }
 
+pub fn remove_game(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("Game name cannot be empty".to_string());
+    }
+
+    let mut entries = load_entries()?;
+    let original_len = entries.len();
+
+    entries.retain(|entry| entry.name != name);
+
+    if entries.len() == original_len {
+        return Err(format!("No game found with name '{}'", name));
+    }
+
+    save_entries(&entries)
+}
+
 pub fn launch_game(name: &str) -> Result<(), String> {
     if name.is_empty() {
         return Err("Game name cannot be empty".to_string());
