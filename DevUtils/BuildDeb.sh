@@ -14,7 +14,7 @@ require_cmd() {
 
 main() {
   local script_dir repo_root builds_dir legacy_build_dir cargo_toml version arch
-  local package_root control_file deb_path
+  local package_root control_file deb_path desktop_file
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   repo_root="$(cd "$script_dir/.." && pwd)"
@@ -51,9 +51,16 @@ main() {
   cargo build --manifest-path "$cargo_toml" --release
 
   package_root="$builds_dir/pkgroot"
-  mkdir -p "$package_root/DEBIAN" "$package_root/usr/bin"
+  mkdir -p "$package_root/DEBIAN" "$package_root/usr/bin" "$package_root/usr/share/applications"
 
   install -m 755 "$repo_root/target/release/basalt" "$package_root/usr/bin/basalt"
+
+  desktop_file="$repo_root/packaging/linux/basalt.desktop"
+  if [[ ! -f "$desktop_file" ]]; then
+    echo "[deb-build] Missing desktop entry file: $desktop_file" >&2
+    exit 1
+  fi
+  install -m 644 "$desktop_file" "$package_root/usr/share/applications/basalt.desktop"
 
   control_file="$package_root/DEBIAN/control"
   cat > "$control_file" <<EOF

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Basalt
+Comment=Basalt game launcher
+Exec=basalt
+Terminal=false
+Categories=Game;
+Keywords=game;launcher;steam;
