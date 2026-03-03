@@ -13,6 +13,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
         Some("list") => commands::list::run(args),
         Some("discover") => commands::discover::run(args),
         Some("launch") => commands::launch::run(args),
+        Some("backup-mattmc") => commands::backup_mattmc::run(args),
+        Some("sync-mattmc") => commands::sync_mattmc::run(args),
         Some(other) => Err(format!("Unknown command: {}\n\n{}", other, usage::full_usage())),
         None => Err(usage::full_usage()),
     }

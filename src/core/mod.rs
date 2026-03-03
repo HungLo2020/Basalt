@@ -137,6 +137,52 @@ pub fn launch_game(name: &str) -> Result<(), String> {
         ));
     }
 
+    run_script_with_bash(script_path)
+}
+
+pub fn run_game_sibling_script(game_name: &str, sibling_script_name: &str) -> Result<(), String> {
+    if game_name.is_empty() {
+        return Err("Game name cannot be empty".to_string());
+    }
+
+    if sibling_script_name.is_empty() {
+        return Err("Script name cannot be empty".to_string());
+    }
+
+    let entries = registry::load_entries()?;
+    let entry = entries
+        .into_iter()
+        .find(|game| game.name == game_name)
+        .ok_or_else(|| format!("No game found with name '{}'", game_name))?;
+
+    let launch_script_path = Path::new(&entry.script_path);
+    if !launch_script_path.exists() || !launch_script_path.is_file() {
+        return Err(format!(
+            "Saved script path does not exist or is not a file: {}",
+            entry.script_path
+        ));
+    }
+
+    let parent_directory = launch_script_path.parent().ok_or_else(|| {
+        format!(
+            "Could not determine parent directory for script: {}",
+            entry.script_path
+        )
+    })?;
+
+    let sibling_script_path = parent_directory.join(sibling_script_name);
+    if !sibling_script_path.exists() || !sibling_script_path.is_file() {
+        return Err(format!(
+            "No script found for '{}' at {}",
+            game_name,
+            sibling_script_path.display()
+        ));
+    }
+
+    run_script_with_bash(&sibling_script_path)
+}
+
+fn run_script_with_bash(script_path: &Path) -> Result<(), String> {
     let status = Command::new("bash")
         .arg(script_path)
         .status()

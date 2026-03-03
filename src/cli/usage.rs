@@ -33,6 +33,10 @@ pub fn full_usage() -> String {
         "                               Discover MattMC and Steam games, then add new entries",
         "  basalt launch <name>",
         "                               Launch a saved game script by name",
+        "  basalt backup-mattmc",
+        "                               Run backup.sh from MattMC launch script directory",
+        "  basalt sync-mattmc",
+        "                               Run SyncGameData.sh from MattMC launch script directory",
     ]
     .join("\n")
 }
