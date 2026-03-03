@@ -5,6 +5,30 @@ log() {
   printf "\n[flatpak-install] %s\n" "$1"
 }
 
+setup_cli_wrapper() {
+  local local_bin wrapper_path
+
+  local_bin="$HOME/.local/bin"
+  wrapper_path="$local_bin/basalt"
+
+  mkdir -p "$local_bin"
+
+  cat > "$wrapper_path" <<'EOF'
+#!/usr/bin/env bash
+exec flatpak run io.matt.Basalt "$@"
+EOF
+
+  chmod +x "$wrapper_path"
+
+  log "Installed CLI wrapper: $wrapper_path"
+
+  if [[ ":$PATH:" != *":$local_bin:"* ]]; then
+    echo "Add this to your shell profile to use 'basalt' directly:"
+    echo "  export PATH=\"$HOME/.local/bin:\$PATH\""
+    echo "Then restart your shell or run: source ~/.bashrc"
+  fi
+}
+
 install_from_local_bundle() {
   local bundle_path="$1"
 
@@ -13,11 +37,18 @@ install_from_local_bundle() {
     exit 1
   fi
 
+  if flatpak info io.matt.Basalt >/dev/null 2>&1; then
+    log "Replacing existing Basalt Flatpak install (preserving app data/config)"
+    flatpak uninstall --user -y io.matt.Basalt
+  fi
+
   log "Installing local bundle: $bundle_path"
   flatpak install --user -y "$bundle_path"
 
+  setup_cli_wrapper
+
   log "Installed"
-  echo "Run with: flatpak run io.matt.Basalt"
+  echo "Run with: basalt list"
 }
 
 install_from_github_release() {
@@ -29,7 +60,7 @@ main() {
   local script_dir repo_root build_dir bundle_path choice
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  repo_root="$(cd "$script_dir/.." && pwd)"
+  repo_root="$script_dir"
   build_dir="$repo_root/Build"
   bundle_path="$build_dir/Basalt.flatpak"
 

@@ -76,7 +76,7 @@ main() {
 
   log "Done"
   echo "Bundle created at: $bundle_path"
-  echo "To install, run: ./DevUtils/Install.sh"
+  echo "To install, run: ./Install.sh"
   echo "Run with: flatpak run io.matt.Basalt"
 }
 
