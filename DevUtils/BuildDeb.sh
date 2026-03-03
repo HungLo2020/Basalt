@@ -14,7 +14,7 @@ require_cmd() {
 
 main() {
   local script_dir repo_root builds_dir legacy_build_dir cargo_toml version arch
-  local package_root control_file deb_path desktop_file
+  local package_root control_file deb_path desktop_file icon_file
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   repo_root="$(cd "$script_dir/.." && pwd)"
@@ -51,7 +51,11 @@ main() {
   cargo build --manifest-path "$cargo_toml" --release
 
   package_root="$builds_dir/pkgroot"
-  mkdir -p "$package_root/DEBIAN" "$package_root/usr/bin" "$package_root/usr/share/applications"
+  mkdir -p \
+    "$package_root/DEBIAN" \
+    "$package_root/usr/bin" \
+    "$package_root/usr/share/applications" \
+    "$package_root/usr/share/icons/hicolor/scalable/apps"
 
   install -m 755 "$repo_root/target/release/basalt" "$package_root/usr/bin/basalt"
 
@@ -61,6 +65,14 @@ main() {
     exit 1
   fi
   install -m 644 "$desktop_file" "$package_root/usr/share/applications/basalt.desktop"
+
+  icon_file="$repo_root/assets/icons/basalt.svg"
+  if [[ ! -f "$icon_file" ]]; then
+    echo "[deb-build] Missing icon file: $icon_file" >&2
+    echo "[deb-build] Place the icon SVG at assets/icons/basalt.svg" >&2
+    exit 1
+  fi
+  install -m 644 "$icon_file" "$package_root/usr/share/icons/hicolor/scalable/apps/basalt.svg"
 
   control_file="$package_root/DEBIAN/control"
   cat > "$control_file" <<EOF
