@@ -1,0 +1,93 @@
+name: Build macOS DMG and upload to release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing release tag to upload the DMG to (for manual runs)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos-dmg:
+    runs-on: macos-14
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
+      APP_NAME: Basalt
+      BIN_NAME: basalt
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Build release binary
+        run: cargo build --release --locked --target aarch64-apple-darwin
+
+      - name: Build .app bundle and .dmg
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_BUNDLE="${APP_NAME}.app"
+          APP_DIR="dist/${APP_BUNDLE}"
+          DMG_ROOT="dist/dmg-root"
+          DMG_NAME="${APP_NAME}-${RELEASE_TAG}-macos-arm64.dmg"
+
+          rm -rf dist
+          mkdir -p "${APP_DIR}/Contents/MacOS"
+
+          cp "target/aarch64-apple-darwin/release/${BIN_NAME}" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
+          chmod +x "${APP_DIR}/Contents/MacOS/${APP_NAME}"
+
+          cat > "${APP_DIR}/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+            <dict>
+              <key>CFBundleName</key>
+              <string>Basalt</string>
+              <key>CFBundleDisplayName</key>
+              <string>Basalt</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.hunglo2020.basalt</string>
+              <key>CFBundleVersion</key>
+              <string>1</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleExecutable</key>
+              <string>Basalt</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>13.0</string>
+            </dict>
+          </plist>
+          PLIST
+
+          mkdir -p "${DMG_ROOT}"
+          cp -R "${APP_DIR}" "${DMG_ROOT}/"
+          ln -s /Applications "${DMG_ROOT}/Applications"
+
+          hdiutil create \
+            -volname "Basalt" \
+            -srcfolder "${DMG_ROOT}" \
+            -ov \
+            -format UDZO \
+            "dist/${DMG_NAME}"
+
+      - name: Upload DMG to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: dist/*.dmg
+          overwrite_files: true
+          fail_on_unmatched_files: true
