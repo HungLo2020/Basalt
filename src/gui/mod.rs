@@ -1,3 +1,4 @@
+mod artwork;
 mod app;
 mod install_screen;
 mod library_screen;
