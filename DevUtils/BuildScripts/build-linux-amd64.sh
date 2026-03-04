@@ -12,6 +12,22 @@ require_cmd() {
   fi
 }
 
+read_cargo_package_version() {
+  local cargo_toml_path="$1"
+
+  awk '
+    /^\[package\][[:space:]]*$/ { in_package = 1; next }
+    /^\[/ { in_package = 0 }
+    in_package && /^[[:space:]]*version[[:space:]]*=/ {
+      line = $0
+      sub(/^[[:space:]]*version[[:space:]]*=[[:space:]]*"/, "", line)
+      sub(/".*/, "", line)
+      print line
+      exit
+    }
+  ' "$cargo_toml_path"
+}
+
 main() {
   local script_dir repo_root builds_dir legacy_build_dir cargo_toml version
   local package_root control_file deb_path desktop_file icon_file build_meta
@@ -26,7 +42,7 @@ main() {
   require_cmd cargo
   require_cmd dpkg-deb
 
-  version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]\+\)"/\1/p' "$cargo_toml" | head -n1)"
+  version="$(read_cargo_package_version "$cargo_toml")"
   if [[ -z "$version" ]]; then
     echo "[build-linux-amd64] Unable to determine version from $cargo_toml" >&2
     exit 1

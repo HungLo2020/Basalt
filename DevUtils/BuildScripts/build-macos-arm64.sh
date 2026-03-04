@@ -12,6 +12,22 @@ require_cmd() {
   fi
 }
 
+read_cargo_package_version() {
+  local cargo_toml_path="$1"
+
+  awk '
+    /^\[package\][[:space:]]*$/ { in_package = 1; next }
+    /^\[/ { in_package = 0 }
+    in_package && /^[[:space:]]*version[[:space:]]*=/ {
+      line = $0
+      sub(/^[[:space:]]*version[[:space:]]*=[[:space:]]*"/, "", line)
+      sub(/".*/, "", line)
+      print line
+      exit
+    }
+  ' "$cargo_toml_path"
+}
+
 main() {
   local script_dir repo_root builds_dir cargo_toml version build_meta
   local app_name app_bundle app_dir dmg_root dmg_path
@@ -35,7 +51,7 @@ main() {
     exit 1
   fi
 
-  version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]\+\)"/\1/p' "$cargo_toml" | head -n1)"
+  version="$(read_cargo_package_version "$cargo_toml")"
   if [[ -z "$version" ]]; then
     echo "[build-macos-arm64] Unable to determine version from $cargo_toml" >&2
     exit 1
