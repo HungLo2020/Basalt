@@ -13,6 +13,8 @@ const MATTMC_SVG_BYTES: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/resources/assets/icons/apps/MattMC.svg"
 ));
+const MATTMC_SVG_TARGET_MAX_DIMENSION: u32 = 1024;
+const MATTMC_BLUR_BACKGROUND_RGB: [u8; 3] = [56, 68, 88];
 
 #[derive(Clone)]
 pub(super) struct ArtworkTextures {
@@ -254,7 +256,7 @@ struct ArtworkDownloadJob {
 fn load_artwork_textures_from_path(ctx: &Context, key: &str, path: &Path) -> Option<ArtworkTextures> {
     let image_bytes = std::fs::read(path).ok()?;
     let foreground_rgba = image::load_from_memory(&image_bytes).ok()?.to_rgba8();
-    build_artwork_textures_from_rgba(ctx, key, foreground_rgba)
+    build_artwork_textures_from_rgba(ctx, key, foreground_rgba, None)
 }
 
 fn load_artwork_textures_from_svg_bytes(
@@ -264,30 +266,50 @@ fn load_artwork_textures_from_svg_bytes(
 ) -> Option<ArtworkTextures> {
     let usvg_options = resvg::usvg::Options::default();
     let tree = resvg::usvg::Tree::from_data(svg_bytes, &usvg_options).ok()?;
-    let pixmap_size = tree.size().to_int_size();
+    let base_size = tree.size().to_int_size();
+    let largest_dim = base_size.width().max(base_size.height()) as f32;
+    if largest_dim <= 0.0 {
+        return None;
+    }
 
-    let mut pixmap = resvg::tiny_skia::Pixmap::new(pixmap_size.width(), pixmap_size.height())?;
+    let scale = (MATTMC_SVG_TARGET_MAX_DIMENSION as f32 / largest_dim).max(1.0);
+    let target_width = ((base_size.width() as f32) * scale).round().max(1.0) as u32;
+    let target_height = ((base_size.height() as f32) * scale).round().max(1.0) as u32;
+
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(target_width, target_height)?;
     resvg::render(
         &tree,
-        resvg::tiny_skia::Transform::default(),
+        resvg::tiny_skia::Transform::from_scale(scale, scale),
         &mut pixmap.as_mut(),
     );
 
     let foreground_rgba = image::RgbaImage::from_raw(
-        pixmap_size.width(),
-        pixmap_size.height(),
+        target_width,
+        target_height,
         pixmap.data().to_vec(),
     )?;
 
-    build_artwork_textures_from_rgba(ctx, key, foreground_rgba)
+    build_artwork_textures_from_rgba(
+        ctx,
+        key,
+        foreground_rgba,
+        Some(MATTMC_BLUR_BACKGROUND_RGB),
+    )
 }
 
 fn build_artwork_textures_from_rgba(
     ctx: &Context,
     key: &str,
     foreground_rgba: image::RgbaImage,
+    blur_background_rgb: Option<[u8; 3]>,
 ) -> Option<ArtworkTextures> {
-    let mut blurred_rgba = image::DynamicImage::ImageRgba8(foreground_rgba.clone())
+    let blur_source = if let Some(background_rgb) = blur_background_rgb {
+        composite_on_solid_background(&foreground_rgba, background_rgb)
+    } else {
+        foreground_rgba.clone()
+    };
+
+    let mut blurred_rgba = image::DynamicImage::ImageRgba8(blur_source)
         .blur(10.0)
         .to_rgba8();
 
@@ -320,6 +342,26 @@ fn build_artwork_textures_from_rgba(
         foreground,
         background_blur,
     })
+}
+
+fn composite_on_solid_background(
+    foreground: &image::RgbaImage,
+    background_rgb: [u8; 3],
+) -> image::RgbaImage {
+    let mut output = image::RgbaImage::new(foreground.width(), foreground.height());
+
+    for (x, y, pixel) in foreground.enumerate_pixels() {
+        let alpha = pixel.0[3] as f32 / 255.0;
+        let inv_alpha = 1.0 - alpha;
+
+        let r = (pixel.0[0] as f32 * alpha + background_rgb[0] as f32 * inv_alpha).round() as u8;
+        let g = (pixel.0[1] as f32 * alpha + background_rgb[1] as f32 * inv_alpha).round() as u8;
+        let b = (pixel.0[2] as f32 * alpha + background_rgb[2] as f32 * inv_alpha).round() as u8;
+
+        output.put_pixel(x, y, image::Rgba([r, g, b, 255]));
+    }
+
+    output
 }
 
 fn extract_steam_appid(launch_target: &str) -> Option<String> {
