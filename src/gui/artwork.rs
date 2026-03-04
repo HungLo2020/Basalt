@@ -15,6 +15,8 @@ const MATTMC_SVG_BYTES: &[u8] = include_bytes!(concat!(
 ));
 const MATTMC_SVG_TARGET_MAX_DIMENSION: u32 = 1024;
 const MATTMC_BLUR_BACKGROUND_RGB: [u8; 3] = [56, 68, 88];
+const PREPARED_ARTWORK_MAX_WIDTH: u32 = 360;
+const PREPARED_ARTWORK_MAX_HEIGHT: u32 = 540;
 const MAX_PENDING_DOWNLOADS: usize = 6;
 const MAX_TEXTURE_UPLOADS_PER_TICK: usize = 2;
 
@@ -39,21 +41,42 @@ impl ArtworkStore {
 
         thread::spawn(move || {
             while let Ok(job) = download_rx.recv() {
-                let prepared = match job.runner {
-                    ArtworkRunnerKind::Steam => prepare_steam_artwork_payload(&job.target),
-                    ArtworkRunnerKind::Mattmc | ArtworkRunnerKind::Noop => None,
-                };
+                match job.runner {
+                    ArtworkRunnerKind::Steam => {
+                        if let Some(payload) = prepare_cached_steam_artwork_payload(&job.target) {
+                            if result_tx
+                                .send(ArtworkDownloadResult::Ready {
+                                    key: job.key,
+                                    payload,
+                                })
+                                .is_err()
+                            {
+                                break;
+                            }
 
-                let result = match prepared {
-                    Some(payload) => ArtworkDownloadResult::Ready {
-                        key: job.key,
-                        payload,
-                    },
-                    None => ArtworkDownloadResult::Missing { key: job.key },
-                };
+                            continue;
+                        }
 
-                if result_tx.send(result).is_err() {
-                    break;
+                        let key = job.key;
+                        let target = job.target;
+                        let result_tx_for_network = result_tx.clone();
+                        thread::spawn(move || {
+                            let result = match download_and_prepare_steam_artwork_payload(&target) {
+                                Some(payload) => ArtworkDownloadResult::Ready { key, payload },
+                                None => ArtworkDownloadResult::Missing { key },
+                            };
+
+                            let _ = result_tx_for_network.send(result);
+                        });
+                    }
+                    ArtworkRunnerKind::Mattmc | ArtworkRunnerKind::Noop => {
+                        if result_tx
+                            .send(ArtworkDownloadResult::Missing { key: job.key })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
                 }
             }
         });
@@ -166,7 +189,9 @@ impl ArtworkStore {
             return;
         }
 
-        if self.requested.len() >= MAX_PENDING_DOWNLOADS {
+        let has_cached_artwork = request.runner.has_cached_artwork(&request.target);
+
+        if !has_cached_artwork && self.requested.len() >= MAX_PENDING_DOWNLOADS {
             return;
         }
 
@@ -229,6 +254,13 @@ impl ArtworkRunnerKind {
         }
     }
 
+    fn has_cached_artwork(self, target: &str) -> bool {
+        match self {
+            Self::Steam => find_cached_steam_portrait_artwork_path(target).is_some(),
+            Self::Mattmc | Self::Noop => false,
+        }
+    }
+
     fn to_download_job(self, key: String, target: String) -> Option<ArtworkDownloadJob> {
         match self {
             Self::Steam => Some(ArtworkDownloadJob {
@@ -266,7 +298,17 @@ struct PreparedArtwork {
     background_rgba: Vec<u8>,
 }
 
-fn prepare_steam_artwork_payload(appid: &str) -> Option<PreparedArtwork> {
+fn prepare_cached_steam_artwork_payload(appid: &str) -> Option<PreparedArtwork> {
+    let cached_path = find_cached_steam_portrait_artwork_path(appid)?;
+    if let Some(payload) = prepare_artwork_payload_from_path(&cached_path, None) {
+        return Some(payload);
+    }
+
+    let _ = std::fs::remove_file(cached_path);
+    None
+}
+
+fn download_and_prepare_steam_artwork_payload(appid: &str) -> Option<PreparedArtwork> {
     let cached_path = download_and_cache_steam_portrait_artwork(appid)?;
     prepare_artwork_payload_from_path(&cached_path, None)
 }
@@ -284,6 +326,12 @@ fn prepare_artwork_payload_from_rgba(
     foreground_rgba: image::RgbaImage,
     blur_background_rgb: Option<[u8; 3]>,
 ) -> Option<PreparedArtwork> {
+    let foreground_rgba = resize_for_prepared_artwork(
+        foreground_rgba,
+        PREPARED_ARTWORK_MAX_WIDTH,
+        PREPARED_ARTWORK_MAX_HEIGHT,
+    );
+
     let blur_source = if let Some(background_rgb) = blur_background_rgb {
         composite_on_solid_background(&foreground_rgba, background_rgb)
     } else {
@@ -309,6 +357,33 @@ fn prepare_artwork_payload_from_rgba(
         foreground_rgba: foreground_rgba.into_raw(),
         background_rgba: blurred_rgba.into_raw(),
     })
+}
+
+fn resize_for_prepared_artwork(
+    rgba: image::RgbaImage,
+    max_width: u32,
+    max_height: u32,
+) -> image::RgbaImage {
+    let width = rgba.width();
+    let height = rgba.height();
+
+    if width == 0 || height == 0 || width <= max_width && height <= max_height {
+        return rgba;
+    }
+
+    let width_scale = max_width as f32 / width as f32;
+    let height_scale = max_height as f32 / height as f32;
+    let scale = width_scale.min(height_scale).min(1.0);
+
+    let resized_width = ((width as f32) * scale).round().max(1.0) as u32;
+    let resized_height = ((height as f32) * scale).round().max(1.0) as u32;
+
+    image::imageops::resize(
+        &rgba,
+        resized_width,
+        resized_height,
+        image::imageops::FilterType::Triangle,
+    )
 }
 
 fn build_artwork_textures_from_payload(
@@ -460,11 +535,7 @@ fn download_and_cache_steam_portrait_artwork(appid: &str) -> Option<PathBuf> {
     let cache_dir = steam_artwork_cache_dir()?;
 
     if let Some(existing_cached) = find_cached_steam_portrait_artwork_path(appid) {
-        if is_valid_portrait_artwork(&existing_cached) {
-            return Some(existing_cached);
-        }
-
-        let _ = std::fs::remove_file(existing_cached);
+        return Some(existing_cached);
     }
 
     let urls_and_targets = [
@@ -558,12 +629,10 @@ fn is_valid_portrait_artwork(path: &Path) -> bool {
         return false;
     };
 
-    let Ok(image_data) = image_reader.decode() else {
+    let Ok((width, height)) = image_reader.into_dimensions() else {
         return false;
     };
 
-    let width = image_data.width();
-    let height = image_data.height();
     if width < 300 || height < 450 {
         return false;
     }

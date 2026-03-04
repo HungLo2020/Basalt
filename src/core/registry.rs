@@ -10,6 +10,8 @@ use super::runners::RunnerKind;
 const APP_DIR_NAME: &str = ".basalt";
 const REGISTRY_FILE_NAME: &str = "games.tsv";
 const BLACKLIST_FILE_NAME: &str = "blacklist.txt";
+const DEFAULT_BLACKLIST_TEMPLATE: &str =
+    "# Basalt blacklist\n# One game name per line.\n# Lines starting with # are ignored.\n";
 
 pub(super) fn get_app_dir() -> Result<PathBuf, String> {
     let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
@@ -40,19 +42,12 @@ fn ensure_blacklist_file() -> Result<(), String> {
         return Ok(());
     }
 
-    let seed_contents = fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("resources")
-            .join(BLACKLIST_FILE_NAME),
-    )
-    .ok();
-
-    let default_contents = "# Basalt blacklist\n# One game name per line.\n# Lines starting with # are ignored.\n";
+    let seed_contents = bundled_blacklist_contents();
     fs::write(
         &blacklist_path,
         seed_contents
             .as_deref()
-            .unwrap_or(default_contents),
+            .unwrap_or(DEFAULT_BLACKLIST_TEMPLATE),
     )
         .map_err(|err| format!("Failed to create blacklist file: {}", err))?;
 
@@ -63,7 +58,27 @@ pub(super) fn load_blacklisted_names() -> Result<HashSet<String>, String> {
     ensure_blacklist_file()?;
 
     let blacklist_path = get_blacklist_path()?;
-    let file = fs::File::open(&blacklist_path)
+    let mut names = read_blacklisted_names_from_file(&blacklist_path)?;
+    if !names.is_empty() {
+        return Ok(names);
+    }
+
+    let existing_contents = fs::read_to_string(&blacklist_path).unwrap_or_default();
+    if existing_contents.trim() == DEFAULT_BLACKLIST_TEMPLATE.trim() {
+        if let Some(seed_contents) = bundled_blacklist_contents() {
+            if has_active_blacklist_entries(&seed_contents) {
+                fs::write(&blacklist_path, seed_contents)
+                    .map_err(|err| format!("Failed to backfill blacklist file: {}", err))?;
+                names = read_blacklisted_names_from_file(&blacklist_path)?;
+            }
+        }
+    }
+
+    Ok(names)
+}
+
+fn read_blacklisted_names_from_file(path: &Path) -> Result<HashSet<String>, String> {
+    let file = fs::File::open(path)
         .map_err(|err| format!("Failed to open blacklist file: {}", err))?;
 
     let reader = BufReader::new(file);
@@ -81,6 +96,22 @@ pub(super) fn load_blacklisted_names() -> Result<HashSet<String>, String> {
     }
 
     Ok(names)
+}
+
+fn bundled_blacklist_contents() -> Option<String> {
+    fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join(BLACKLIST_FILE_NAME),
+    )
+    .ok()
+}
+
+fn has_active_blacklist_entries(contents: &str) -> bool {
+    contents
+        .lines()
+        .map(|line| line.trim())
+        .any(|trimmed| !trimmed.is_empty() && !trimmed.starts_with('#'))
 }
 
 pub(super) fn load_entries() -> Result<Vec<GameEntry>, String> {
