@@ -130,6 +130,27 @@ pub fn launch_game(name: &str) -> Result<(), String> {
 }
 
 pub fn run_game_sibling_script(game_name: &str, sibling_script_name: &str) -> Result<(), String> {
+    let sibling_script_path = resolve_game_sibling_script_path(game_name, sibling_script_name)?;
+    runners::bashrunner::launch(&sibling_script_path)
+}
+
+pub fn run_game_sibling_script_with_input(
+    game_name: &str,
+    sibling_script_name: &str,
+    stdin_content: &str,
+) -> Result<(), String> {
+    if stdin_content.is_empty() {
+        return Err("Script stdin content cannot be empty".to_string());
+    }
+
+    let sibling_script_path = resolve_game_sibling_script_path(game_name, sibling_script_name)?;
+    runners::bashrunner::launch_with_stdin(&sibling_script_path, stdin_content)
+}
+
+fn resolve_game_sibling_script_path(
+    game_name: &str,
+    sibling_script_name: &str,
+) -> Result<String, String> {
     if game_name.is_empty() {
         return Err("Game name cannot be empty".to_string());
     }
@@ -175,11 +196,10 @@ pub fn run_game_sibling_script(game_name: &str, sibling_script_name: &str) -> Re
         ));
     }
 
-    runners::bashrunner::launch(
-        sibling_script_path
-            .to_str()
-            .ok_or_else(|| "Sibling script path contains invalid UTF-8".to_string())?,
-    )
+    sibling_script_path
+        .to_str()
+        .ok_or_else(|| "Sibling script path contains invalid UTF-8".to_string())
+        .map(|value| value.to_string())
 }
 
 pub fn discover_games() -> Result<DiscoverReport, String> {

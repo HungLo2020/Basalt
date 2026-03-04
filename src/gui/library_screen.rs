@@ -33,7 +33,7 @@ impl BasaltApp {
                     ui.heading("Details");
                     ui.separator();
 
-                    if let Some(selected) = self.selected_game() {
+                    if let Some(selected) = self.selected_game().cloned() {
                         ui.label(RichText::new(format!("Name: {}", selected.name)).size(body_text_size));
                         ui.label(
                             RichText::new(format!("Runner: {}", selected.runner_kind.as_str()))
@@ -58,6 +58,25 @@ impl BasaltApp {
                                     self.status_message = format!("Launch failed: {}", err);
                                 }
                             }
+                        }
+
+                        if selected.name.eq_ignore_ascii_case("MattMC") {
+                            ui.add_space(8.0);
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .button(RichText::new("SyncUp").size(body_text_size))
+                                    .clicked()
+                                {
+                                    self.sync_mattmc_up_from_gui();
+                                }
+
+                                if ui
+                                    .button(RichText::new("SyncDown").size(body_text_size))
+                                    .clicked()
+                                {
+                                    self.sync_mattmc_down_from_gui();
+                                }
+                            });
                         }
                     } else {
                         ui.label(

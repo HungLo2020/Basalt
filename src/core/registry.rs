@@ -21,9 +21,7 @@ fn get_registry_path() -> Result<PathBuf, String> {
 }
 
 fn get_blacklist_path() -> Result<PathBuf, String> {
-    Ok(Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("resources")
-        .join(BLACKLIST_FILE_NAME))
+    Ok(get_app_dir()?.join(BLACKLIST_FILE_NAME))
 }
 
 fn ensure_registry_dir() -> Result<(), String> {
@@ -35,20 +33,27 @@ fn ensure_registry_dir() -> Result<(), String> {
 }
 
 fn ensure_blacklist_file() -> Result<(), String> {
+    ensure_registry_dir()?;
     let blacklist_path = get_blacklist_path()?;
-
-    let blacklist_parent = blacklist_path
-        .parent()
-        .ok_or_else(|| "Failed to determine blacklist parent directory".to_string())?;
-    fs::create_dir_all(blacklist_parent)
-        .map_err(|err| format!("Failed to create blacklist directory: {}", err))?;
 
     if blacklist_path.exists() {
         return Ok(());
     }
 
+    let seed_contents = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join(BLACKLIST_FILE_NAME),
+    )
+    .ok();
+
     let default_contents = "# Basalt blacklist\n# One game name per line.\n# Lines starting with # are ignored.\n";
-    fs::write(&blacklist_path, default_contents)
+    fs::write(
+        &blacklist_path,
+        seed_contents
+            .as_deref()
+            .unwrap_or(default_contents),
+    )
         .map_err(|err| format!("Failed to create blacklist file: {}", err))?;
 
     Ok(())
