@@ -4,6 +4,7 @@ use eframe::egui::{
 };
 
 use super::app::BasaltApp;
+use super::search;
 
 impl BasaltApp {
     pub(super) fn render_install_screen(
@@ -58,7 +59,13 @@ impl BasaltApp {
                     .stroke(white_line),
             )
             .show(ctx, |ui| {
-                ui.with_layout(Layout::centered_and_justified(egui::Direction::TopDown), |ui| {
+                ui.with_layout(Layout::top_down(egui::Align::Center), |ui| {
+                    let show_mattmc_tile = search::matches_query("MattMC", &self.install_search_query);
+                    if !show_mattmc_tile {
+                        ui.label(RichText::new("No install entries match your search.").size(15.0));
+                        return;
+                    }
+
                     const TILE_ART_SIZE: f32 = 180.0;
                     const TEXT_STRIP_HEIGHT: f32 = 42.0;
                     const TILE_WIDTH: f32 = TILE_ART_SIZE;

@@ -2,6 +2,7 @@ use crate::cli;
 use crate::core::{self, DiscoverResult, GameEntry};
 
 use super::artwork::ArtworkStore;
+use super::search;
 use super::top_bar::{TopBarActions, TopBarTab};
 
 pub(super) struct BasaltApp {
@@ -10,6 +11,8 @@ pub(super) struct BasaltApp {
     pub(super) selected_index: Option<usize>,
     pub(super) add_name: String,
     pub(super) add_script_path: String,
+    pub(super) library_search_query: String,
+    pub(super) install_search_query: String,
     pub(super) status_message: String,
     pub(super) install_status_message: String,
     pub(super) artwork_store: ArtworkStore,
@@ -23,6 +26,8 @@ impl Default for BasaltApp {
             selected_index: None,
             add_name: String::new(),
             add_script_path: String::new(),
+            library_search_query: String::new(),
+            install_search_query: String::new(),
             status_message: String::new(),
             install_status_message: String::new(),
             artwork_store: ArtworkStore::new(),
@@ -154,6 +159,19 @@ impl BasaltApp {
 
     pub(super) fn selected_game(&self) -> Option<&GameEntry> {
         self.selected_index.and_then(|index| self.games.get(index))
+    }
+
+    pub(super) fn filtered_library_indices(&self) -> Vec<usize> {
+        self.games
+            .iter()
+            .enumerate()
+            .filter(|(_, game)| {
+                search::matches_query(&game.name, &self.library_search_query)
+                    || search::matches_query(game.runner_kind.as_str(), &self.library_search_query)
+                    || search::matches_query(&game.launch_target, &self.library_search_query)
+            })
+            .map(|(index, _)| index)
+            .collect()
     }
 
     pub(super) fn install_mattmc_from_gui(&mut self) {

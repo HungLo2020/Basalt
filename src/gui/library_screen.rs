@@ -116,7 +116,14 @@ impl BasaltApp {
                     .stroke(white_line),
             )
             .show(ctx, |ui| {
-                self.render_game_grid(ui, white_line);
+                let filtered_indices = self.filtered_library_indices();
+                if let Some(selected_index) = self.selected_index {
+                    if !filtered_indices.contains(&selected_index) {
+                        self.selected_index = None;
+                    }
+                }
+
+                self.render_game_grid(ui, white_line, &filtered_indices);
             });
     }
 
@@ -142,7 +149,12 @@ impl BasaltApp {
         min_size
     }
 
-    fn render_game_grid(&mut self, ui: &mut egui::Ui, border_stroke: Stroke) {
+    fn render_game_grid(
+        &mut self,
+        ui: &mut egui::Ui,
+        border_stroke: Stroke,
+        filtered_indices: &[usize],
+    ) {
         const TILE_WIDTH: f32 = 150.0;
         const TEXT_STRIP_HEIGHT: f32 = 40.0;
         const TILE_HEIGHT: f32 = TILE_WIDTH + TEXT_STRIP_HEIGHT;
@@ -159,28 +171,33 @@ impl BasaltApp {
             ui.set_min_width(ui.available_width());
             ui.add_space(WALL_PADDING);
 
-            if self.games.is_empty() {
+            if filtered_indices.is_empty() {
                 ui.horizontal(|ui| {
                     ui.add_space(WALL_PADDING);
-                    ui.label("No games found. Use Add, Discover, or CLI commands to add entries.");
+                    if self.library_search_query.trim().is_empty() {
+                        ui.label("No games found. Use Add, Discover, or CLI commands to add entries.");
+                    } else {
+                        ui.label("No games match your search.");
+                    }
                     ui.add_space(WALL_PADDING + SCROLLBAR_GUTTER);
                 });
                 ui.add_space(WALL_PADDING);
                 return;
             }
 
-            let mut index = 0usize;
-            while index < self.games.len() {
+            let mut visible_index = 0usize;
+            while visible_index < filtered_indices.len() {
                 ui.horizontal(|ui| {
                     ui.add_space(WALL_PADDING);
 
                     for col in 0..columns {
-                        if index >= self.games.len() {
+                        if visible_index >= filtered_indices.len() {
                             break;
                         }
 
-                        let game = self.games[index].clone();
-                        let is_selected = self.selected_index == Some(index);
+                        let game_index = filtered_indices[visible_index];
+                        let game = self.games[game_index].clone();
+                        let is_selected = self.selected_index == Some(game_index);
                         if self.render_tile(
                             ui,
                             border_stroke,
@@ -189,20 +206,20 @@ impl BasaltApp {
                             &game,
                             is_selected,
                         ) {
-                            self.selected_index = Some(index);
+                            self.selected_index = Some(game_index);
                         }
 
-                        if col + 1 < columns && index + 1 < self.games.len() {
+                        if col + 1 < columns && visible_index + 1 < filtered_indices.len() {
                             ui.add_space(TILE_SPACING);
                         }
 
-                        index += 1;
+                        visible_index += 1;
                     }
 
                     ui.add_space(WALL_PADDING + SCROLLBAR_GUTTER);
                 });
 
-                if index < self.games.len() {
+                if visible_index < filtered_indices.len() {
                     ui.add_space(TILE_SPACING);
                 }
             }
