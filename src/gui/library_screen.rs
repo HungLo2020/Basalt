@@ -255,9 +255,8 @@ impl BasaltApp {
             );
 
             let [fg_width, fg_height] = artwork.foreground.size();
-            let portrait_container = icon_rect.shrink(6.0);
-            let draw_rect = aspect_fit_rect(
-                portrait_container,
+            let draw_rect = fit_height_rect(
+                icon_rect,
                 fg_width as f32,
                 fg_height as f32,
             );
@@ -305,23 +304,19 @@ impl BasaltApp {
     }
 }
 
-fn aspect_fit_rect(container: egui::Rect, image_width: f32, image_height: f32) -> egui::Rect {
+fn fit_height_rect(container: egui::Rect, image_width: f32, image_height: f32) -> egui::Rect {
     if image_width <= 0.0 || image_height <= 0.0 {
         return container;
     }
 
-    let container_width = container.width();
     let container_height = container.height();
-    if container_width <= 0.0 || container_height <= 0.0 {
+    if container_height <= 0.0 {
         return container;
     }
 
-    let width_scale = container_width / image_width;
-    let height_scale = container_height / image_height;
-    let scale = width_scale.min(height_scale);
-
-    let draw_width = image_width * scale;
-    let draw_height = image_height * scale;
+    let image_aspect = image_width / image_height;
+    let draw_height = container_height;
+    let draw_width = draw_height * image_aspect;
     egui::Rect::from_center_size(container.center(), egui::vec2(draw_width, draw_height))
 }
 
