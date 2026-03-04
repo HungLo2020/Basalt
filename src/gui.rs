@@ -254,18 +254,22 @@ impl BasaltApp {
         const TILE_HEIGHT: f32 = 150.0;
         const TILE_SPACING: f32 = 24.0;
         const WALL_PADDING: f32 = 24.0;
+        const SCROLLBAR_GUTTER: f32 = 18.0;
 
-        let usable_width = (ui.available_width() - (WALL_PADDING * 2.0)).max(TILE_WIDTH);
+        let usable_width =
+            (ui.available_width() - (WALL_PADDING * 2.0) - SCROLLBAR_GUTTER).max(TILE_WIDTH);
         let columns = ((usable_width + TILE_SPACING) / (TILE_WIDTH + TILE_SPACING)).floor() as usize;
         let columns = columns.max(1);
 
-        ScrollArea::vertical().show(ui, |ui| {
+        ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
             ui.add_space(WALL_PADDING);
 
             if self.games.is_empty() {
                 ui.horizontal(|ui| {
                     ui.add_space(WALL_PADDING);
                     ui.label("No games found. Use Add, Discover, or CLI commands to add entries.");
+                    ui.add_space(WALL_PADDING + SCROLLBAR_GUTTER);
                 });
                 ui.add_space(WALL_PADDING);
                 return;
@@ -299,6 +303,8 @@ impl BasaltApp {
 
                         index += 1;
                     }
+
+                    ui.add_space(WALL_PADDING + SCROLLBAR_GUTTER);
                 });
 
                 if index < self.games.len() {
