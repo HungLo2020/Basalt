@@ -1,0 +1,13 @@
+# Basalt blacklist
+# One game name per line.
+# Lines starting with # are ignored.
+
+# Example entries:
+Proton 9.0
+Steam Linux Runtime 1.0 (scout)
+Steam Linux Runtime 2.0 (soldier)
+Proton BattlEye Runtime
+Proton Experimental
+Steamworks Common Redistributables
+Steam Linux Runtime 3.0 (sniper)
+Proton Hotfix

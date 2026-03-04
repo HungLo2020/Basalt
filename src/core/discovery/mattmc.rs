@@ -1,7 +1,7 @@
 use std::env;
 use std::path::Path;
 
-use crate::core::{add_game, is_already_exists_error, DiscoverResult};
+use crate::core::{add_game, is_already_exists_error, is_blacklisted_error, DiscoverResult};
 
 const MATTMC_ENTRY_NAME: &str = "MattMC";
 
@@ -22,7 +22,9 @@ pub fn discover_mattmc_entry() -> Result<DiscoverResult, String> {
 
     match add_game(MATTMC_ENTRY_NAME, mattmc_script_str) {
         Ok(_) => Ok(DiscoverResult::Added),
-        Err(err) if is_already_exists_error(&err) => Ok(DiscoverResult::AlreadyExists),
+        Err(err) if is_already_exists_error(&err) || is_blacklisted_error(&err) => {
+            Ok(DiscoverResult::AlreadyExists)
+        }
         Err(err) => Err(err),
     }
 }

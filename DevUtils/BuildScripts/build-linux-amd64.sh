@@ -70,17 +70,17 @@ main() {
 
   install -m 755 "$repo_root/target/release/basalt" "$package_root/usr/bin/basalt"
 
-  desktop_file="$repo_root/packaging/linux/basalt.desktop"
+  desktop_file="$repo_root/resources/packaging/linux/basalt.desktop"
   if [[ ! -f "$desktop_file" ]]; then
     echo "[build-linux-amd64] Missing desktop entry file: $desktop_file" >&2
     exit 1
   fi
   install -m 644 "$desktop_file" "$package_root/usr/share/applications/basalt.desktop"
 
-  icon_file="$repo_root/assets/icons/basalt.svg"
+  icon_file="$repo_root/resources/assets/icons/basalt.svg"
   if [[ ! -f "$icon_file" ]]; then
     echo "[build-linux-amd64] Missing icon file: $icon_file" >&2
-    echo "[build-linux-amd64] Place the icon SVG at assets/icons/basalt.svg" >&2
+    echo "[build-linux-amd64] Place the icon SVG at resources/assets/icons/basalt.svg" >&2
     exit 1
   fi
   install -m 644 "$icon_file" "$package_root/usr/share/icons/hicolor/scalable/apps/basalt.svg"

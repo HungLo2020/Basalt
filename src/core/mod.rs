@@ -47,6 +47,10 @@ pub fn add_game(name: &str, raw_script_path: &str) -> Result<(), String> {
         return Err("Game name cannot contain tabs or newlines".to_string());
     }
 
+    if is_name_blacklisted(name)? {
+        return Err(format!("Game name '{}' is blacklisted", name));
+    }
+
     let resolved_target = runners::resolve_add_target(raw_script_path)?;
 
     let mut entries = registry::load_entries()?;
@@ -77,7 +81,12 @@ pub fn add_game(name: &str, raw_script_path: &str) -> Result<(), String> {
 }
 
 pub fn list_games() -> Result<Vec<GameEntry>, String> {
-    registry::load_entries()
+    let blacklisted_names = registry::load_blacklisted_names()?;
+
+    Ok(registry::load_entries()?
+        .into_iter()
+        .filter(|entry| !blacklisted_names.contains(&entry.name.to_lowercase()))
+        .collect())
 }
 
 pub fn remove_game(name: &str) -> Result<(), String> {
@@ -214,4 +223,13 @@ pub(crate) fn is_already_exists_error(error_message: &str) -> bool {
             && error_message.ends_with("' already exists"))
         || (error_message.starts_with("A game with target '")
             && error_message.ends_with("' already exists"))
+}
+
+pub(crate) fn is_blacklisted_error(error_message: &str) -> bool {
+    error_message.starts_with("Game name '") && error_message.ends_with("' is blacklisted")
+}
+
+fn is_name_blacklisted(name: &str) -> Result<bool, String> {
+    let blacklisted_names = registry::load_blacklisted_names()?;
+    Ok(blacklisted_names.contains(&name.to_lowercase()))
 }

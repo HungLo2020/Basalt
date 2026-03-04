@@ -3,7 +3,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::core::{add_game, is_already_exists_error};
+use crate::core::{add_game, is_already_exists_error, is_blacklisted_error};
 
 pub fn discover_steam_entries() -> Result<(usize, usize, usize), String> {
     let manifest_paths = collect_steam_manifest_paths()?;
@@ -26,7 +26,7 @@ pub fn discover_steam_entries() -> Result<(usize, usize, usize), String> {
             Ok(_) => {
                 steam_added += 1;
             }
-            Err(err) if is_already_exists_error(&err) => {
+            Err(err) if is_already_exists_error(&err) || is_blacklisted_error(&err) => {
                 steam_already_exists += 1;
             }
             Err(err) => return Err(err),
