@@ -9,8 +9,14 @@ use eframe::egui::{self, Context, TextureHandle};
 
 use crate::core::GameEntry;
 
+#[derive(Clone)]
+pub(super) struct ArtworkTextures {
+    pub(super) foreground: TextureHandle,
+    pub(super) background_blur: TextureHandle,
+}
+
 pub(super) struct ArtworkStore {
-    textures: HashMap<String, TextureHandle>,
+    textures: HashMap<String, ArtworkTextures>,
     missing: HashSet<String>,
     requested: HashSet<String>,
     download_tx: Sender<ArtworkDownloadJob>,
@@ -88,7 +94,11 @@ impl ArtworkStore {
         self.missing.retain(|key| visible_keys.contains(key));
     }
 
-    pub(super) fn texture_for_game(&mut self, ctx: &Context, game: &GameEntry) -> Option<TextureHandle> {
+    pub(super) fn artwork_for_game(
+        &mut self,
+        ctx: &Context,
+        game: &GameEntry,
+    ) -> Option<ArtworkTextures> {
         let runner = ArtworkRunnerKind::from_game(game);
         let request = runner.build_request(game)?;
 
@@ -97,10 +107,9 @@ impl ArtworkStore {
         }
 
         if let Some(cached_path) = request.runner.find_cached_artwork_path(&request.target) {
-            if let Some(texture_handle) = load_texture_from_path(ctx, &request.key, &cached_path) {
-                self.textures
-                    .insert(request.key.clone(), texture_handle.clone());
-                return Some(texture_handle);
+            if let Some(textures) = load_artwork_textures_from_path(ctx, &request.key, &cached_path) {
+                self.textures.insert(request.key.clone(), textures.clone());
+                return Some(textures);
             }
 
             let _ = std::fs::remove_file(cached_path);
@@ -195,19 +204,42 @@ struct ArtworkDownloadJob {
     runner: ArtworkRunnerKind,
 }
 
-fn load_texture_from_path(ctx: &Context, key: &str, path: &Path) -> Option<TextureHandle> {
+fn load_artwork_textures_from_path(ctx: &Context, key: &str, path: &Path) -> Option<ArtworkTextures> {
     let image_bytes = std::fs::read(path).ok()?;
-    let decoded = image::load_from_memory(&image_bytes).ok()?.to_rgba8();
+    let foreground_rgba = image::load_from_memory(&image_bytes).ok()?.to_rgba8();
 
-    let width = usize::try_from(decoded.width()).ok()?;
-    let height = usize::try_from(decoded.height()).ok()?;
-    let color_image = egui::ColorImage::from_rgba_unmultiplied([width, height], decoded.as_raw());
+    let mut blurred_rgba = image::DynamicImage::ImageRgba8(foreground_rgba.clone())
+        .blur(10.0)
+        .to_rgba8();
+    for pixel in blurred_rgba.pixels_mut() {
+        pixel.0[0] = ((pixel.0[0] as u16 * 70) / 100) as u8;
+        pixel.0[1] = ((pixel.0[1] as u16 * 70) / 100) as u8;
+        pixel.0[2] = ((pixel.0[2] as u16 * 70) / 100) as u8;
+    }
 
-    Some(ctx.load_texture(
-        format!("game-artwork-{}", key),
-        color_image,
+    let width = usize::try_from(foreground_rgba.width()).ok()?;
+    let height = usize::try_from(foreground_rgba.height()).ok()?;
+
+    let foreground_color_image =
+        egui::ColorImage::from_rgba_unmultiplied([width, height], foreground_rgba.as_raw());
+    let background_color_image =
+        egui::ColorImage::from_rgba_unmultiplied([width, height], blurred_rgba.as_raw());
+
+    let foreground = ctx.load_texture(
+        format!("game-artwork-fg-{}", key),
+        foreground_color_image,
         egui::TextureOptions::LINEAR,
-    ))
+    );
+    let background_blur = ctx.load_texture(
+        format!("game-artwork-bg-{}", key),
+        background_color_image,
+        egui::TextureOptions::LINEAR,
+    );
+
+    Some(ArtworkTextures {
+        foreground,
+        background_blur,
+    })
 }
 
 fn extract_steam_appid(launch_target: &str) -> Option<String> {

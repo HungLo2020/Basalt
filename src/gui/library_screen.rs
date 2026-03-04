@@ -235,19 +235,47 @@ impl BasaltApp {
             egui::pos2(tile_rect.max.x, tile_rect.max.y - TEXT_STRIP_HEIGHT),
         );
 
-        if let Some(texture_handle) = self.artwork_store.texture_for_game(ui.ctx(), game) {
-            let [texture_width, texture_height] = texture_handle.size();
-            let draw_rect = aspect_fit_rect(
+        if let Some(artwork) = self.artwork_store.artwork_for_game(ui.ctx(), game) {
+            let [bg_width, bg_height] = artwork.background_blur.size();
+            let bg_uv = center_crop_uv(
+                bg_width as f32,
+                bg_height as f32,
+                icon_rect.width(),
+                icon_rect.height(),
+            );
+            ui.painter().image(
+                artwork.background_blur.id(),
                 icon_rect,
-                texture_width as f32,
-                texture_height as f32,
+                bg_uv,
+                Color32::WHITE,
+            );
+
+            ui.painter().rect_filled(
+                icon_rect,
+                0.0,
+                Color32::from_rgba_unmultiplied(0, 0, 0, 45),
+            );
+
+            let [fg_width, fg_height] = artwork.foreground.size();
+            let portrait_container = icon_rect.shrink(6.0);
+            let draw_rect = aspect_fit_rect(
+                portrait_container,
+                fg_width as f32,
+                fg_height as f32,
             );
 
             ui.painter().image(
-                texture_handle.id(),
+                artwork.foreground.id(),
                 draw_rect,
                 egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
                 Color32::WHITE,
+            );
+
+            ui.painter().rect_stroke(
+                draw_rect,
+                0.0,
+                Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 120)),
+                StrokeKind::Inside,
             );
         }
 
@@ -297,4 +325,30 @@ fn aspect_fit_rect(container: egui::Rect, image_width: f32, image_height: f32) -
     let draw_width = image_width * scale;
     let draw_height = image_height * scale;
     egui::Rect::from_center_size(container.center(), egui::vec2(draw_width, draw_height))
+}
+
+fn center_crop_uv(
+    image_width: f32,
+    image_height: f32,
+    target_width: f32,
+    target_height: f32,
+) -> egui::Rect {
+    if image_width <= 0.0 || image_height <= 0.0 || target_width <= 0.0 || target_height <= 0.0 {
+        return egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+    }
+
+    let image_aspect = image_width / image_height;
+    let target_aspect = target_width / target_height;
+
+    if image_aspect > target_aspect {
+        let normalized_width = target_aspect / image_aspect;
+        let x_min = (1.0 - normalized_width) * 0.5;
+        let x_max = x_min + normalized_width;
+        return egui::Rect::from_min_max(egui::pos2(x_min, 0.0), egui::pos2(x_max, 1.0));
+    }
+
+    let normalized_height = image_aspect / target_aspect;
+    let y_min = (1.0 - normalized_height) * 0.5;
+    let y_max = y_min + normalized_height;
+    egui::Rect::from_min_max(egui::pos2(0.0, y_min), egui::pos2(1.0, y_max))
 }
