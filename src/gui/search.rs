@@ -18,16 +18,15 @@ pub(super) fn render_search_field(
             .hint_text(hint_text);
         ui.add_sized([text_edit_width, 28.0], text_edit);
 
-        if show_clear_button {
-            if ui
+        if show_clear_button
+            && ui
                 .add_sized(
                     [clear_button_width, 28.0],
                     egui::Button::new(RichText::new("Clear").size((text_size - 1.0).max(12.0))),
                 )
                 .clicked()
-            {
-                query.clear();
-            }
+        {
+            query.clear();
         }
     });
 }

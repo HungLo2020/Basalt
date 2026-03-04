@@ -1,9 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::env;
+use std::fs::File;
+use std::io::copy;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
+use std::time::Duration;
+
+use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, TrySendError};
 
 use eframe::egui::{self, Context, TextureHandle};
 
@@ -18,6 +21,9 @@ const MATTMC_BLUR_BACKGROUND_RGB: [u8; 3] = [56, 68, 88];
 const PREPARED_ARTWORK_MAX_WIDTH: u32 = 360;
 const PREPARED_ARTWORK_MAX_HEIGHT: u32 = 540;
 const MAX_PENDING_DOWNLOADS: usize = 6;
+const MAX_DOWNLOAD_QUEUE: usize = 48;
+const MAX_RESULT_QUEUE: usize = 96;
+const ARTWORK_WORKER_COUNT: usize = 4;
 const MAX_TEXTURE_UPLOADS_PER_TICK: usize = 2;
 
 #[derive(Clone)]
@@ -36,50 +42,22 @@ pub(super) struct ArtworkStore {
 
 impl ArtworkStore {
     pub(super) fn new() -> Self {
-        let (download_tx, download_rx) = mpsc::channel::<ArtworkDownloadJob>();
-        let (result_tx, result_rx) = mpsc::channel::<ArtworkDownloadResult>();
+        let (download_tx, download_rx) = bounded::<ArtworkDownloadJob>(MAX_DOWNLOAD_QUEUE);
+        let (result_tx, result_rx) = bounded::<ArtworkDownloadResult>(MAX_RESULT_QUEUE);
 
-        thread::spawn(move || {
-            while let Ok(job) = download_rx.recv() {
-                match job.runner {
-                    ArtworkRunnerKind::Steam => {
-                        if let Some(payload) = prepare_cached_steam_artwork_payload(&job.target) {
-                            if result_tx
-                                .send(ArtworkDownloadResult::Ready {
-                                    key: job.key,
-                                    payload,
-                                })
-                                .is_err()
-                            {
-                                break;
-                            }
+        for _ in 0..ARTWORK_WORKER_COUNT {
+            let worker_download_rx = download_rx.clone();
+            let worker_result_tx = result_tx.clone();
 
-                            continue;
-                        }
-
-                        let key = job.key;
-                        let target = job.target;
-                        let result_tx_for_network = result_tx.clone();
-                        thread::spawn(move || {
-                            let result = match download_and_prepare_steam_artwork_payload(&target) {
-                                Some(payload) => ArtworkDownloadResult::Ready { key, payload },
-                                None => ArtworkDownloadResult::Missing { key },
-                            };
-
-                            let _ = result_tx_for_network.send(result);
-                        });
-                    }
-                    ArtworkRunnerKind::Mattmc | ArtworkRunnerKind::Noop => {
-                        if result_tx
-                            .send(ArtworkDownloadResult::Missing { key: job.key })
-                            .is_err()
-                        {
-                            break;
-                        }
+            thread::spawn(move || {
+                while let Ok(job) = worker_download_rx.recv() {
+                    let result = process_download_job(job);
+                    if worker_result_tx.send(result).is_err() {
+                        break;
                     }
                 }
-            }
-        });
+            });
+        }
 
         Self {
             textures: HashMap::new(),
@@ -95,8 +73,9 @@ impl ArtworkStore {
         let mut processed = 0usize;
 
         while processed < MAX_TEXTURE_UPLOADS_PER_TICK {
-            let Ok(result) = self.result_rx.try_recv() else {
-                break;
+            let result = match self.result_rx.try_recv() {
+                Ok(result) => result,
+                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
             };
 
             match result {
@@ -202,10 +181,14 @@ impl ArtworkStore {
             return;
         };
 
-        if self.download_tx.send(job).is_ok() {
-            self.requested.insert(request.key);
-        } else {
-            self.missing.insert(request.key);
+        match self.download_tx.try_send(job) {
+            Ok(_) => {
+                self.requested.insert(request.key);
+            }
+            Err(TrySendError::Full(_)) => {}
+            Err(TrySendError::Disconnected(_)) => {
+                self.missing.insert(request.key);
+            }
         }
     }
 }
@@ -296,6 +279,30 @@ struct PreparedArtwork {
     height: usize,
     foreground_rgba: Vec<u8>,
     background_rgba: Vec<u8>,
+}
+
+fn process_download_job(job: ArtworkDownloadJob) -> ArtworkDownloadResult {
+    match job.runner {
+        ArtworkRunnerKind::Steam => {
+            if let Some(payload) = prepare_cached_steam_artwork_payload(&job.target) {
+                return ArtworkDownloadResult::Ready {
+                    key: job.key,
+                    payload,
+                };
+            }
+
+            match download_and_prepare_steam_artwork_payload(&job.target) {
+                Some(payload) => ArtworkDownloadResult::Ready {
+                    key: job.key,
+                    payload,
+                },
+                None => ArtworkDownloadResult::Missing { key: job.key },
+            }
+        }
+        ArtworkRunnerKind::Mattmc | ArtworkRunnerKind::Noop => {
+            ArtworkDownloadResult::Missing { key: job.key }
+        }
+    }
 }
 
 fn prepare_cached_steam_artwork_payload(appid: &str) -> Option<PreparedArtwork> {
@@ -522,13 +529,9 @@ fn find_cached_steam_portrait_artwork_path(appid: &str) -> Option<PathBuf> {
         cache_dir.join(format!("{}_library_600x900_alt.png", appid)),
     ];
 
-    for candidate in cached_candidates {
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-
-    None
+    cached_candidates
+        .into_iter()
+        .find(|candidate| candidate.is_file())
 }
 
 fn download_and_cache_steam_portrait_artwork(appid: &str) -> Option<PathBuf> {
@@ -592,14 +595,9 @@ fn download_and_cache_steam_portrait_artwork(appid: &str) -> Option<PathBuf> {
             let _ = std::fs::remove_file(&target_path);
         }
 
-        let output = Command::new("curl")
-            .args(["-fsSL", "--retry", "2", "--output"])
-            .arg(&target_path)
-            .arg(&url)
-            .output()
-            .ok()?;
-
-        if output.status.success() && target_path.is_file() && is_valid_portrait_artwork(&target_path)
+        if download_url_to_file(&url, &target_path)
+            && target_path.is_file()
+            && is_valid_portrait_artwork(&target_path)
         {
             return Some(target_path);
         }
@@ -608,6 +606,42 @@ fn download_and_cache_steam_portrait_artwork(appid: &str) -> Option<PathBuf> {
     }
 
     None
+}
+
+fn download_url_to_file(url: &str, target_path: &Path) -> bool {
+    const MAX_RETRIES: usize = 2;
+    const HTTP_TIMEOUT_SECONDS: u64 = 12;
+
+    for _ in 0..=MAX_RETRIES {
+        let request = ureq::get(url).timeout(Duration::from_secs(HTTP_TIMEOUT_SECONDS));
+        let response = match request.call() {
+            Ok(response) => response,
+            Err(_) => continue,
+        };
+
+        let status = response.status();
+        if !(200..=299).contains(&status) {
+            continue;
+        }
+
+        let mut reader = response.into_reader();
+        let mut file = match File::create(target_path) {
+            Ok(file) => file,
+            Err(_) => {
+                let _ = std::fs::remove_file(target_path);
+                continue;
+            }
+        };
+
+        match copy(&mut reader, &mut file) {
+            Ok(_) => return true,
+            Err(_) => {
+                let _ = std::fs::remove_file(target_path);
+            }
+        }
+    }
+
+    false
 }
 
 fn steam_artwork_cache_dir() -> Option<PathBuf> {

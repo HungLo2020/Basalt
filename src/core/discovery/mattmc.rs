@@ -1,11 +1,13 @@
 use std::env;
 use std::path::Path;
 
-use crate::core::{add_game, is_already_exists_error, is_blacklisted_error, DiscoverResult};
+use crate::core::{
+    add_game, is_already_exists_error, is_blacklisted_error, CoreResult, DiscoverResult,
+};
 
 const MATTMC_ENTRY_NAME: &str = "MattMC";
 
-pub fn discover_mattmc_entry() -> Result<DiscoverResult, String> {
+pub fn discover_mattmc_entry() -> CoreResult<DiscoverResult> {
     let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
     let mattmc_script = Path::new(&home)
         .join("Documents")

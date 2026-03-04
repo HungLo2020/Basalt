@@ -3,9 +3,11 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::core::{add_game, is_already_exists_error, is_blacklisted_error};
+use crate::core::{
+    add_game, is_already_exists_error, is_blacklisted_error, CoreResult,
+};
 
-pub fn discover_steam_entries() -> Result<(usize, usize, usize), String> {
+pub fn discover_steam_entries() -> CoreResult<(usize, usize, usize)> {
     let manifest_paths = collect_steam_manifest_paths()?;
 
     let mut steam_found = 0usize;
@@ -36,7 +38,7 @@ pub fn discover_steam_entries() -> Result<(usize, usize, usize), String> {
     Ok((steam_found, steam_added, steam_already_exists))
 }
 
-fn collect_steam_manifest_paths() -> Result<Vec<PathBuf>, String> {
+fn collect_steam_manifest_paths() -> CoreResult<Vec<PathBuf>> {
     let library_paths = discover_steam_library_paths()?;
     let mut manifests = Vec::new();
 
@@ -71,7 +73,7 @@ fn collect_steam_manifest_paths() -> Result<Vec<PathBuf>, String> {
     Ok(manifests)
 }
 
-fn discover_steam_library_paths() -> Result<Vec<PathBuf>, String> {
+fn discover_steam_library_paths() -> CoreResult<Vec<PathBuf>> {
     let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
     let home_path = Path::new(&home);
 
@@ -109,7 +111,7 @@ fn discover_steam_library_paths() -> Result<Vec<PathBuf>, String> {
     Ok(discovered.into_iter().collect())
 }
 
-fn parse_steam_libraryfolders_vdf(path: &Path) -> Result<Vec<PathBuf>, String> {
+fn parse_steam_libraryfolders_vdf(path: &Path) -> CoreResult<Vec<PathBuf>> {
     let contents = fs::read_to_string(path)
         .map_err(|err| format!("Failed to read Steam libraryfolders.vdf: {}", err))?;
 
@@ -125,7 +127,7 @@ fn parse_steam_libraryfolders_vdf(path: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(libraries)
 }
 
-fn parse_steam_manifest(path: &Path) -> Result<Option<(String, String)>, String> {
+fn parse_steam_manifest(path: &Path) -> CoreResult<Option<(String, String)>> {
     let contents = fs::read_to_string(path)
         .map_err(|err| format!("Failed to read Steam app manifest: {}", err))?;
 

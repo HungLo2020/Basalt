@@ -7,5 +7,6 @@ pub fn run(args: &[String]) -> Result<(), String> {
         return Err(usage::usage_launch());
     }
 
-    core::launch_game(args[1].trim())
+    core::launch_game(args[1].trim())?;
+    Ok(())
 }
