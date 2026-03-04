@@ -21,6 +21,8 @@ impl eframe::App for BasaltApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let region_gray = Color32::from_gray(55);
         let white_line = Stroke::new(1.0, Color32::WHITE);
+        let window_width = ctx.screen_rect().width();
+        let right_panel_width = window_width / 4.0;
 
         TopBottomPanel::top("top_bar")
             .frame(
@@ -43,8 +45,9 @@ impl eframe::App for BasaltApp {
                     .inner_margin(Margin::same(12))
                     .stroke(white_line),
             )
-            .default_width(360.0)
-            .resizable(true)
+            .min_width(right_panel_width)
+            .max_width(right_panel_width)
+            .resizable(false)
             .show(ctx, |ui| {
                 ui.with_layout(Layout::top_down(egui::Align::Min), |ui| {
                     ui.label("Right Panel (reserved)");
