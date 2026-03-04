@@ -42,7 +42,7 @@ pub fn run() -> Result<(), String> {
 
 impl eframe::App for BasaltApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        let region_gray = eframe::egui::Color32::from_gray(55);
+        let region_gray = eframe::egui::Color32::from_rgb(49, 56, 69);
         let white_line = eframe::egui::Stroke::new(1.0, eframe::egui::Color32::WHITE);
         let right_panel_width = ctx.screen_rect().width() / 4.0;
 

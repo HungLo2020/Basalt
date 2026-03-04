@@ -78,9 +78,9 @@ impl BasaltApp {
                 let library_button = Button::new(RichText::new("Library").size(18.0))
                     .min_size(tab_button_size)
                     .fill(if self.active_tab == TopBarTab::Library {
-                        Color32::from_gray(95)
+                        Color32::from_rgb(86, 98, 116)
                     } else {
-                        Color32::from_gray(70)
+                        Color32::from_rgb(63, 73, 88)
                     });
 
                 if tabs_ui.add(library_button).clicked() {
@@ -90,9 +90,9 @@ impl BasaltApp {
                 let install_button = Button::new(RichText::new("Install").size(18.0))
                     .min_size(tab_button_size)
                     .fill(if self.active_tab == TopBarTab::Install {
-                        Color32::from_gray(95)
+                        Color32::from_rgb(86, 98, 116)
                     } else {
-                        Color32::from_gray(70)
+                        Color32::from_rgb(63, 73, 88)
                     });
 
                 if tabs_ui.add(install_button).clicked() {

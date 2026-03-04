@@ -1,6 +1,6 @@
 use eframe::egui::{
     self, vec2, Align2, CentralPanel, Color32, FontId, Frame, Layout, Margin, ScrollArea, Sense,
-    SidePanel, Stroke, StrokeKind,
+    RichText, SidePanel, Stroke, StrokeKind,
 };
 
 use crate::core::{self, GameEntry};
@@ -26,17 +26,30 @@ impl BasaltApp {
             .max_width(right_panel_width)
             .resizable(false)
             .show(ctx, |ui| {
+                let body_text_size = 16.0;
+                let secondary_text_size = 15.0;
+
                 ui.with_layout(Layout::top_down(egui::Align::Min), |ui| {
                     ui.heading("Details");
                     ui.separator();
 
                     if let Some(selected) = self.selected_game() {
-                        ui.label(format!("Name: {}", selected.name));
-                        ui.label(format!("Runner: {}", selected.runner_kind.as_str()));
-                        ui.label("Target:");
-                        ui.small(&selected.launch_target);
+                        ui.label(RichText::new(format!("Name: {}", selected.name)).size(body_text_size));
+                        ui.label(
+                            RichText::new(format!("Runner: {}", selected.runner_kind.as_str()))
+                                .size(body_text_size),
+                        );
+                        ui.label(RichText::new("Target:").size(body_text_size));
+                        ui.label(
+                            RichText::new(&selected.launch_target)
+                                .size(secondary_text_size)
+                                .monospace(),
+                        );
 
-                        if ui.button("Launch Selected").clicked() {
+                        if ui
+                            .button(RichText::new("Launch Selected").size(body_text_size))
+                            .clicked()
+                        {
                             match core::launch_game(&selected.name) {
                                 Ok(_) => {
                                     self.status_message = format!("Launched {}", selected.name);
@@ -47,28 +60,31 @@ impl BasaltApp {
                             }
                         }
                     } else {
-                        ui.small("Select a game tile to view details.");
+                        ui.label(
+                            RichText::new("Select a game tile to view details.")
+                                .size(secondary_text_size),
+                        );
                     }
 
                     ui.add_space(12.0);
                     ui.separator();
-                    ui.label("Add Game Inputs");
+                    ui.label(RichText::new("Add Game Inputs").size(body_text_size));
                     ui.horizontal(|ui| {
-                        ui.label("Name");
+                        ui.label(RichText::new("Name").size(body_text_size));
                         ui.text_edit_singleline(&mut self.add_name);
                     });
                     ui.horizontal(|ui| {
-                        ui.label("Script");
+                        ui.label(RichText::new("Script").size(body_text_size));
                         ui.text_edit_singleline(&mut self.add_script_path);
                     });
 
                     ui.add_space(12.0);
                     ui.separator();
-                    ui.label("Status");
+                    ui.label(RichText::new("Status").size(body_text_size));
                     if self.status_message.is_empty() {
-                        ui.small("Ready");
+                        ui.label(RichText::new("Ready").size(secondary_text_size));
                     } else {
-                        ui.small(&self.status_message);
+                        ui.label(RichText::new(&self.status_message).size(secondary_text_size));
                     }
                 });
             });

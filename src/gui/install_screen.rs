@@ -1,6 +1,6 @@
 use eframe::egui::{
     self, vec2, CentralPanel, Color32, Frame, Layout, Margin, Sense, SidePanel, Stroke,
-    StrokeKind,
+    RichText, StrokeKind,
 };
 
 use super::app::BasaltApp;
@@ -24,22 +24,28 @@ impl BasaltApp {
             .max_width(right_panel_width)
             .resizable(false)
             .show(ctx, |ui| {
+                let body_text_size = 16.0;
+                let secondary_text_size = 15.0;
+
                 ui.with_layout(Layout::top_down(egui::Align::Min), |ui| {
                     ui.heading("MattMC Install");
                     ui.separator();
-                    ui.label("Install or update MattMC into ~/Documents/MattMC.");
+                    ui.label(
+                        RichText::new("Install or update MattMC into ~/Documents/MattMC.")
+                            .size(body_text_size),
+                    );
 
-                    if ui.button("Install").clicked() {
+                    if ui.button(RichText::new("Install").size(body_text_size)).clicked() {
                         self.install_mattmc_from_gui();
                     }
 
                     ui.add_space(12.0);
                     ui.separator();
-                    ui.label("Status");
+                    ui.label(RichText::new("Status").size(body_text_size));
                     if self.install_status_message.is_empty() {
-                        ui.small("Ready");
+                        ui.label(RichText::new("Ready").size(secondary_text_size));
                     } else {
-                        ui.small(&self.install_status_message);
+                        ui.label(RichText::new(&self.install_status_message).size(secondary_text_size));
                     }
                 });
             });
