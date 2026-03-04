@@ -1,0 +1,26 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "Build",
+			"type": "node-terminal",
+			"request": "launch",
+			"command": "bash DevUtils/BuildDeb.sh; exit",
+			"cwd": "${workspaceFolder}"
+		},
+        {
+            "name": "Export to Github",
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "bash DevUtils/ExportBuildToGithub.sh; exit",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Install",
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "bash Install.sh; exit",
+            "cwd": "${workspaceFolder}"
+        }
+	]
+}
