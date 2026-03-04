@@ -9,6 +9,11 @@ use eframe::egui::{self, Context, TextureHandle};
 
 use crate::core::GameEntry;
 
+const MATTMC_SVG_BYTES: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/resources/assets/icons/apps/MattMC.svg"
+));
+
 #[derive(Clone)]
 pub(super) struct ArtworkTextures {
     pub(super) foreground: TextureHandle,
@@ -34,7 +39,7 @@ impl ArtworkStore {
                     ArtworkRunnerKind::Steam => {
                         download_and_cache_steam_portrait_artwork(&job.target).is_some()
                     }
-                    ArtworkRunnerKind::Noop => false,
+                    ArtworkRunnerKind::Mattmc | ArtworkRunnerKind::Noop => false,
                 };
 
                 if result_tx.send(ArtworkDownloadResult { key: job.key, cached }).is_err() {
@@ -102,8 +107,34 @@ impl ArtworkStore {
         let runner = ArtworkRunnerKind::from_game(game);
         let request = runner.build_request(game)?;
 
+        self.artwork_for_request(ctx, request)
+    }
+
+    pub(super) fn mattmc_artwork(&mut self, ctx: &Context) -> Option<ArtworkTextures> {
+        self.artwork_for_request(
+            ctx,
+            ArtworkRequest {
+                key: "mattmc:default".to_string(),
+                target: String::new(),
+                runner: ArtworkRunnerKind::Mattmc,
+            },
+        )
+    }
+
+    fn artwork_for_request(
+        &mut self,
+        ctx: &Context,
+        request: ArtworkRequest,
+    ) -> Option<ArtworkTextures> {
+
         if let Some(existing_texture) = self.textures.get(&request.key) {
             return Some(existing_texture.clone());
+        }
+
+        if let Some(builtin_textures) = request.runner.load_builtin_artwork(ctx, &request.key) {
+            self.textures
+                .insert(request.key.clone(), builtin_textures.clone());
+            return Some(builtin_textures);
         }
 
         if let Some(cached_path) = request.runner.find_cached_artwork_path(&request.target) {
@@ -124,9 +155,10 @@ impl ArtworkStore {
             return;
         }
 
-        let Some(job) = request.runner.to_download_job(request.key.clone(), request.target.clone())
+        let Some(job) = request
+            .runner
+            .to_download_job(request.key.clone(), request.target.clone())
         else {
-            self.missing.insert(request.key);
             return;
         };
 
@@ -140,13 +172,16 @@ impl ArtworkStore {
 
 #[derive(Clone, Copy)]
 enum ArtworkRunnerKind {
+    Mattmc,
     Steam,
     Noop,
 }
 
 impl ArtworkRunnerKind {
     fn from_game(game: &GameEntry) -> Self {
-        if game.runner_kind.as_str() == "steam" {
+        if game.name.eq_ignore_ascii_case("MattMC") {
+            Self::Mattmc
+        } else if game.runner_kind.as_str() == "steam" {
             Self::Steam
         } else {
             Self::Noop
@@ -155,6 +190,11 @@ impl ArtworkRunnerKind {
 
     fn build_request(self, game: &GameEntry) -> Option<ArtworkRequest> {
         match self {
+            Self::Mattmc => Some(ArtworkRequest {
+                key: "mattmc:default".to_string(),
+                target: String::new(),
+                runner: self,
+            }),
             Self::Steam => {
                 let appid = extract_steam_appid(&game.launch_target)?;
                 Some(ArtworkRequest {
@@ -170,7 +210,14 @@ impl ArtworkRunnerKind {
     fn find_cached_artwork_path(self, target: &str) -> Option<PathBuf> {
         match self {
             Self::Steam => find_cached_steam_portrait_artwork_path(target),
-            Self::Noop => None,
+            Self::Mattmc | Self::Noop => None,
+        }
+    }
+
+    fn load_builtin_artwork(self, ctx: &Context, key: &str) -> Option<ArtworkTextures> {
+        match self {
+            Self::Mattmc => load_artwork_textures_from_svg_bytes(ctx, key, MATTMC_SVG_BYTES),
+            Self::Steam | Self::Noop => None,
         }
     }
 
@@ -181,7 +228,7 @@ impl ArtworkRunnerKind {
                 target,
                 runner: self,
             }),
-            Self::Noop => None,
+            Self::Mattmc | Self::Noop => None,
         }
     }
 }
@@ -207,10 +254,43 @@ struct ArtworkDownloadJob {
 fn load_artwork_textures_from_path(ctx: &Context, key: &str, path: &Path) -> Option<ArtworkTextures> {
     let image_bytes = std::fs::read(path).ok()?;
     let foreground_rgba = image::load_from_memory(&image_bytes).ok()?.to_rgba8();
+    build_artwork_textures_from_rgba(ctx, key, foreground_rgba)
+}
 
+fn load_artwork_textures_from_svg_bytes(
+    ctx: &Context,
+    key: &str,
+    svg_bytes: &[u8],
+) -> Option<ArtworkTextures> {
+    let usvg_options = resvg::usvg::Options::default();
+    let tree = resvg::usvg::Tree::from_data(svg_bytes, &usvg_options).ok()?;
+    let pixmap_size = tree.size().to_int_size();
+
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(pixmap_size.width(), pixmap_size.height())?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::default(),
+        &mut pixmap.as_mut(),
+    );
+
+    let foreground_rgba = image::RgbaImage::from_raw(
+        pixmap_size.width(),
+        pixmap_size.height(),
+        pixmap.data().to_vec(),
+    )?;
+
+    build_artwork_textures_from_rgba(ctx, key, foreground_rgba)
+}
+
+fn build_artwork_textures_from_rgba(
+    ctx: &Context,
+    key: &str,
+    foreground_rgba: image::RgbaImage,
+) -> Option<ArtworkTextures> {
     let mut blurred_rgba = image::DynamicImage::ImageRgba8(foreground_rgba.clone())
         .blur(10.0)
         .to_rgba8();
+
     for pixel in blurred_rgba.pixels_mut() {
         pixel.0[0] = ((pixel.0[0] as u16 * 70) / 100) as u8;
         pixel.0[1] = ((pixel.0[1] as u16 * 70) / 100) as u8;
@@ -290,6 +370,7 @@ fn find_cached_steam_portrait_artwork_path(appid: &str) -> Option<PathBuf> {
 
 fn download_and_cache_steam_portrait_artwork(appid: &str) -> Option<PathBuf> {
     let cache_dir = steam_artwork_cache_dir()?;
+
     if let Some(existing_cached) = find_cached_steam_portrait_artwork_path(appid) {
         if is_valid_portrait_artwork(&existing_cached) {
             return Some(existing_cached);

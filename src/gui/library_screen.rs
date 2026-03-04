@@ -144,7 +144,8 @@ impl BasaltApp {
 
     fn render_game_grid(&mut self, ui: &mut egui::Ui, border_stroke: Stroke) {
         const TILE_WIDTH: f32 = 150.0;
-        const TILE_HEIGHT: f32 = 150.0;
+        const TEXT_STRIP_HEIGHT: f32 = 40.0;
+        const TILE_HEIGHT: f32 = TILE_WIDTH + TEXT_STRIP_HEIGHT;
         const TILE_SPACING: f32 = 24.0;
         const WALL_PADDING: f32 = 24.0;
         const SCROLLBAR_GUTTER: f32 = 18.0;
@@ -219,7 +220,7 @@ impl BasaltApp {
         game: &GameEntry,
         selected: bool,
     ) -> bool {
-        const TEXT_STRIP_HEIGHT: f32 = 34.0;
+        let text_strip_height = (tile_height - tile_width).max(24.0);
 
         let (tile_rect, response) = ui.allocate_exact_size(vec2(tile_width, tile_height), Sense::click());
 
@@ -230,10 +231,7 @@ impl BasaltApp {
         };
         ui.painter().rect_stroke(tile_rect, 0.0, tile_stroke, StrokeKind::Inside);
 
-        let icon_rect = egui::Rect::from_min_max(
-            tile_rect.min,
-            egui::pos2(tile_rect.max.x, tile_rect.max.y - TEXT_STRIP_HEIGHT),
-        );
+        let icon_rect = egui::Rect::from_min_size(tile_rect.min, egui::vec2(tile_width, tile_width));
 
         if let Some(artwork) = self.artwork_store.artwork_for_game(ui.ctx(), game) {
             let [bg_width, bg_height] = artwork.background_blur.size();
@@ -283,7 +281,7 @@ impl BasaltApp {
             .rect_stroke(icon_rect, 0.0, border_stroke, StrokeKind::Inside);
 
         let text_rect = egui::Rect::from_min_max(
-            egui::pos2(tile_rect.min.x, tile_rect.max.y - TEXT_STRIP_HEIGHT),
+            egui::pos2(tile_rect.min.x, tile_rect.max.y - text_strip_height),
             tile_rect.max,
         );
 
