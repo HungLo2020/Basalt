@@ -1,3 +1,4 @@
+use crate::cli;
 use crate::core::{self, DiscoverResult, GameEntry};
 
 use super::top_bar::{TopBarActions, TopBarTab};
@@ -9,6 +10,7 @@ pub(super) struct BasaltApp {
     pub(super) add_name: String,
     pub(super) add_script_path: String,
     pub(super) status_message: String,
+    pub(super) install_status_message: String,
 }
 
 impl Default for BasaltApp {
@@ -20,6 +22,7 @@ impl Default for BasaltApp {
             add_name: String::new(),
             add_script_path: String::new(),
             status_message: String::new(),
+            install_status_message: String::new(),
         };
         app.refresh_games();
         app
@@ -51,7 +54,7 @@ impl eframe::App for BasaltApp {
                 self.render_library_screen(ctx, region_gray, white_line, right_panel_width);
             }
             TopBarTab::Install => {
-                self.render_install_screen(ctx, region_gray, white_line);
+                self.render_install_screen(ctx, region_gray, white_line, right_panel_width);
             }
         }
     }
@@ -144,5 +147,17 @@ impl BasaltApp {
 
     pub(super) fn selected_game(&self) -> Option<&GameEntry> {
         self.selected_index.and_then(|index| self.games.get(index))
+    }
+
+    pub(super) fn install_mattmc_from_gui(&mut self) {
+        match cli::run_install_mattmc_command() {
+            Ok(_) => {
+                self.install_status_message = "MattMC install completed".to_string();
+                self.refresh_games();
+            }
+            Err(err) => {
+                self.install_status_message = format!("Install failed: {}", err);
+            }
+        }
     }
 }
