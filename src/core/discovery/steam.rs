@@ -81,6 +81,10 @@ fn discover_steam_library_paths() -> CoreResult<Vec<PathBuf>> {
         home_path.join(".local").join("share").join("Steam"),
         home_path.join(".steam").join("steam"),
         home_path
+            .join("Library")
+            .join("Application Support")
+            .join("Steam"),
+        home_path
             .join(".var")
             .join("app")
             .join("com.valvesoftware.Steam")

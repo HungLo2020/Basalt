@@ -56,6 +56,11 @@ pub fn launch(appid: &str) -> Result<(), String> {
             .arg(appid)
             .status()
             .map_err(|err| format!("Failed to launch Steam app via flatpak: {}", err))?
+    } else if cfg!(target_os = "macos") && command_available("open") {
+        Command::new("open")
+            .arg(format!("steam://rungameid/{}", appid))
+            .status()
+            .map_err(|err| format!("Failed to launch Steam app via open command: {}", err))?
     } else {
         return Err("Steam is not installed or not on PATH.".to_string());
     };
