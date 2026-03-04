@@ -1,5 +1,6 @@
 use crate::cli;
 use crate::core::{self, DiscoverResult, GameEntry};
+use std::collections::{HashMap, HashSet};
 
 use super::top_bar::{TopBarActions, TopBarTab};
 
@@ -11,6 +12,8 @@ pub(super) struct BasaltApp {
     pub(super) add_script_path: String,
     pub(super) status_message: String,
     pub(super) install_status_message: String,
+    pub(super) steam_tile_textures: HashMap<String, eframe::egui::TextureHandle>,
+    pub(super) steam_artwork_missing: HashSet<String>,
 }
 
 impl Default for BasaltApp {
@@ -23,6 +26,8 @@ impl Default for BasaltApp {
             add_script_path: String::new(),
             status_message: String::new(),
             install_status_message: String::new(),
+            steam_tile_textures: HashMap::new(),
+            steam_artwork_missing: HashSet::new(),
         };
         app.refresh_games();
         app

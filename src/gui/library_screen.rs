@@ -2,6 +2,8 @@ use eframe::egui::{
     self, vec2, Align2, CentralPanel, Color32, FontId, Frame, Layout, Margin, ScrollArea, Sense,
     RichText, SidePanel, Stroke, StrokeKind,
 };
+use std::env;
+use std::path::PathBuf;
 
 use crate::core::{self, GameEntry};
 
@@ -159,13 +161,14 @@ impl BasaltApp {
                             break;
                         }
 
+                        let game = self.games[index].clone();
                         let is_selected = self.selected_index == Some(index);
                         if self.render_tile(
                             ui,
                             border_stroke,
                             TILE_WIDTH,
                             TILE_HEIGHT,
-                            &self.games[index],
+                            &game,
                             is_selected,
                         ) {
                             self.selected_index = Some(index);
@@ -191,7 +194,7 @@ impl BasaltApp {
     }
 
     fn render_tile(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         border_stroke: Stroke,
         tile_width: f32,
@@ -214,6 +217,16 @@ impl BasaltApp {
             tile_rect.min,
             egui::pos2(tile_rect.max.x, tile_rect.max.y - TEXT_STRIP_HEIGHT),
         );
+
+        if let Some(texture_handle) = self.get_or_load_steam_tile_texture(ui.ctx(), game) {
+            ui.painter().image(
+                texture_handle.id(),
+                icon_rect,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                Color32::WHITE,
+            );
+        }
+
         ui.painter()
             .rect_stroke(icon_rect, 0.0, border_stroke, StrokeKind::Inside);
 
@@ -240,4 +253,152 @@ impl BasaltApp {
 
         response.clicked()
     }
+
+    fn get_or_load_steam_tile_texture(
+        &mut self,
+        ctx: &egui::Context,
+        game: &GameEntry,
+    ) -> Option<egui::TextureHandle> {
+        if game.runner_kind.as_str() != "steam" {
+            return None;
+        }
+
+        let appid = extract_steam_appid(&game.launch_target)?;
+
+        if let Some(existing_texture) = self.steam_tile_textures.get(&appid) {
+            return Some(existing_texture.clone());
+        }
+
+        if self.steam_artwork_missing.contains(&appid) {
+            return None;
+        }
+
+        let Some(artwork_path) = find_local_steam_artwork_path(&appid) else {
+            self.steam_artwork_missing.insert(appid);
+            return None;
+        };
+
+        let image_bytes = match std::fs::read(&artwork_path) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                self.steam_artwork_missing.insert(appid);
+                return None;
+            }
+        };
+
+        let decoded = match image::load_from_memory(&image_bytes) {
+            Ok(decoded_image) => decoded_image.to_rgba8(),
+            Err(_) => {
+                self.steam_artwork_missing.insert(appid);
+                return None;
+            }
+        };
+
+        let width = usize::try_from(decoded.width()).ok()?;
+        let height = usize::try_from(decoded.height()).ok()?;
+        let color_image = egui::ColorImage::from_rgba_unmultiplied([width, height], decoded.as_raw());
+
+        let texture_handle = ctx.load_texture(
+            format!("steam-artwork-{}", appid),
+            color_image,
+            egui::TextureOptions::LINEAR,
+        );
+
+        self.steam_tile_textures.insert(appid.clone(), texture_handle);
+        self.steam_tile_textures.get(&appid).cloned()
+    }
+}
+
+fn extract_steam_appid(launch_target: &str) -> Option<String> {
+    let trimmed = launch_target.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if trimmed.chars().all(|char_value| char_value.is_ascii_digit()) {
+        return Some(trimmed.to_string());
+    }
+
+    for prefix in [
+        "steam://rungameid/",
+        "steam://run/",
+        "steam:appid:",
+        "steam-appid:",
+    ] {
+        if let Some(value) = trimmed.strip_prefix(prefix) {
+            if value.chars().all(|char_value| char_value.is_ascii_digit()) {
+                return Some(value.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+fn find_local_steam_artwork_path(appid: &str) -> Option<PathBuf> {
+    let home = env::var("HOME").ok()?;
+
+    let library_cache_roots = [
+        PathBuf::from(&home)
+            .join(".steam")
+            .join("debian-installation")
+            .join("appcache")
+            .join("librarycache"),
+        PathBuf::from(&home)
+            .join(".local")
+            .join("share")
+            .join("Steam")
+            .join("appcache")
+            .join("librarycache"),
+        PathBuf::from(&home)
+            .join(".steam")
+            .join("steam")
+            .join("appcache")
+            .join("librarycache"),
+        PathBuf::from(&home)
+            .join(".var")
+            .join("app")
+            .join("com.valvesoftware.Steam")
+            .join(".local")
+            .join("share")
+            .join("Steam")
+            .join("appcache")
+            .join("librarycache"),
+    ];
+
+    let app_folder_candidate_names = [
+        "library_600x900.jpg",
+        "library_600x900.png",
+        "library_header.jpg",
+        "header.jpg",
+        "library_hero.jpg",
+        "logo.png",
+    ];
+
+    let flat_candidate_names = [
+        format!("{}_library_600x900.jpg", appid),
+        format!("{}_library_600x900.png", appid),
+        format!("{}_library_600x900_2x.jpg", appid),
+        format!("{}_library_600x900_2x.png", appid),
+        format!("{}_library.jpg", appid),
+        format!("{}_library.png", appid),
+    ];
+
+    for cache_root in library_cache_roots {
+        for file_name in &app_folder_candidate_names {
+            let candidate_path = cache_root.join(appid).join(file_name);
+            if candidate_path.is_file() {
+                return Some(candidate_path);
+            }
+        }
+
+        for file_name in &flat_candidate_names {
+            let candidate_path = cache_root.join(file_name);
+            if candidate_path.is_file() {
+                return Some(candidate_path);
+            }
+        }
+    }
+
+    None
 }
