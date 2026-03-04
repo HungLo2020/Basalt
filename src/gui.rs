@@ -1,6 +1,6 @@
 use eframe::egui::{
-    self, CentralPanel, Color32, Direction, Frame, Layout, Margin, SidePanel, Stroke,
-    TopBottomPanel,
+    self, vec2, CentralPanel, Color32, Frame, Layout, Margin, ScrollArea, Sense,
+    SidePanel, Stroke, StrokeKind, TopBottomPanel,
 };
 
 pub fn run() -> Result<(), String> {
@@ -62,9 +62,87 @@ impl eframe::App for BasaltApp {
                     .stroke(white_line),
             )
             .show(ctx, |ui| {
-                ui.with_layout(Layout::centered_and_justified(Direction::TopDown), |ui| {
-                    ui.heading("Main Region");
-                });
+                self.render_placeholder_grid(ui, white_line);
             });
+    }
+}
+
+impl BasaltApp {
+    fn render_placeholder_grid(&mut self, ui: &mut egui::Ui, border_stroke: Stroke) {
+        const TILE_WIDTH: f32 = 150.0;
+        const TILE_HEIGHT: f32 = 150.0;
+        const TILE_SPACING: f32 = 24.0;
+        const WALL_PADDING: f32 = 24.0;
+        const PLACEHOLDER_COUNT: usize = 24;
+
+        let usable_width = (ui.available_width() - (WALL_PADDING * 2.0)).max(TILE_WIDTH);
+        let columns = ((usable_width + TILE_SPACING) / (TILE_WIDTH + TILE_SPACING)).floor() as usize;
+        let columns = columns.max(1);
+
+        ScrollArea::vertical().show(ui, |ui| {
+            ui.add_space(WALL_PADDING);
+
+            let mut index = 0usize;
+            while index < PLACEHOLDER_COUNT {
+                ui.horizontal(|ui| {
+                    ui.add_space(WALL_PADDING);
+
+                    for col in 0..columns {
+                        if index >= PLACEHOLDER_COUNT {
+                            break;
+                        }
+
+                        self.render_tile(ui, border_stroke, TILE_WIDTH, TILE_HEIGHT, index + 1);
+
+                        if col + 1 < columns && index + 1 < PLACEHOLDER_COUNT {
+                            ui.add_space(TILE_SPACING);
+                        }
+
+                        index += 1;
+                    }
+                });
+
+                if index < PLACEHOLDER_COUNT {
+                    ui.add_space(TILE_SPACING);
+                }
+            }
+
+            ui.add_space(WALL_PADDING);
+        });
+    }
+
+    fn render_tile(
+        &self,
+        ui: &mut egui::Ui,
+        border_stroke: Stroke,
+        tile_width: f32,
+        tile_height: f32,
+        number: usize,
+    ) {
+        const TEXT_STRIP_HEIGHT: f32 = 34.0;
+
+        let (tile_rect, _) = ui.allocate_exact_size(vec2(tile_width, tile_height), Sense::hover());
+        ui.painter()
+            .rect_stroke(tile_rect, 0.0, border_stroke, StrokeKind::Inside);
+
+        let icon_rect = egui::Rect::from_min_max(
+            tile_rect.min,
+            egui::pos2(tile_rect.max.x, tile_rect.max.y - TEXT_STRIP_HEIGHT),
+        );
+        ui.painter()
+            .rect_stroke(icon_rect, 0.0, border_stroke, StrokeKind::Inside);
+
+        let text_rect = egui::Rect::from_min_max(
+            egui::pos2(tile_rect.min.x, tile_rect.max.y - TEXT_STRIP_HEIGHT),
+            tile_rect.max,
+        );
+
+        let mut tile_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(text_rect)
+                .layout(Layout::centered_and_justified(egui::Direction::TopDown)),
+        );
+
+        tile_ui.small(format!("Game {}", number));
     }
 }
