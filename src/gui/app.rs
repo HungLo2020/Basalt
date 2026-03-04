@@ -1,3 +1,6 @@
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::thread;
+
 use crate::cli;
 use crate::core::{self, DiscoverResult, GameEntry};
 
@@ -16,10 +19,16 @@ pub(super) struct BasaltApp {
     pub(super) status_message: String,
     pub(super) install_status_message: String,
     pub(super) artwork_store: ArtworkStore,
+    startup_games_rx: Option<Receiver<Result<Vec<GameEntry>, String>>>,
 }
 
 impl Default for BasaltApp {
     fn default() -> Self {
+        let (startup_games_tx, startup_games_rx) = mpsc::channel::<Result<Vec<GameEntry>, String>>();
+        thread::spawn(move || {
+            let _ = startup_games_tx.send(core::list_games());
+        });
+
         let mut app = Self {
             active_tab: TopBarTab::Library,
             games: Vec::new(),
@@ -28,11 +37,12 @@ impl Default for BasaltApp {
             add_script_path: String::new(),
             library_search_query: String::new(),
             install_search_query: String::new(),
-            status_message: String::new(),
+            status_message: "Loading games...".to_string(),
             install_status_message: String::new(),
             artwork_store: ArtworkStore::new(),
+            startup_games_rx: Some(startup_games_rx),
         };
-        app.refresh_games();
+        app.artwork_store.prepare_for_games(&app.games);
         app
     }
 }
@@ -50,6 +60,7 @@ pub fn run() -> Result<(), String> {
 
 impl eframe::App for BasaltApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_startup_games_load();
         self.artwork_store.poll_download_results(ctx);
 
         let region_gray = eframe::egui::Color32::from_rgb(49, 56, 69);
@@ -71,6 +82,48 @@ impl eframe::App for BasaltApp {
 }
 
 impl BasaltApp {
+    fn poll_startup_games_load(&mut self) {
+        let poll_result = self
+            .startup_games_rx
+            .as_ref()
+            .map(|receiver| receiver.try_recv());
+
+        let Some(received) = poll_result else {
+            return;
+        };
+
+        match received {
+            Ok(Ok(games)) => {
+                self.startup_games_rx = None;
+                self.apply_loaded_games(games);
+                self.status_message.clear();
+            }
+            Ok(Err(err)) => {
+                self.startup_games_rx = None;
+                self.games.clear();
+                self.selected_index = None;
+                self.status_message = format!("Failed to load games: {}", err);
+            }
+            Err(TryRecvError::Disconnected) => {
+                self.startup_games_rx = None;
+                self.status_message = "Failed to load games: background task disconnected"
+                    .to_string();
+            }
+            Err(TryRecvError::Empty) => {}
+        }
+    }
+
+    fn apply_loaded_games(&mut self, games: Vec<GameEntry>) {
+        self.games = games;
+        if let Some(index) = self.selected_index {
+            if index >= self.games.len() {
+                self.selected_index = None;
+            }
+        }
+
+        self.artwork_store.prepare_for_games(&self.games);
+    }
+
     fn apply_top_bar_actions(&mut self, actions: TopBarActions) {
         if let Some(tab) = actions.switch_to_tab {
             self.active_tab = tab;
@@ -91,14 +144,7 @@ impl BasaltApp {
     pub(super) fn refresh_games(&mut self) {
         match core::list_games() {
             Ok(games) => {
-                self.games = games;
-                if let Some(index) = self.selected_index {
-                    if index >= self.games.len() {
-                        self.selected_index = None;
-                    }
-                }
-
-                self.artwork_store.prepare_for_games(&self.games);
+                self.apply_loaded_games(games);
             }
             Err(err) => {
                 self.games.clear();

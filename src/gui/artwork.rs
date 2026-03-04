@@ -15,6 +15,8 @@ const MATTMC_SVG_BYTES: &[u8] = include_bytes!(concat!(
 ));
 const MATTMC_SVG_TARGET_MAX_DIMENSION: u32 = 1024;
 const MATTMC_BLUR_BACKGROUND_RGB: [u8; 3] = [56, 68, 88];
+const MAX_PENDING_DOWNLOADS: usize = 6;
+const MAX_TEXTURE_UPLOADS_PER_TICK: usize = 2;
 
 #[derive(Clone)]
 pub(super) struct ArtworkTextures {
@@ -37,14 +39,20 @@ impl ArtworkStore {
 
         thread::spawn(move || {
             while let Ok(job) = download_rx.recv() {
-                let cached = match job.runner {
-                    ArtworkRunnerKind::Steam => {
-                        download_and_cache_steam_portrait_artwork(&job.target).is_some()
-                    }
-                    ArtworkRunnerKind::Mattmc | ArtworkRunnerKind::Noop => false,
+                let prepared = match job.runner {
+                    ArtworkRunnerKind::Steam => prepare_steam_artwork_payload(&job.target),
+                    ArtworkRunnerKind::Mattmc | ArtworkRunnerKind::Noop => None,
                 };
 
-                if result_tx.send(ArtworkDownloadResult { key: job.key, cached }).is_err() {
+                let result = match prepared {
+                    Some(payload) => ArtworkDownloadResult::Ready {
+                        key: job.key,
+                        payload,
+                    },
+                    None => ArtworkDownloadResult::Missing { key: job.key },
+                };
+
+                if result_tx.send(result).is_err() {
                     break;
                 }
             }
@@ -61,15 +69,32 @@ impl ArtworkStore {
 
     pub(super) fn poll_download_results(&mut self, ctx: &Context) {
         let mut has_updates = false;
+        let mut processed = 0usize;
 
-        while let Ok(result) = self.result_rx.try_recv() {
-            self.requested.remove(&result.key);
-            if result.cached {
-                self.missing.remove(&result.key);
-                has_updates = true;
-            } else {
-                self.missing.insert(result.key);
+        while processed < MAX_TEXTURE_UPLOADS_PER_TICK {
+            let Ok(result) = self.result_rx.try_recv() else {
+                break;
+            };
+
+            match result {
+                ArtworkDownloadResult::Ready { key, payload } => {
+                    self.requested.remove(&key);
+
+                    if let Some(textures) = build_artwork_textures_from_payload(ctx, &key, payload) {
+                        self.textures.insert(key.clone(), textures);
+                        self.missing.remove(&key);
+                        has_updates = true;
+                    } else {
+                        self.missing.insert(key);
+                    }
+                }
+                ArtworkDownloadResult::Missing { key } => {
+                    self.requested.remove(&key);
+                    self.missing.insert(key);
+                }
             }
+
+            processed += 1;
         }
 
         if has_updates {
@@ -87,13 +112,6 @@ impl ArtworkStore {
             };
 
             visible_keys.insert(request.key.clone());
-
-            if request.runner.find_cached_artwork_path(&request.target).is_some() {
-                self.missing.remove(&request.key);
-                continue;
-            }
-
-            self.request_download(request);
         }
 
         self.textures.retain(|key, _| visible_keys.contains(key));
@@ -139,21 +157,16 @@ impl ArtworkStore {
             return Some(builtin_textures);
         }
 
-        if let Some(cached_path) = request.runner.find_cached_artwork_path(&request.target) {
-            if let Some(textures) = load_artwork_textures_from_path(ctx, &request.key, &cached_path) {
-                self.textures.insert(request.key.clone(), textures.clone());
-                return Some(textures);
-            }
-
-            let _ = std::fs::remove_file(cached_path);
-        }
-
         self.request_download(request);
         None
     }
 
     fn request_download(&mut self, request: ArtworkRequest) {
         if self.missing.contains(&request.key) || self.requested.contains(&request.key) {
+            return;
+        }
+
+        if self.requested.len() >= MAX_PENDING_DOWNLOADS {
             return;
         }
 
@@ -209,13 +222,6 @@ impl ArtworkRunnerKind {
         }
     }
 
-    fn find_cached_artwork_path(self, target: &str) -> Option<PathBuf> {
-        match self {
-            Self::Steam => find_cached_steam_portrait_artwork_path(target),
-            Self::Mattmc | Self::Noop => None,
-        }
-    }
-
     fn load_builtin_artwork(self, ctx: &Context, key: &str) -> Option<ArtworkTextures> {
         match self {
             Self::Mattmc => load_artwork_textures_from_svg_bytes(ctx, key, MATTMC_SVG_BYTES),
@@ -242,9 +248,9 @@ struct ArtworkRequest {
     runner: ArtworkRunnerKind,
 }
 
-struct ArtworkDownloadResult {
-    key: String,
-    cached: bool,
+enum ArtworkDownloadResult {
+    Ready { key: String, payload: PreparedArtwork },
+    Missing { key: String },
 }
 
 struct ArtworkDownloadJob {
@@ -253,10 +259,87 @@ struct ArtworkDownloadJob {
     runner: ArtworkRunnerKind,
 }
 
-fn load_artwork_textures_from_path(ctx: &Context, key: &str, path: &Path) -> Option<ArtworkTextures> {
+struct PreparedArtwork {
+    width: usize,
+    height: usize,
+    foreground_rgba: Vec<u8>,
+    background_rgba: Vec<u8>,
+}
+
+fn prepare_steam_artwork_payload(appid: &str) -> Option<PreparedArtwork> {
+    let cached_path = download_and_cache_steam_portrait_artwork(appid)?;
+    prepare_artwork_payload_from_path(&cached_path, None)
+}
+
+fn prepare_artwork_payload_from_path(
+    path: &Path,
+    blur_background_rgb: Option<[u8; 3]>,
+) -> Option<PreparedArtwork> {
     let image_bytes = std::fs::read(path).ok()?;
     let foreground_rgba = image::load_from_memory(&image_bytes).ok()?.to_rgba8();
-    build_artwork_textures_from_rgba(ctx, key, foreground_rgba, None)
+    prepare_artwork_payload_from_rgba(foreground_rgba, blur_background_rgb)
+}
+
+fn prepare_artwork_payload_from_rgba(
+    foreground_rgba: image::RgbaImage,
+    blur_background_rgb: Option<[u8; 3]>,
+) -> Option<PreparedArtwork> {
+    let blur_source = if let Some(background_rgb) = blur_background_rgb {
+        composite_on_solid_background(&foreground_rgba, background_rgb)
+    } else {
+        foreground_rgba.clone()
+    };
+
+    let mut blurred_rgba = image::DynamicImage::ImageRgba8(blur_source)
+        .blur(10.0)
+        .to_rgba8();
+
+    for pixel in blurred_rgba.pixels_mut() {
+        pixel.0[0] = ((pixel.0[0] as u16 * 70) / 100) as u8;
+        pixel.0[1] = ((pixel.0[1] as u16 * 70) / 100) as u8;
+        pixel.0[2] = ((pixel.0[2] as u16 * 70) / 100) as u8;
+    }
+
+    let width = usize::try_from(foreground_rgba.width()).ok()?;
+    let height = usize::try_from(foreground_rgba.height()).ok()?;
+
+    Some(PreparedArtwork {
+        width,
+        height,
+        foreground_rgba: foreground_rgba.into_raw(),
+        background_rgba: blurred_rgba.into_raw(),
+    })
+}
+
+fn build_artwork_textures_from_payload(
+    ctx: &Context,
+    key: &str,
+    payload: PreparedArtwork,
+) -> Option<ArtworkTextures> {
+    let foreground_color_image = egui::ColorImage::from_rgba_unmultiplied(
+        [payload.width, payload.height],
+        &payload.foreground_rgba,
+    );
+    let background_color_image = egui::ColorImage::from_rgba_unmultiplied(
+        [payload.width, payload.height],
+        &payload.background_rgba,
+    );
+
+    let foreground = ctx.load_texture(
+        format!("game-artwork-fg-{}", key),
+        foreground_color_image,
+        egui::TextureOptions::LINEAR,
+    );
+    let background_blur = ctx.load_texture(
+        format!("game-artwork-bg-{}", key),
+        background_color_image,
+        egui::TextureOptions::LINEAR,
+    );
+
+    Some(ArtworkTextures {
+        foreground,
+        background_blur,
+    })
 }
 
 fn load_artwork_textures_from_svg_bytes(
@@ -303,45 +386,8 @@ fn build_artwork_textures_from_rgba(
     foreground_rgba: image::RgbaImage,
     blur_background_rgb: Option<[u8; 3]>,
 ) -> Option<ArtworkTextures> {
-    let blur_source = if let Some(background_rgb) = blur_background_rgb {
-        composite_on_solid_background(&foreground_rgba, background_rgb)
-    } else {
-        foreground_rgba.clone()
-    };
-
-    let mut blurred_rgba = image::DynamicImage::ImageRgba8(blur_source)
-        .blur(10.0)
-        .to_rgba8();
-
-    for pixel in blurred_rgba.pixels_mut() {
-        pixel.0[0] = ((pixel.0[0] as u16 * 70) / 100) as u8;
-        pixel.0[1] = ((pixel.0[1] as u16 * 70) / 100) as u8;
-        pixel.0[2] = ((pixel.0[2] as u16 * 70) / 100) as u8;
-    }
-
-    let width = usize::try_from(foreground_rgba.width()).ok()?;
-    let height = usize::try_from(foreground_rgba.height()).ok()?;
-
-    let foreground_color_image =
-        egui::ColorImage::from_rgba_unmultiplied([width, height], foreground_rgba.as_raw());
-    let background_color_image =
-        egui::ColorImage::from_rgba_unmultiplied([width, height], blurred_rgba.as_raw());
-
-    let foreground = ctx.load_texture(
-        format!("game-artwork-fg-{}", key),
-        foreground_color_image,
-        egui::TextureOptions::LINEAR,
-    );
-    let background_blur = ctx.load_texture(
-        format!("game-artwork-bg-{}", key),
-        background_color_image,
-        egui::TextureOptions::LINEAR,
-    );
-
-    Some(ArtworkTextures {
-        foreground,
-        background_blur,
-    })
+    let payload = prepare_artwork_payload_from_rgba(foreground_rgba, blur_background_rgb)?;
+    build_artwork_textures_from_payload(ctx, key, payload)
 }
 
 fn composite_on_solid_background(
