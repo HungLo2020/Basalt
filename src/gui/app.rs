@@ -1,6 +1,8 @@
 use crate::cli;
 use crate::core::{self, DiscoverResult, GameEntry};
 use std::collections::{HashMap, HashSet};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread;
 
 use super::top_bar::{TopBarActions, TopBarTab};
 
@@ -14,10 +16,25 @@ pub(super) struct BasaltApp {
     pub(super) install_status_message: String,
     pub(super) steam_tile_textures: HashMap<String, eframe::egui::TextureHandle>,
     pub(super) steam_artwork_missing: HashSet<String>,
+    pub(super) steam_artwork_download_tx: Sender<String>,
+    pub(super) steam_artwork_result_rx: Receiver<String>,
+    pub(super) steam_artwork_requested: HashSet<String>,
 }
 
 impl Default for BasaltApp {
     fn default() -> Self {
+        let (download_tx, download_rx) = mpsc::channel::<String>();
+        let (result_tx, result_rx) = mpsc::channel::<String>();
+
+        thread::spawn(move || {
+            while let Ok(appid) = download_rx.recv() {
+                let _ = super::library_screen::download_and_cache_steam_portrait_artwork(&appid);
+                if result_tx.send(appid).is_err() {
+                    break;
+                }
+            }
+        });
+
         let mut app = Self {
             active_tab: TopBarTab::Library,
             games: Vec::new(),
@@ -28,6 +45,9 @@ impl Default for BasaltApp {
             install_status_message: String::new(),
             steam_tile_textures: HashMap::new(),
             steam_artwork_missing: HashSet::new(),
+            steam_artwork_download_tx: download_tx,
+            steam_artwork_result_rx: result_rx,
+            steam_artwork_requested: HashSet::new(),
         };
         app.refresh_games();
         app
@@ -47,6 +67,8 @@ pub fn run() -> Result<(), String> {
 
 impl eframe::App for BasaltApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_steam_artwork_results(ctx);
+
         let region_gray = eframe::egui::Color32::from_rgb(49, 56, 69);
         let white_line = eframe::egui::Stroke::new(1.0, eframe::egui::Color32::WHITE);
         let right_panel_width = ctx.screen_rect().width() / 4.0;
@@ -92,6 +114,8 @@ impl BasaltApp {
                         self.selected_index = None;
                     }
                 }
+
+                self.prepare_steam_artwork_for_visible_games();
             }
             Err(err) => {
                 self.games.clear();
@@ -164,5 +188,60 @@ impl BasaltApp {
                 self.install_status_message = format!("Install failed: {}", err);
             }
         }
+    }
+
+    fn poll_steam_artwork_results(&mut self, ctx: &eframe::egui::Context) {
+        let mut has_updates = false;
+
+        while let Ok(appid) = self.steam_artwork_result_rx.try_recv() {
+            self.steam_artwork_requested.remove(&appid);
+
+            if super::library_screen::find_cached_steam_portrait_artwork_path(&appid).is_some() {
+                self.steam_artwork_missing.remove(&appid);
+                has_updates = true;
+            } else {
+                self.steam_artwork_missing.insert(appid);
+            }
+        }
+
+        if has_updates {
+            ctx.request_repaint();
+        }
+    }
+
+    fn prepare_steam_artwork_for_visible_games(&mut self) {
+        let mut visible_steam_appids = HashSet::new();
+
+        for game in &self.games {
+            if game.runner_kind.as_str() != "steam" {
+                continue;
+            }
+
+            let Some(appid) = super::library_screen::extract_steam_appid(&game.launch_target) else {
+                continue;
+            };
+
+            visible_steam_appids.insert(appid.clone());
+
+            if super::library_screen::find_cached_steam_portrait_artwork_path(&appid).is_some() {
+                self.steam_artwork_missing.remove(&appid);
+                continue;
+            }
+
+            if self.steam_artwork_missing.contains(&appid) {
+                continue;
+            }
+
+            if self.steam_artwork_requested.insert(appid.clone()) {
+                let _ = self.steam_artwork_download_tx.send(appid);
+            }
+        }
+
+        self.steam_tile_textures
+            .retain(|appid, _| visible_steam_appids.contains(appid));
+        self.steam_artwork_requested
+            .retain(|appid| visible_steam_appids.contains(appid));
+        self.steam_artwork_missing
+            .retain(|appid| visible_steam_appids.contains(appid));
     }
 }

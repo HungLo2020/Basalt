@@ -3,7 +3,8 @@ use eframe::egui::{
     RichText, SidePanel, Stroke, StrokeKind,
 };
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::core::{self, GameEntry};
 
@@ -219,9 +220,16 @@ impl BasaltApp {
         );
 
         if let Some(texture_handle) = self.get_or_load_steam_tile_texture(ui.ctx(), game) {
+            let [texture_width, texture_height] = texture_handle.size();
+            let draw_rect = aspect_fit_rect(
+                icon_rect,
+                texture_width as f32,
+                texture_height as f32,
+            );
+
             ui.painter().image(
                 texture_handle.id(),
-                icon_rect,
+                draw_rect,
                 egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
                 Color32::WHITE,
             );
@@ -269,19 +277,19 @@ impl BasaltApp {
             return Some(existing_texture.clone());
         }
 
-        if self.steam_artwork_missing.contains(&appid) {
-            return None;
-        }
-
-        let Some(artwork_path) = find_local_steam_artwork_path(&appid) else {
-            self.steam_artwork_missing.insert(appid);
+        let Some(artwork_path) = find_cached_steam_portrait_artwork_path(&appid) else {
+            if !self.steam_artwork_missing.contains(&appid)
+                && self.steam_artwork_requested.insert(appid.clone())
+            {
+                let _ = self.steam_artwork_download_tx.send(appid);
+            }
             return None;
         };
 
         let image_bytes = match std::fs::read(&artwork_path) {
             Ok(bytes) => bytes,
             Err(_) => {
-                self.steam_artwork_missing.insert(appid);
+                let _ = std::fs::remove_file(&artwork_path);
                 return None;
             }
         };
@@ -289,7 +297,7 @@ impl BasaltApp {
         let decoded = match image::load_from_memory(&image_bytes) {
             Ok(decoded_image) => decoded_image.to_rgba8(),
             Err(_) => {
-                self.steam_artwork_missing.insert(appid);
+                let _ = std::fs::remove_file(&artwork_path);
                 return None;
             }
         };
@@ -309,7 +317,27 @@ impl BasaltApp {
     }
 }
 
-fn extract_steam_appid(launch_target: &str) -> Option<String> {
+fn aspect_fit_rect(container: egui::Rect, image_width: f32, image_height: f32) -> egui::Rect {
+    if image_width <= 0.0 || image_height <= 0.0 {
+        return container;
+    }
+
+    let container_width = container.width();
+    let container_height = container.height();
+    if container_width <= 0.0 || container_height <= 0.0 {
+        return container;
+    }
+
+    let width_scale = container_width / image_width;
+    let height_scale = container_height / image_height;
+    let scale = width_scale.min(height_scale);
+
+    let draw_width = image_width * scale;
+    let draw_height = image_height * scale;
+    egui::Rect::from_center_size(container.center(), egui::vec2(draw_width, draw_height))
+}
+
+pub(super) fn extract_steam_appid(launch_target: &str) -> Option<String> {
     let trimmed = launch_target.trim();
     if trimmed.is_empty() {
         return None;
@@ -335,70 +363,136 @@ fn extract_steam_appid(launch_target: &str) -> Option<String> {
     None
 }
 
-fn find_local_steam_artwork_path(appid: &str) -> Option<PathBuf> {
-    let home = env::var("HOME").ok()?;
-
-    let library_cache_roots = [
-        PathBuf::from(&home)
-            .join(".steam")
-            .join("debian-installation")
-            .join("appcache")
-            .join("librarycache"),
-        PathBuf::from(&home)
-            .join(".local")
-            .join("share")
-            .join("Steam")
-            .join("appcache")
-            .join("librarycache"),
-        PathBuf::from(&home)
-            .join(".steam")
-            .join("steam")
-            .join("appcache")
-            .join("librarycache"),
-        PathBuf::from(&home)
-            .join(".var")
-            .join("app")
-            .join("com.valvesoftware.Steam")
-            .join(".local")
-            .join("share")
-            .join("Steam")
-            .join("appcache")
-            .join("librarycache"),
+pub(super) fn find_cached_steam_portrait_artwork_path(appid: &str) -> Option<PathBuf> {
+    let cache_dir = steam_artwork_cache_dir()?;
+    let cached_candidates = [
+        cache_dir.join(format!("{}_library_600x900_2x.jpg", appid)),
+        cache_dir.join(format!("{}_library_600x900.jpg", appid)),
+        cache_dir.join(format!("{}_library_600x900.png", appid)),
+        cache_dir.join(format!("{}_library_600x900_2x_alt.jpg", appid)),
+        cache_dir.join(format!("{}_library_600x900_alt.jpg", appid)),
+        cache_dir.join(format!("{}_library_600x900_alt.png", appid)),
     ];
 
-    let app_folder_candidate_names = [
-        "library_600x900.jpg",
-        "library_600x900.png",
-        "library_header.jpg",
-        "header.jpg",
-        "library_hero.jpg",
-        "logo.png",
-    ];
-
-    let flat_candidate_names = [
-        format!("{}_library_600x900.jpg", appid),
-        format!("{}_library_600x900.png", appid),
-        format!("{}_library_600x900_2x.jpg", appid),
-        format!("{}_library_600x900_2x.png", appid),
-        format!("{}_library.jpg", appid),
-        format!("{}_library.png", appid),
-    ];
-
-    for cache_root in library_cache_roots {
-        for file_name in &app_folder_candidate_names {
-            let candidate_path = cache_root.join(appid).join(file_name);
-            if candidate_path.is_file() {
-                return Some(candidate_path);
-            }
-        }
-
-        for file_name in &flat_candidate_names {
-            let candidate_path = cache_root.join(file_name);
-            if candidate_path.is_file() {
-                return Some(candidate_path);
-            }
+    for candidate in cached_candidates {
+        if candidate.is_file() {
+            return Some(candidate);
         }
     }
 
     None
+}
+
+pub(super) fn download_and_cache_steam_portrait_artwork(appid: &str) -> Option<PathBuf> {
+    let cache_dir = steam_artwork_cache_dir()?;
+    if let Some(existing_cached) = find_cached_steam_portrait_artwork_path(appid) {
+        if is_valid_portrait_artwork(&existing_cached) {
+            return Some(existing_cached);
+        }
+
+        let _ = std::fs::remove_file(existing_cached);
+    }
+
+    let urls_and_targets = [
+        (
+            format!(
+                "https://cdn.cloudflare.steamstatic.com/steam/apps/{}/library_600x900_2x.jpg",
+                appid
+            ),
+            cache_dir.join(format!("{}_library_600x900_2x.jpg", appid)),
+        ),
+        (
+            format!(
+                "https://cdn.cloudflare.steamstatic.com/steam/apps/{}/library_600x900.jpg",
+                appid
+            ),
+            cache_dir.join(format!("{}_library_600x900.jpg", appid)),
+        ),
+        (
+            format!(
+                "https://cdn.cloudflare.steamstatic.com/steam/apps/{}/library_600x900.png",
+                appid
+            ),
+            cache_dir.join(format!("{}_library_600x900.png", appid)),
+        ),
+        (
+            format!(
+                "https://cdn.akamai.steamstatic.com/steam/apps/{}/library_600x900_2x.jpg",
+                appid
+            ),
+            cache_dir.join(format!("{}_library_600x900_2x_alt.jpg", appid)),
+        ),
+        (
+            format!(
+                "https://cdn.akamai.steamstatic.com/steam/apps/{}/library_600x900.jpg",
+                appid
+            ),
+            cache_dir.join(format!("{}_library_600x900_alt.jpg", appid)),
+        ),
+        (
+            format!(
+                "https://cdn.akamai.steamstatic.com/steam/apps/{}/library_600x900.png",
+                appid
+            ),
+            cache_dir.join(format!("{}_library_600x900_alt.png", appid)),
+        ),
+    ];
+
+    for (url, target_path) in urls_and_targets {
+        if target_path.is_file() {
+            if is_valid_portrait_artwork(&target_path) {
+                return Some(target_path);
+            }
+
+            let _ = std::fs::remove_file(&target_path);
+        }
+
+        let output = Command::new("curl")
+            .args(["-fsSL", "--retry", "2", "--output"])
+            .arg(&target_path)
+            .arg(&url)
+            .output()
+            .ok()?;
+
+        if output.status.success() && target_path.is_file() && is_valid_portrait_artwork(&target_path) {
+            return Some(target_path);
+        }
+
+        let _ = std::fs::remove_file(&target_path);
+    }
+
+    None
+}
+
+fn steam_artwork_cache_dir() -> Option<PathBuf> {
+    let home = env::var("HOME").ok()?;
+    let cache_dir = PathBuf::from(home)
+        .join(".basalt")
+        .join("cache")
+        .join("steam_artwork");
+
+    if std::fs::create_dir_all(&cache_dir).is_err() {
+        return None;
+    }
+
+    Some(cache_dir)
+}
+
+fn is_valid_portrait_artwork(path: &Path) -> bool {
+    let Ok(image_reader) = image::ImageReader::open(path) else {
+        return false;
+    };
+
+    let Ok(image_data) = image_reader.decode() else {
+        return false;
+    };
+
+    let width = image_data.width();
+    let height = image_data.height();
+    if width < 300 || height < 450 {
+        return false;
+    }
+
+    let aspect_ratio = width as f32 / height as f32;
+    (0.60..=0.74).contains(&aspect_ratio)
 }
