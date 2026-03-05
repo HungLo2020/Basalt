@@ -101,18 +101,6 @@ impl BasaltApp {
 
                     ui.add_space(12.0);
                     ui.separator();
-                    ui.label(RichText::new("Add Game Inputs").size(body_text_size));
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("Name").size(body_text_size));
-                        ui.text_edit_singleline(&mut self.add_name);
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("Script").size(body_text_size));
-                        ui.text_edit_singleline(&mut self.add_script_path);
-                    });
-
-                    ui.add_space(12.0);
-                    ui.separator();
                     ui.label(RichText::new("Status").size(body_text_size));
                     if self.status_message.is_empty() {
                         ui.label(RichText::new("Ready").size(secondary_text_size));

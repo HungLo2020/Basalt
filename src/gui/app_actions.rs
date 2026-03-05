@@ -24,9 +24,6 @@ impl BasaltApp {
             }
         }
 
-        if actions.trigger_add {
-            self.add_from_inputs();
-        }
         if actions.trigger_discover {
             self.discover_games();
         }
@@ -74,26 +71,6 @@ impl BasaltApp {
             }
             Err(err) => {
                 self.status_message = format!("Discover failed: {}", err);
-            }
-        }
-    }
-
-    pub(super) fn add_from_inputs(&mut self) {
-        let name = self.add_name.trim().to_string();
-        let script_path = self.add_script_path.trim().to_string();
-
-        if name.is_empty() || script_path.is_empty() {
-            self.status_message = "Add requires both Name and Script path".to_string();
-            return;
-        }
-
-        match core::add_game(&name, &script_path) {
-            Ok(_) => {
-                self.refresh_games();
-                self.status_message = format!("Added {}", name);
-            }
-            Err(err) => {
-                self.status_message = format!("Add failed: {}", err);
             }
         }
     }

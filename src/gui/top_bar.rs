@@ -20,7 +20,6 @@ pub(super) enum PlaylistSelection {
 pub(super) struct TopBarActions {
     pub(super) switch_to_tab: Option<TopBarTab>,
     pub(super) select_playlist: Option<PlaylistSelection>,
-    pub(super) trigger_add: bool,
     pub(super) trigger_discover: bool,
     pub(super) trigger_refresh: bool,
 }
@@ -30,7 +29,6 @@ impl TopBarActions {
         Self {
             switch_to_tab: None,
             select_playlist: None,
-            trigger_add: false,
             trigger_discover: false,
             trigger_refresh: false,
         }
@@ -119,9 +117,6 @@ impl BasaltApp {
                 );
 
                 if self.active_tab == TopBarTab::Library {
-                    if action_ui.button("Add").clicked() {
-                        actions.trigger_add = true;
-                    }
                     if action_ui.button("Discover").clicked() {
                         actions.trigger_discover = true;
                     }
