@@ -1,5 +1,5 @@
 use eframe::egui::{
-    self, vec2, Button, Color32, Frame, Layout, Margin, RichText, Stroke, TopBottomPanel,
+    self, vec2, Button, Color32, Frame, Layout, Margin, RichText, TopBottomPanel,
 };
 
 use super::app::BasaltApp;
@@ -45,7 +45,6 @@ impl BasaltApp {
         &mut self,
         ctx: &eframe::egui::Context,
         region_gray: Color32,
-        white_line: Stroke,
     ) -> TopBarActions {
         let mut actions = TopBarActions::new();
         let tab_button_height = 36.0;
@@ -59,7 +58,7 @@ impl BasaltApp {
                 Frame::new()
                     .fill(region_gray)
                     .inner_margin(Margin::same(10))
-                    .stroke(white_line),
+                    .stroke(egui::Stroke::NONE),
             )
             .exact_height(top_bar_height)
             .show(ctx, |ui| {

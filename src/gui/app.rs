@@ -66,22 +66,38 @@ impl eframe::App for BasaltApp {
         self.poll_startup_games_load();
         self.artwork_store.poll_download_results(ctx);
 
-        let region_gray = eframe::egui::Color32::from_rgb(49, 56, 69);
-        let white_line = eframe::egui::Stroke::new(1.0, eframe::egui::Color32::WHITE);
+        let main_region_gray = eframe::egui::Color32::from_rgb(49, 56, 69);
+        let top_region_gray = eframe::egui::Color32::from_rgb(44, 51, 64);
+        let right_region_gray = eframe::egui::Color32::from_rgb(55, 62, 76);
         let right_panel_width = (ctx.screen_rect().width() / 4.0) * (2.0 / 3.0);
 
-        let actions = self.render_top_bar(ctx, region_gray, white_line);
+        let actions = self.render_top_bar(ctx, top_region_gray);
         self.apply_top_bar_actions(actions);
 
         match self.active_tab {
             TopBarTab::Library => {
-                self.render_library_screen(ctx, region_gray, white_line, right_panel_width);
+                self.render_library_screen(
+                    ctx,
+                    main_region_gray,
+                    right_region_gray,
+                    right_panel_width,
+                );
             }
             TopBarTab::Install => {
-                self.render_install_screen(ctx, region_gray, white_line, right_panel_width);
+                self.render_install_screen(
+                    ctx,
+                    main_region_gray,
+                    right_region_gray,
+                    right_panel_width,
+                );
             }
             TopBarTab::Settings => {
-                self.render_settings_screen(ctx, region_gray, white_line, right_panel_width);
+                self.render_settings_screen(
+                    ctx,
+                    main_region_gray,
+                    right_region_gray,
+                    right_panel_width,
+                );
             }
         }
     }

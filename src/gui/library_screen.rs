@@ -1,6 +1,6 @@
 use eframe::egui::{
     self, vec2, CentralPanel, Color32, FontId, Frame, Layout, Margin, ScrollArea, Sense,
-    RichText, SidePanel, Stroke,
+    RichText, SidePanel,
 };
 
 use crate::core::{self, GameEntry};
@@ -12,16 +12,16 @@ impl BasaltApp {
     pub(super) fn render_library_screen(
         &mut self,
         ctx: &egui::Context,
-        region_gray: Color32,
-        white_line: Stroke,
+        main_region_gray: Color32,
+        right_region_gray: Color32,
         right_panel_width: f32,
     ) {
         SidePanel::right("right_panel")
             .frame(
                 Frame::new()
-                    .fill(region_gray)
+                    .fill(right_region_gray)
                     .inner_margin(Margin::same(12))
-                    .stroke(white_line),
+                    .stroke(egui::Stroke::NONE),
             )
             .min_width(right_panel_width)
             .max_width(right_panel_width)
@@ -113,9 +113,9 @@ impl BasaltApp {
         CentralPanel::default()
             .frame(
                 Frame::new()
-                    .fill(region_gray)
+                    .fill(main_region_gray)
                     .inner_margin(Margin::same(12))
-                    .stroke(white_line),
+                    .stroke(egui::Stroke::NONE),
             )
             .show(ctx, |ui| {
                 let filtered_indices = self.filtered_library_indices();

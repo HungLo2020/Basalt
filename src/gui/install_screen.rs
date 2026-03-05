@@ -1,6 +1,5 @@
 use eframe::egui::{
-    self, vec2, CentralPanel, Color32, Frame, Layout, Margin, Sense, SidePanel, Stroke,
-    RichText,
+    self, vec2, CentralPanel, Color32, Frame, Layout, Margin, Sense, SidePanel, RichText,
 };
 
 use super::app::BasaltApp;
@@ -11,16 +10,16 @@ impl BasaltApp {
     pub(super) fn render_install_screen(
         &mut self,
         ctx: &egui::Context,
-        region_gray: Color32,
-        white_line: Stroke,
+        main_region_gray: Color32,
+        right_region_gray: Color32,
         right_panel_width: f32,
     ) {
         SidePanel::right("install_right_panel")
             .frame(
                 Frame::new()
-                    .fill(region_gray)
+                    .fill(right_region_gray)
                     .inner_margin(Margin::same(12))
-                    .stroke(white_line),
+                    .stroke(egui::Stroke::NONE),
             )
             .min_width(right_panel_width)
             .max_width(right_panel_width)
@@ -55,9 +54,9 @@ impl BasaltApp {
         CentralPanel::default()
             .frame(
                 Frame::new()
-                    .fill(region_gray)
+                    .fill(main_region_gray)
                     .inner_margin(Margin::same(12))
-                    .stroke(white_line),
+                    .stroke(egui::Stroke::NONE),
             )
             .show(ctx, |ui| {
                 ui.with_layout(Layout::top_down(egui::Align::Center), |ui| {
