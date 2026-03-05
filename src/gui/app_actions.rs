@@ -1,14 +1,27 @@
+use std::collections::HashSet;
+
 use crate::cli;
 use crate::core::{self, DiscoverResult, GameEntry};
 
 use super::app::BasaltApp;
 use super::search;
-use super::top_bar::TopBarActions;
+use super::top_bar::{PlaylistSelection, TopBarActions};
 
 impl BasaltApp {
     pub(super) fn apply_top_bar_actions(&mut self, actions: TopBarActions) {
         if let Some(tab) = actions.switch_to_tab {
             self.active_tab = tab;
+        }
+
+        if let Some(selection) = actions.select_playlist {
+            match selection {
+                PlaylistSelection::AllGames => {
+                    self.selected_playlist = None;
+                }
+                PlaylistSelection::Named(name) => {
+                    self.selected_playlist = Some(name);
+                }
+            }
         }
 
         if actions.trigger_add {
@@ -90,16 +103,98 @@ impl BasaltApp {
     }
 
     pub(super) fn filtered_library_indices(&self) -> Vec<usize> {
+        let selected_playlist_games: Option<HashSet<&str>> = self
+            .selected_playlist
+            .as_ref()
+            .and_then(|playlist_name| {
+                self.playlists
+                    .iter()
+                    .find(|playlist| playlist.name == *playlist_name)
+                    .map(|playlist| {
+                        playlist
+                            .game_names
+                            .iter()
+                            .map(String::as_str)
+                            .collect::<HashSet<&str>>()
+                    })
+            });
+
         self.games
             .iter()
             .enumerate()
             .filter(|(_, game)| {
-                search::matches_query(&game.name, &self.library_search_query)
+                let in_selected_playlist = selected_playlist_games
+                    .as_ref()
+                    .map(|game_names| game_names.contains(game.name.as_str()))
+                    .unwrap_or(true);
+
+                in_selected_playlist
+                    && (search::matches_query(&game.name, &self.library_search_query)
                     || search::matches_query(game.runner_kind.as_str(), &self.library_search_query)
-                    || search::matches_query(&game.launch_target, &self.library_search_query)
+                    || search::matches_query(&game.launch_target, &self.library_search_query))
             })
             .map(|(index, _)| index)
             .collect()
+    }
+
+    pub(super) fn refresh_playlists(&mut self) {
+        match core::list_playlists() {
+            Ok(playlists) => {
+                self.playlists = playlists;
+
+                if let Some(selected_playlist) = self.selected_playlist.as_ref() {
+                    let exists = self
+                        .playlists
+                        .iter()
+                        .any(|playlist| playlist.name == *selected_playlist);
+                    if !exists {
+                        self.selected_playlist = None;
+                    }
+                }
+            }
+            Err(err) => {
+                self.status_message = format!("Failed to load playlists: {}", err);
+                self.playlists = vec![core::Playlist {
+                    name: core::FAVORITES_PLAYLIST_NAME.to_string(),
+                    game_names: Vec::new(),
+                }];
+                self.selected_playlist = None;
+            }
+        }
+    }
+
+    pub(super) fn is_game_favorited(&self, game_name: &str) -> bool {
+        self.playlists
+            .iter()
+            .find(|playlist| playlist.name == core::FAVORITES_PLAYLIST_NAME)
+            .map(|playlist| playlist.game_names.iter().any(|name| name == game_name))
+            .unwrap_or(false)
+    }
+
+    pub(super) fn set_game_favorited_from_gui(&mut self, game_name: &str, favorited: bool) {
+        let result = if favorited {
+            core::add_game_to_playlist(core::FAVORITES_PLAYLIST_NAME, game_name)
+        } else {
+            core::remove_game_from_playlist(core::FAVORITES_PLAYLIST_NAME, game_name)
+        };
+
+        match result {
+            Ok(_) => {
+                self.refresh_playlists();
+                self.status_message = if favorited {
+                    format!("Added {} to Favorites", game_name)
+                } else {
+                    format!("Removed {} from Favorites", game_name)
+                };
+            }
+            Err(err) => {
+                self.status_message = if favorited {
+                    format!("Favorite failed: {}", err)
+                } else {
+                    format!("Unfavorite failed: {}", err)
+                };
+            }
+        }
     }
 
     pub(super) fn install_mattmc_from_gui(&mut self) {

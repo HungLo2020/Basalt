@@ -64,6 +64,16 @@ impl BasaltApp {
                             }
                         }
 
+                        let is_favorited = self.is_game_favorited(&selected.name);
+                        let favorite_label = if is_favorited { "Unfavorite" } else { "Favorite" };
+
+                        if ui
+                            .button(RichText::new(favorite_label).size(body_text_size))
+                            .clicked()
+                        {
+                            self.set_game_favorited_from_gui(&selected.name, !is_favorited);
+                        }
+
                         if selected.name.eq_ignore_ascii_case("MattMC") {
                             ui.add_space(8.0);
                             ui.horizontal(|ui| {

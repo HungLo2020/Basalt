@@ -7,6 +7,12 @@ pub struct GameEntry {
     pub launch_target: String,
 }
 
+#[derive(Clone)]
+pub struct Playlist {
+    pub name: String,
+    pub game_names: Vec<String>,
+}
+
 pub enum DiscoverResult {
     Added,
     AlreadyExists,

@@ -45,5 +45,6 @@ impl BasaltApp {
         }
 
         self.artwork_store.prepare_for_games(&self.games);
+        self.refresh_playlists();
     }
 }

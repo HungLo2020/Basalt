@@ -1,4 +1,5 @@
 use super::error::{CoreError, CoreResult};
+use super::playlist_service;
 use super::registry;
 use super::runners;
 use super::GameEntry;
@@ -70,16 +71,33 @@ pub fn remove_game(name: &str) -> CoreResult<()> {
     }
 
     registry::save_entries(&entries)?;
+    playlist_service::remove_game_from_all_playlists(name)?;
     Ok(())
 }
 
 pub fn remove_all_games() -> CoreResult<usize> {
     let entries = registry::load_entries()?;
     let removed_count = entries.len();
+    let removed_names: Vec<String> = entries.into_iter().map(|entry| entry.name).collect();
 
     registry::save_entries(&[])?;
+    playlist_service::remove_games_from_all_playlists(&removed_names)?;
 
     Ok(removed_count)
+}
+
+pub fn add_game_to_playlist(playlist_name: &str, game_name: &str) -> CoreResult<()> {
+    ensure_game_exists(game_name)?;
+    playlist_service::add_game_to_playlist(playlist_name, game_name)
+}
+
+pub fn remove_game_from_playlist(playlist_name: &str, game_name: &str) -> CoreResult<()> {
+    ensure_game_exists(game_name)?;
+    playlist_service::remove_game_from_playlist(playlist_name, game_name)
+}
+
+pub fn list_playlists() -> CoreResult<Vec<super::types::Playlist>> {
+    playlist_service::list_playlists()
 }
 
 pub fn launch_game(name: &str) -> CoreResult<()> {
@@ -100,4 +118,20 @@ pub fn launch_game(name: &str) -> CoreResult<()> {
 fn is_name_blacklisted(name: &str) -> CoreResult<bool> {
     let blacklisted_names = registry::load_blacklisted_names()?;
     Ok(blacklisted_names.contains(&name.to_lowercase()))
+}
+
+fn ensure_game_exists(game_name: &str) -> CoreResult<()> {
+    if game_name.is_empty() {
+        return Err(CoreError::new("Game name cannot be empty"));
+    }
+
+    let entries = registry::load_entries()?;
+    if entries.iter().any(|entry| entry.name == game_name) {
+        Ok(())
+    } else {
+        Err(CoreError::new(format!(
+            "No game found with name '{}'",
+            game_name
+        )))
+    }
 }

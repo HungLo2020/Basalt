@@ -1,7 +1,7 @@
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 
-use crate::core::{self, GameEntry};
+use crate::core::{self, GameEntry, Playlist};
 
 use super::artwork::ArtworkStore;
 use super::top_bar::TopBarTab;
@@ -9,6 +9,8 @@ use super::top_bar::TopBarTab;
 pub(super) struct BasaltApp {
     pub(super) active_tab: TopBarTab,
     pub(super) games: Vec<GameEntry>,
+    pub(super) playlists: Vec<Playlist>,
+    pub(super) selected_playlist: Option<String>,
     pub(super) selected_index: Option<usize>,
     pub(super) add_name: String,
     pub(super) add_script_path: String,
@@ -30,6 +32,11 @@ impl Default for BasaltApp {
         let mut app = Self {
             active_tab: TopBarTab::Library,
             games: Vec::new(),
+            playlists: vec![Playlist {
+                name: "Favorites".to_string(),
+                game_names: Vec::new(),
+            }],
+            selected_playlist: None,
             selected_index: None,
             add_name: String::new(),
             add_script_path: String::new(),
@@ -63,7 +70,7 @@ impl eframe::App for BasaltApp {
 
         let region_gray = eframe::egui::Color32::from_rgb(49, 56, 69);
         let white_line = eframe::egui::Stroke::new(1.0, eframe::egui::Color32::WHITE);
-        let right_panel_width = ctx.screen_rect().width() / 4.0;
+        let right_panel_width = (ctx.screen_rect().width() / 4.0) * (2.0 / 3.0);
 
         let actions = self.render_top_bar(ctx, region_gray, white_line);
         self.apply_top_bar_actions(actions);

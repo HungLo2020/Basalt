@@ -6,6 +6,14 @@ pub fn usage_remove() -> String {
     "Usage: basalt remove <name>".to_string()
 }
 
+pub fn usage_add_to_playlist() -> String {
+    "Usage: basalt add-to-playlist <playlist> <name>".to_string()
+}
+
+pub fn usage_remove_from_playlist() -> String {
+    "Usage: basalt remove-from-playlist <playlist> <name>".to_string()
+}
+
 pub fn usage_remove_all() -> String {
     "Usage: basalt remove-all".to_string()
 }
@@ -29,6 +37,10 @@ pub fn full_usage() -> String {
         "                               Add a game via bash script (.sh) or Steam appid/URL",
         "  basalt remove <name>",
         "                               Remove a saved game by name",
+        "  basalt add-to-playlist <playlist> <name>",
+        "                               Add a game to an existing playlist (e.g. Favorites)",
+        "  basalt remove-from-playlist <playlist> <name>",
+        "                               Remove a game from an existing playlist",
         "  basalt remove-all",
         "                               Remove all saved games",
         "  basalt list",

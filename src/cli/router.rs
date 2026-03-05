@@ -5,7 +5,9 @@ use super::usage;
 pub(super) enum CliCommand {
     Help,
     Add,
+    AddToPlaylist,
     Remove,
+    RemoveFromPlaylist,
     RemoveAll,
     List,
     Discover,
@@ -20,7 +22,9 @@ impl CliCommand {
         match args.first().map(String::as_str) {
             Some("help") | Some("-h") | Some("--help") => Ok(Self::Help),
             Some("add") => Ok(Self::Add),
+            Some("add-to-playlist") => Ok(Self::AddToPlaylist),
             Some("remove") => Ok(Self::Remove),
+            Some("remove-from-playlist") => Ok(Self::RemoveFromPlaylist),
             Some("remove-all") => Ok(Self::RemoveAll),
             Some("list") => Ok(Self::List),
             Some("discover") => Ok(Self::Discover),
@@ -40,7 +44,9 @@ impl CliCommand {
                 Ok(())
             }
             Self::Add => commands::add::run(args),
+            Self::AddToPlaylist => commands::add_to_playlist::run(args),
             Self::Remove => commands::remove::run(args),
+            Self::RemoveFromPlaylist => commands::remove_from_playlist::run(args),
             Self::RemoveAll => commands::remove_all::run(args),
             Self::List => commands::list::run(args),
             Self::Discover => commands::discover::run(args),

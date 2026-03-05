@@ -1,9 +1,11 @@
 pub mod add;
+pub mod add_to_playlist;
 pub mod backup_mattmc;
 pub mod discover;
 pub mod install_mattmc;
 pub mod launch;
 pub mod list;
 pub mod remove;
+pub mod remove_from_playlist;
 pub mod remove_all;
 pub mod sync_mattmc;
