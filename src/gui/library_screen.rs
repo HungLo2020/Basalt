@@ -1,12 +1,12 @@
 use eframe::egui::{
-    self, vec2, Align2, CentralPanel, Color32, FontId, Frame, Layout, Margin, ScrollArea, Sense,
-    RichText, SidePanel, Stroke, StrokeKind,
+    self, vec2, CentralPanel, Color32, FontId, Frame, Layout, Margin, ScrollArea, Sense,
+    RichText, SidePanel, Stroke,
 };
 
 use crate::core::{self, GameEntry};
 
 use super::app::BasaltApp;
-use super::tile_math::{center_crop_uv, fit_height_rect};
+use super::game_tile::paint_game_tile;
 
 impl BasaltApp {
     pub(super) fn render_library_screen(
@@ -125,7 +125,7 @@ impl BasaltApp {
                     }
                 }
 
-                self.render_game_grid(ui, white_line, &filtered_indices);
+                self.render_game_grid(ui, &filtered_indices);
             });
     }
 
@@ -151,12 +151,7 @@ impl BasaltApp {
         min_size
     }
 
-    fn render_game_grid(
-        &mut self,
-        ui: &mut egui::Ui,
-        border_stroke: Stroke,
-        filtered_indices: &[usize],
-    ) {
+    fn render_game_grid(&mut self, ui: &mut egui::Ui, filtered_indices: &[usize]) {
         const TILE_WIDTH: f32 = 150.0;
         const TEXT_STRIP_HEIGHT: f32 = 40.0;
         const TILE_HEIGHT: f32 = TILE_WIDTH + TEXT_STRIP_HEIGHT;
@@ -200,14 +195,9 @@ impl BasaltApp {
                         let game_index = filtered_indices[visible_index];
                         let game = self.games[game_index].clone();
                         let is_selected = self.selected_index == Some(game_index);
-                        if self.render_tile(
-                            ui,
-                            border_stroke,
-                            TILE_WIDTH,
-                            TILE_HEIGHT,
-                            &game,
-                            is_selected,
-                        ) {
+                        if self
+                            .render_tile(ui, TILE_WIDTH, TILE_HEIGHT, &game, is_selected)
+                        {
                             self.selected_index = Some(game_index);
                         }
 
@@ -233,7 +223,6 @@ impl BasaltApp {
     fn render_tile(
         &mut self,
         ui: &mut egui::Ui,
-        border_stroke: Stroke,
         tile_width: f32,
         tile_height: f32,
         game: &GameEntry,
@@ -243,80 +232,17 @@ impl BasaltApp {
 
         let (tile_rect, response) = ui.allocate_exact_size(vec2(tile_width, tile_height), Sense::click());
 
-        let tile_stroke = if selected {
-            Stroke::new(2.0, Color32::WHITE)
-        } else {
-            border_stroke
-        };
-        ui.painter().rect_stroke(tile_rect, 0.0, tile_stroke, StrokeKind::Inside);
-
-        let icon_rect = egui::Rect::from_min_size(tile_rect.min, egui::vec2(tile_width, tile_width));
-
-        if let Some(artwork) = self.artwork_store.artwork_for_game(ui.ctx(), game) {
-            let [bg_width, bg_height] = artwork.background_blur.size();
-            let bg_uv = center_crop_uv(
-                bg_width as f32,
-                bg_height as f32,
-                icon_rect.width(),
-                icon_rect.height(),
-            );
-            ui.painter().image(
-                artwork.background_blur.id(),
-                icon_rect,
-                bg_uv,
-                Color32::WHITE,
-            );
-
-            ui.painter().rect_filled(
-                icon_rect,
-                0.0,
-                Color32::from_rgba_unmultiplied(0, 0, 0, 45),
-            );
-
-            let [fg_width, fg_height] = artwork.foreground.size();
-            let draw_rect = fit_height_rect(
-                icon_rect,
-                fg_width as f32,
-                fg_height as f32,
-            );
-
-            ui.painter().image(
-                artwork.foreground.id(),
-                draw_rect,
-                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                Color32::WHITE,
-            );
-
-            ui.painter().rect_stroke(
-                draw_rect,
-                0.0,
-                Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 120)),
-                StrokeKind::Inside,
-            );
-        }
-
-        ui.painter()
-            .rect_stroke(icon_rect, 0.0, border_stroke, StrokeKind::Inside);
-
-        let text_rect = egui::Rect::from_min_max(
-            egui::pos2(tile_rect.min.x, tile_rect.max.y - text_strip_height),
-            tile_rect.max,
-        );
-
-        let tile_ui = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(text_rect)
-                .layout(Layout::centered_and_justified(egui::Direction::TopDown)),
-        );
-
-        let title_max_width = (text_rect.width() - 8.0).max(8.0);
-        let title_size = self.fit_title_font_size(&tile_ui, &game.name, title_max_width);
-        tile_ui.painter().text(
-            text_rect.center(),
-            Align2::CENTER_CENTER,
+        let title_max_width = (tile_rect.width() - 8.0).max(8.0);
+        let title_size = self.fit_title_font_size(ui, &game.name, title_max_width);
+        let artwork = self.artwork_store.artwork_for_game(ui.ctx(), game);
+        paint_game_tile(
+            ui,
+            tile_rect,
+            text_strip_height,
             &game.name,
-            FontId::proportional(title_size),
-            Color32::WHITE,
+            title_size,
+            artwork.as_ref(),
+            selected,
         );
 
         response.clicked()

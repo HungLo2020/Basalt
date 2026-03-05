@@ -29,7 +29,7 @@ const MAX_TEXTURE_UPLOADS_PER_TICK: usize = 2;
 #[derive(Clone)]
 pub(super) struct ArtworkTextures {
     pub(super) foreground: TextureHandle,
-    pub(super) background_blur: TextureHandle,
+    pub(super) _background_blur: TextureHandle,
 }
 
 pub(super) struct ArtworkStore {
@@ -420,7 +420,7 @@ fn build_artwork_textures_from_payload(
 
     Some(ArtworkTextures {
         foreground,
-        background_blur,
+        _background_blur: background_blur,
     })
 }
 

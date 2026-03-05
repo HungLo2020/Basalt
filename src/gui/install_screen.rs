@@ -1,11 +1,11 @@
 use eframe::egui::{
     self, vec2, CentralPanel, Color32, Frame, Layout, Margin, Sense, SidePanel, Stroke,
-    RichText, StrokeKind,
+    RichText,
 };
 
 use super::app::BasaltApp;
+use super::game_tile::paint_game_tile;
 use super::search;
-use super::tile_math::{center_crop_uv, fit_height_rect};
 
 impl BasaltApp {
     pub(super) fn render_install_screen(
@@ -74,72 +74,15 @@ impl BasaltApp {
 
                     let (tile_rect, _) =
                         ui.allocate_exact_size(vec2(TILE_WIDTH, TILE_HEIGHT), Sense::hover());
-                    ui.painter()
-                        .rect_stroke(tile_rect, 0.0, white_line, StrokeKind::Inside);
-
-                    let icon_rect =
-                        egui::Rect::from_min_size(tile_rect.min, egui::vec2(TILE_ART_SIZE, TILE_ART_SIZE));
-
-                    if let Some(artwork) = self.artwork_store.mattmc_artwork(ui.ctx()) {
-                        let [bg_width, bg_height] = artwork.background_blur.size();
-                        let bg_uv = center_crop_uv(
-                            bg_width as f32,
-                            bg_height as f32,
-                            icon_rect.width(),
-                            icon_rect.height(),
-                        );
-                        ui.painter().image(
-                            artwork.background_blur.id(),
-                            icon_rect,
-                            bg_uv,
-                            Color32::WHITE,
-                        );
-
-                        ui.painter().rect_filled(
-                            icon_rect,
-                            0.0,
-                            Color32::from_rgba_unmultiplied(0, 0, 0, 45),
-                        );
-
-                        let [fg_width, fg_height] = artwork.foreground.size();
-                        let draw_rect = fit_height_rect(
-                            icon_rect,
-                            fg_width as f32,
-                            fg_height as f32,
-                        );
-
-                        ui.painter().image(
-                            artwork.foreground.id(),
-                            draw_rect,
-                            egui::Rect::from_min_max(
-                                egui::pos2(0.0, 0.0),
-                                egui::pos2(1.0, 1.0),
-                            ),
-                            Color32::WHITE,
-                        );
-
-                        ui.painter().rect_stroke(
-                            draw_rect,
-                            0.0,
-                            Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 120)),
-                            StrokeKind::Inside,
-                        );
-                    }
-
-                    ui.painter()
-                        .rect_stroke(icon_rect, 0.0, white_line, StrokeKind::Inside);
-
-                    let text_rect = egui::Rect::from_min_max(
-                        egui::pos2(tile_rect.min.x, tile_rect.max.y - TEXT_STRIP_HEIGHT),
-                        tile_rect.max,
-                    );
-
-                    ui.painter().text(
-                        text_rect.center(),
-                        egui::Align2::CENTER_CENTER,
+                    let artwork = self.artwork_store.mattmc_artwork(ui.ctx());
+                    paint_game_tile(
+                        ui,
+                        tile_rect,
+                        TEXT_STRIP_HEIGHT,
                         "MattMC",
-                        egui::FontId::proportional(18.0),
-                        Color32::WHITE,
+                        18.0,
+                        artwork.as_ref(),
+                        false,
                     );
                 });
             });

@@ -2,6 +2,7 @@ mod artwork;
 mod app;
 mod app_actions;
 mod app_startup;
+mod game_tile;
 mod install_screen;
 mod library_screen;
 mod search;
