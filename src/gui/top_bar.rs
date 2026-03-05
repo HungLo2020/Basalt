@@ -200,38 +200,37 @@ impl BasaltApp {
                             .layout(Layout::left_to_right(egui::Align::Min)),
                     );
 
-                    playlist_ui.horizontal_wrapped(|ui| {
-                        let all_games_selected = self.selected_playlist.is_none();
-                        let all_games_button = Button::new(RichText::new("All Games").size(14.0))
-                            .fill(if all_games_selected {
-                                Color32::from_rgb(86, 98, 116)
-                            } else {
-                                Color32::from_rgb(63, 73, 88)
+                    playlist_ui.horizontal(|ui| {
+                        let selected_playlist_text = self
+                            .selected_playlist
+                            .as_deref()
+                            .unwrap_or("All Games");
+
+                        egui::ComboBox::from_id_salt("playlist-selector")
+                            .selected_text(selected_playlist_text)
+                            .width(180.0)
+                            .show_ui(ui, |ui| {
+                                let all_games_selected = self.selected_playlist.is_none();
+                                if ui.selectable_label(all_games_selected, "All Games").clicked() {
+                                    actions.select_playlist = Some(PlaylistSelection::AllGames);
+                                }
+
+                                for playlist in &self.playlists {
+                                    let is_selected = self
+                                        .selected_playlist
+                                        .as_ref()
+                                        .map(|selected| selected == &playlist.name)
+                                        .unwrap_or(false);
+
+                                    if ui
+                                        .selectable_label(is_selected, &playlist.name)
+                                        .clicked()
+                                    {
+                                        actions.select_playlist =
+                                            Some(PlaylistSelection::Named(playlist.name.clone()));
+                                    }
+                                }
                             });
-
-                        if ui.add(all_games_button).clicked() {
-                            actions.select_playlist = Some(PlaylistSelection::AllGames);
-                        }
-
-                        for playlist in &self.playlists {
-                            let is_selected = self
-                                .selected_playlist
-                                .as_ref()
-                                .map(|selected| selected == &playlist.name)
-                                .unwrap_or(false);
-
-                            let playlist_button = Button::new(RichText::new(&playlist.name).size(14.0))
-                                .fill(if is_selected {
-                                    Color32::from_rgb(86, 98, 116)
-                                } else {
-                                    Color32::from_rgb(63, 73, 88)
-                                });
-
-                            if ui.add(playlist_button).clicked() {
-                                actions.select_playlist =
-                                    Some(PlaylistSelection::Named(playlist.name.clone()));
-                            }
-                        }
                     });
                 }
             });
