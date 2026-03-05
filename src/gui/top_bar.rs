@@ -9,6 +9,7 @@ use super::search;
 pub(super) enum TopBarTab {
     Library,
     Install,
+    Settings,
 }
 
 #[derive(Clone)]
@@ -20,6 +21,8 @@ pub(super) enum PlaylistSelection {
 pub(super) struct TopBarActions {
     pub(super) switch_to_tab: Option<TopBarTab>,
     pub(super) select_playlist: Option<PlaylistSelection>,
+    pub(super) open_settings: bool,
+    pub(super) go_back_from_settings: bool,
     pub(super) trigger_discover: bool,
     pub(super) trigger_refresh: bool,
 }
@@ -29,6 +32,8 @@ impl TopBarActions {
         Self {
             switch_to_tab: None,
             select_playlist: None,
+            open_settings: false,
+            go_back_from_settings: false,
             trigger_discover: false,
             trigger_refresh: false,
         }
@@ -43,10 +48,11 @@ impl BasaltApp {
         white_line: Stroke,
     ) -> TopBarActions {
         let mut actions = TopBarActions::new();
-        let tab_button_height = 40.0;
-        let playlist_button_gap = 2.0;
-        let playlist_row_height = 30.0;
+        let tab_button_height = 36.0;
+        let playlist_button_gap = 1.0;
+        let playlist_row_height = 22.0;
         let top_row_height = tab_button_height + playlist_button_gap;
+        let top_bar_height = top_row_height + playlist_row_height + 1.0;
 
         TopBottomPanel::top("top_bar")
             .frame(
@@ -55,13 +61,14 @@ impl BasaltApp {
                     .inner_margin(Margin::same(10))
                     .stroke(white_line),
             )
-            .exact_height(top_row_height + playlist_row_height)
+            .exact_height(top_bar_height)
             .show(ctx, |ui| {
                 let panel_rect = ui.max_rect();
                 let top_row_rect = egui::Rect::from_min_max(
                     panel_rect.min,
                     egui::pos2(panel_rect.max.x, panel_rect.min.y + top_row_height),
                 );
+                let in_settings = self.active_tab == TopBarTab::Settings;
 
                 let horizontal_gap = 10.0;
                 let mut action_region_width = 290.0;
@@ -116,7 +123,7 @@ impl BasaltApp {
                         .layout(Layout::left_to_right(egui::Align::Min)),
                 );
 
-                if self.active_tab == TopBarTab::Library {
+                if !in_settings && self.active_tab == TopBarTab::Library {
                     if action_ui.button("Discover").clicked() {
                         actions.trigger_discover = true;
                     }
@@ -125,73 +132,114 @@ impl BasaltApp {
                     }
                 }
 
-                let tab_spacing = ui.spacing().item_spacing.x;
-                let tab_button_width =
-                    (((center_rect.width() - tab_spacing).max(140.0)) / 2.0).min(130.0);
-                let tabs_total_width = (tab_button_width * 2.0) + tab_spacing;
-                let tabs_width = tabs_total_width.min(center_rect.width());
-                let tabs_left = (center_rect.center().x - (tabs_width / 2.0))
-                    .clamp(center_rect.min.x, center_rect.max.x - tabs_width);
-                let tabs_rect = egui::Rect::from_min_size(
-                    egui::pos2(tabs_left, center_rect.min.y),
-                    vec2(tabs_width, tab_button_height),
-                );
+                if !in_settings {
+                    let tab_spacing = ui.spacing().item_spacing.x;
+                    let tab_button_width =
+                        (((center_rect.width() - tab_spacing).max(140.0)) / 2.0).min(130.0);
+                    let tabs_total_width = (tab_button_width * 2.0) + tab_spacing;
+                    let tabs_width = tabs_total_width.min(center_rect.width());
+                    let tabs_left = (center_rect.center().x - (tabs_width / 2.0))
+                        .clamp(center_rect.min.x, center_rect.max.x - tabs_width);
+                    let tabs_rect = egui::Rect::from_min_size(
+                        egui::pos2(tabs_left, center_rect.min.y),
+                        vec2(tabs_width, tab_button_height),
+                    );
 
-                let mut tabs_ui = ui.new_child(
-                    egui::UiBuilder::new()
-                        .max_rect(tabs_rect)
-                        .layout(Layout::left_to_right(egui::Align::Min)),
-                );
+                    let mut tabs_ui = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(tabs_rect)
+                            .layout(Layout::left_to_right(egui::Align::Min)),
+                    );
 
-                let library_button = Button::new(RichText::new("Library").size(18.0))
-                    .min_size(vec2(tab_button_width, tab_button_height))
-                    .fill(if self.active_tab == TopBarTab::Library {
-                        Color32::from_rgb(86, 98, 116)
-                    } else {
-                        Color32::from_rgb(63, 73, 88)
-                    });
+                    let library_button = Button::new(RichText::new("Library").size(18.0))
+                        .min_size(vec2(tab_button_width, tab_button_height))
+                        .fill(if self.active_tab == TopBarTab::Library {
+                            Color32::from_rgb(86, 98, 116)
+                        } else {
+                            Color32::from_rgb(63, 73, 88)
+                        });
 
-                if tabs_ui.add(library_button).clicked() {
-                    actions.switch_to_tab = Some(TopBarTab::Library);
+                    if tabs_ui.add(library_button).clicked() {
+                        actions.switch_to_tab = Some(TopBarTab::Library);
+                    }
+
+                    let install_button = Button::new(RichText::new("Install").size(18.0))
+                        .min_size(vec2(tab_button_width, tab_button_height))
+                        .fill(if self.active_tab == TopBarTab::Install {
+                            Color32::from_rgb(86, 98, 116)
+                        } else {
+                            Color32::from_rgb(63, 73, 88)
+                        });
+
+                    if tabs_ui.add(install_button).clicked() {
+                        actions.switch_to_tab = Some(TopBarTab::Install);
+                    }
+
+                    let mut search_ui = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(search_rect.shrink2(vec2(2.0, 2.0)))
+                            .layout(Layout::left_to_right(egui::Align::Min)),
+                    );
+
+                    let (active_query, hint_text) = match self.active_tab {
+                        TopBarTab::Library => (
+                            &mut self.library_search_query,
+                            "Search library (name/runner/target)",
+                        ),
+                        TopBarTab::Install => {
+                            (&mut self.install_search_query, "Search installs")
+                        }
+                        TopBarTab::Settings => unreachable!(),
+                    };
+
+                    search::render_search_field(&mut search_ui, active_query, hint_text, 14.0);
                 }
 
-                let install_button = Button::new(RichText::new("Install").size(18.0))
-                    .min_size(vec2(tab_button_width, tab_button_height))
-                    .fill(if self.active_tab == TopBarTab::Install {
-                        Color32::from_rgb(86, 98, 116)
-                    } else {
-                        Color32::from_rgb(63, 73, 88)
-                    });
-
-                if tabs_ui.add(install_button).clicked() {
-                    actions.switch_to_tab = Some(TopBarTab::Install);
-                }
-
-                let mut search_ui = ui.new_child(
+                let second_row_rect = egui::Rect::from_min_max(
+                    egui::pos2(panel_rect.min.x, top_row_rect.max.y - 4.0),
+                    egui::pos2(panel_rect.max.x, panel_rect.max.y - 2.0),
+                );
+                let second_row_right_rect = egui::Rect::from_min_max(
+                    egui::pos2(search_rect.min.x, second_row_rect.min.y),
+                    second_row_rect.max,
+                );
+                let second_row_right_inner = egui::Rect::from_min_max(
+                    egui::pos2(second_row_right_rect.min.x + 2.0, second_row_right_rect.min.y - 3.0),
+                    egui::pos2(second_row_right_rect.max.x - 2.0, second_row_right_rect.max.y - 5.0),
+                );
+                let settings_button_height = second_row_right_inner.height().min(24.0).max(20.0);
+                let mut second_row_right_ui = ui.new_child(
                     egui::UiBuilder::new()
-                        .max_rect(search_rect.shrink2(vec2(2.0, 2.0)))
-                        .layout(Layout::left_to_right(egui::Align::Min)),
+                        .max_rect(second_row_right_inner)
+                        .layout(Layout::right_to_left(egui::Align::Min)),
                 );
 
-                let (active_query, hint_text) = match self.active_tab {
-                    TopBarTab::Library => (
-                        &mut self.library_search_query,
-                        "Search library (name/runner/target)",
-                    ),
-                    TopBarTab::Install => (&mut self.install_search_query, "Search installs"),
-                };
+                if in_settings {
+                    if second_row_right_ui
+                        .add_sized([96.0, settings_button_height], Button::new("Back"))
+                        .clicked()
+                    {
+                        actions.go_back_from_settings = true;
+                    }
+                } else if second_row_right_ui
+                    .add_sized([96.0, settings_button_height], Button::new("Settings"))
+                    .clicked()
+                {
+                    actions.open_settings = true;
+                }
 
-                search::render_search_field(&mut search_ui, active_query, hint_text, 14.0);
-
-                if self.active_tab == TopBarTab::Library {
-                    let playlist_row_top = top_row_rect.min.y + tab_button_height + playlist_button_gap;
+                if !in_settings && self.active_tab == TopBarTab::Library {
                     let playlist_rect = egui::Rect::from_min_max(
-                        egui::pos2(panel_rect.min.x, playlist_row_top),
-                        panel_rect.max,
+                        second_row_rect.min,
+                        egui::pos2(search_rect.min.x - horizontal_gap, second_row_rect.max.y),
+                    );
+                    let playlist_inner_rect = egui::Rect::from_min_max(
+                        egui::pos2(playlist_rect.min.x + 2.0, playlist_rect.min.y - 4.0),
+                        egui::pos2(playlist_rect.max.x - 2.0, playlist_rect.max.y - 4.0),
                     );
                     let mut playlist_ui = ui.new_child(
                         egui::UiBuilder::new()
-                            .max_rect(playlist_rect.shrink2(vec2(2.0, 0.0)))
+                            .max_rect(playlist_inner_rect)
                             .layout(Layout::left_to_right(egui::Align::Min)),
                     );
 

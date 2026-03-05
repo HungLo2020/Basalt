@@ -14,7 +14,7 @@ pub(super) fn render_search_field(
             .desired_width(text_edit_width)
             .background_color(Color32::from_rgb(63, 73, 88))
             .hint_text(hint_text);
-        ui.add_sized([text_edit_width, 28.0], text_edit);
+        ui.add_sized([text_edit_width, 25.0], text_edit);
     });
 }
 

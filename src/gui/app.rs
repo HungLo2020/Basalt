@@ -8,6 +8,7 @@ use super::top_bar::TopBarTab;
 
 pub(super) struct BasaltApp {
     pub(super) active_tab: TopBarTab,
+    pub(super) settings_return_tab: TopBarTab,
     pub(super) games: Vec<GameEntry>,
     pub(super) playlists: Vec<Playlist>,
     pub(super) selected_playlist: Option<String>,
@@ -29,6 +30,7 @@ impl Default for BasaltApp {
 
         let mut app = Self {
             active_tab: TopBarTab::Library,
+            settings_return_tab: TopBarTab::Library,
             games: Vec::new(),
             playlists: vec![Playlist {
                 name: "Favorites".to_string(),
@@ -77,6 +79,9 @@ impl eframe::App for BasaltApp {
             }
             TopBarTab::Install => {
                 self.render_install_screen(ctx, region_gray, white_line, right_panel_width);
+            }
+            TopBarTab::Settings => {
+                self.render_settings_screen(ctx, region_gray, white_line, right_panel_width);
             }
         }
     }

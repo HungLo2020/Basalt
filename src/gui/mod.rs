@@ -5,6 +5,7 @@ mod app_startup;
 mod install_screen;
 mod library_screen;
 mod search;
+mod settings_screen;
 mod tile_math;
 mod top_bar;
 

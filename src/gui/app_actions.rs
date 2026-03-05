@@ -5,10 +5,21 @@ use crate::core::{self, DiscoverResult, GameEntry};
 
 use super::app::BasaltApp;
 use super::search;
-use super::top_bar::{PlaylistSelection, TopBarActions};
+use super::top_bar::{PlaylistSelection, TopBarActions, TopBarTab};
 
 impl BasaltApp {
     pub(super) fn apply_top_bar_actions(&mut self, actions: TopBarActions) {
+        if actions.open_settings {
+            if self.active_tab == TopBarTab::Library || self.active_tab == TopBarTab::Install {
+                self.settings_return_tab = self.active_tab;
+            }
+            self.active_tab = TopBarTab::Settings;
+        }
+
+        if actions.go_back_from_settings && self.active_tab == TopBarTab::Settings {
+            self.active_tab = self.settings_return_tab;
+        }
+
         if let Some(tab) = actions.switch_to_tab {
             self.active_tab = tab;
         }
