@@ -185,6 +185,19 @@ impl BasaltApp {
         }
     }
 
+    pub(super) fn remove_game_from_gui(&mut self, game_name: &str) {
+        match core::remove_game(game_name) {
+            Ok(_) => {
+                self.selected_index = None;
+                self.refresh_games();
+                self.status_message = format!("Removed {}", game_name);
+            }
+            Err(err) => {
+                self.status_message = format!("Remove failed: {}", err);
+            }
+        }
+    }
+
     pub(super) fn install_mattmc_from_gui(&mut self) {
         match cli::run_install_mattmc_command() {
             Ok(_) => {

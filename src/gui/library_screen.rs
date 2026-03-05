@@ -74,6 +74,13 @@ impl BasaltApp {
                             self.set_game_favorited_from_gui(&selected.name, !is_favorited);
                         }
 
+                        if ui
+                            .button(RichText::new("Remove").size(body_text_size))
+                            .clicked()
+                        {
+                            self.remove_game_from_gui(&selected.name);
+                        }
+
                         if selected.name.eq_ignore_ascii_case("MattMC") {
                             ui.add_space(8.0);
                             ui.horizontal(|ui| {
