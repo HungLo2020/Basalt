@@ -48,7 +48,10 @@ impl BasaltApp {
                         );
 
                         if ui
-                            .button(RichText::new("Launch Selected").size(body_text_size))
+                            .add(
+                                egui::Button::new(RichText::new("Play").size(body_text_size))
+                                    .fill(Color32::DARK_GREEN),
+                            )
                             .clicked()
                         {
                             match core::launch_game(&selected.name) {
