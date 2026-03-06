@@ -135,6 +135,20 @@ impl BasaltApp {
                                 {
                                     self.sync_emulator_roms_down_from_gui(system);
                                 }
+
+                                if ui
+                                    .button(RichText::new("Sync Saves Up").size(body_text_size))
+                                    .clicked()
+                                {
+                                    self.sync_emulator_saves_up_from_gui(system);
+                                }
+
+                                if ui
+                                    .button(RichText::new("Sync Saves Down").size(body_text_size))
+                                    .clicked()
+                                {
+                                    self.sync_emulator_saves_down_from_gui(system);
+                                }
                             }
                         }
 

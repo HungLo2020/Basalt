@@ -15,6 +15,8 @@ pub use emulation::{
     install_runtime_and_cores as install_emulation_runtime,
     is_core_installed_for_system as is_emulation_core_installed_for_system,
     RomSyncReport as EmulationRomSyncReport,
+    sync_saves_down_for_system as sync_emulation_saves_down_for_system,
+    sync_saves_up_for_system as sync_emulation_saves_up_for_system,
     sync_roms_up_for_system as sync_emulation_roms_up_for_system,
 };
 pub use error::CoreResult;

@@ -282,6 +282,48 @@ impl BasaltApp {
         }
     }
 
+    pub(super) fn sync_emulator_saves_up_from_gui(&mut self, system: &str) {
+        match core::sync_emulation_saves_up_for_system(system) {
+            Ok(report) => {
+                self.install_status_message = format!(
+                    "Sync Saves Up ({}) completed: copied {}, unchanged {}, deleted {}",
+                    system.to_uppercase(),
+                    report.copied,
+                    report.unchanged,
+                    report.deleted
+                );
+            }
+            Err(err) => {
+                self.install_status_message = format!(
+                    "Sync Saves Up ({}) failed: {}",
+                    system.to_uppercase(),
+                    err
+                );
+            }
+        }
+    }
+
+    pub(super) fn sync_emulator_saves_down_from_gui(&mut self, system: &str) {
+        match core::sync_emulation_saves_down_for_system(system) {
+            Ok(report) => {
+                self.install_status_message = format!(
+                    "Sync Saves Down ({}) completed: copied {}, unchanged {}, deleted {}",
+                    system.to_uppercase(),
+                    report.copied,
+                    report.unchanged,
+                    report.deleted
+                );
+            }
+            Err(err) => {
+                self.install_status_message = format!(
+                    "Sync Saves Down ({}) failed: {}",
+                    system.to_uppercase(),
+                    err
+                );
+            }
+        }
+    }
+
     pub(super) fn sync_mattmc_up_from_gui(&mut self) {
         self.run_mattmc_sync_with_input("up\n", "SyncUp");
     }

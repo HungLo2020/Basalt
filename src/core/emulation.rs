@@ -11,6 +11,7 @@ const RETROARCH_FLATPAK_APP_ID: &str = "org.libretro.RetroArch";
 const JOYPAD_AUTOCONFIG_REPO_API_URL: &str =
     "https://api.github.com/repos/libretro/retroarch-joypad-autoconfig/contents";
 const REMOTE_ROMS_ROOT_DIR: &str = "/mnt/storage/OneDrive/Apps/Games/Emulators/ROMs";
+const REMOTE_SAVES_ROOT_DIR: &str = "/mnt/storage/OneDrive/Apps/Games/Emulators/Saves";
 
 const NES_SYSTEM: &str = "nes";
 const GBA_SYSTEM: &str = "gba";
@@ -100,6 +101,14 @@ pub fn sync_roms_up_for_system(system: &str) -> Result<RomSyncReport, String> {
 
 pub fn sync_roms_down_for_system(system: &str) -> Result<RomSyncReport, String> {
     sync_roms_for_system(system, RomSyncDirection::Down)
+}
+
+pub fn sync_saves_up_for_system(system: &str) -> Result<RomSyncReport, String> {
+    sync_saves_for_system(system, RomSyncDirection::Up)
+}
+
+pub fn sync_saves_down_for_system(system: &str) -> Result<RomSyncReport, String> {
+    sync_saves_for_system(system, RomSyncDirection::Down)
 }
 
 pub fn discoverable_systems() -> &'static [&'static str] {
@@ -508,9 +517,63 @@ fn sync_roms_for_system(system: &str, direction: RomSyncDirection) -> Result<Rom
         ));
     }
 
+    sync_directory_contents(
+        &source_dir,
+        &destination_dir,
+        "ROM",
+        |_: &Path| true,
+    )
+}
+
+fn sync_saves_for_system(system: &str, direction: RomSyncDirection) -> Result<RomSyncReport, String> {
+    let system_key = normalize_system_key(system)?;
+
+    let local_dir = saves_root_dir()?.join(&system_key);
+    let remote_dir = Path::new(REMOTE_SAVES_ROOT_DIR).join(&system_key);
+
+    fs::create_dir_all(&local_dir).map_err(|error| {
+        format!(
+            "Failed to create local save directory {}: {}",
+            local_dir.display(),
+            error
+        )
+    })?;
+
+    fs::create_dir_all(&remote_dir).map_err(|error| {
+        format!(
+            "Failed to create remote save directory {}: {}",
+            remote_dir.display(),
+            error
+        )
+    })?;
+
+    let (source_dir, destination_dir) = match direction {
+        RomSyncDirection::Up => (local_dir, remote_dir),
+        RomSyncDirection::Down => (remote_dir, local_dir),
+    };
+
+    sync_directory_contents(
+        &source_dir,
+        &destination_dir,
+        "save",
+        is_syncable_save_file,
+    )
+}
+
+fn sync_directory_contents<F>(
+    source_dir: &Path,
+    destination_dir: &Path,
+    file_label: &str,
+    include_file: F,
+) -> Result<RomSyncReport, String>
+where
+    F: Fn(&Path) -> bool,
+{
+
     fs::create_dir_all(&destination_dir).map_err(|error| {
         format!(
-            "Failed to create destination ROM directory {}: {}",
+            "Failed to create destination {} directory {}: {}",
+            file_label,
             destination_dir.display(),
             error
         )
@@ -518,9 +581,11 @@ fn sync_roms_for_system(system: &str, direction: RomSyncDirection) -> Result<Rom
 
     let mut source_files = Vec::new();
     collect_files_recursive(&source_dir, &mut source_files)?;
+    source_files.retain(|path| include_file(path));
 
     let mut destination_files = Vec::new();
     collect_files_recursive(&destination_dir, &mut destination_files)?;
+    destination_files.retain(|path| include_file(path));
 
     let mut source_relative_paths = HashSet::new();
 
@@ -531,7 +596,8 @@ fn sync_roms_for_system(system: &str, direction: RomSyncDirection) -> Result<Rom
     for source_file in source_files {
         let relative_path = source_file.strip_prefix(&source_dir).map_err(|error| {
             format!(
-                "Failed to compute relative ROM path for {}: {}",
+                "Failed to compute relative {} path for {}: {}",
+                file_label,
                 source_file.display(),
                 error
             )
@@ -543,7 +609,8 @@ fn sync_roms_for_system(system: &str, direction: RomSyncDirection) -> Result<Rom
         if destination_file.exists() && destination_file.is_dir() {
             fs::remove_dir_all(&destination_file).map_err(|error| {
                 format!(
-                    "Failed to remove conflicting destination directory {}: {}",
+                    "Failed to remove conflicting destination {} directory {}: {}",
+                    file_label,
                     destination_file.display(),
                     error
                 )
@@ -553,7 +620,8 @@ fn sync_roms_for_system(system: &str, direction: RomSyncDirection) -> Result<Rom
         if let Some(parent_dir) = destination_file.parent() {
             fs::create_dir_all(parent_dir).map_err(|error| {
                 format!(
-                    "Failed to create destination subdirectory {}: {}",
+                    "Failed to create destination {} subdirectory {}: {}",
+                    file_label,
                     parent_dir.display(),
                     error
                 )
@@ -569,7 +637,8 @@ fn sync_roms_for_system(system: &str, direction: RomSyncDirection) -> Result<Rom
         if should_copy {
             fs::copy(&source_file, &destination_file).map_err(|error| {
                 format!(
-                    "Failed to copy ROM {} -> {}: {}",
+                    "Failed to copy {} {} -> {}: {}",
+                    file_label,
                     source_file.display(),
                     destination_file.display(),
                     error
@@ -586,7 +655,8 @@ fn sync_roms_for_system(system: &str, direction: RomSyncDirection) -> Result<Rom
             .strip_prefix(&destination_dir)
             .map_err(|error| {
                 format!(
-                    "Failed to compute destination relative ROM path for {}: {}",
+                    "Failed to compute destination relative {} path for {}: {}",
+                    file_label,
                     destination_file.display(),
                     error
                 )
@@ -599,7 +669,8 @@ fn sync_roms_for_system(system: &str, direction: RomSyncDirection) -> Result<Rom
         if destination_file.exists() && destination_file.is_file() {
             fs::remove_file(&destination_file).map_err(|error| {
                 format!(
-                    "Failed to delete destination ROM {}: {}",
+                    "Failed to delete destination {} {}: {}",
+                    file_label,
                     destination_file.display(),
                     error
                 )
@@ -615,6 +686,14 @@ fn sync_roms_for_system(system: &str, direction: RomSyncDirection) -> Result<Rom
         unchanged,
         deleted,
     })
+}
+
+fn is_syncable_save_file(file_path: &Path) -> bool {
+    let Some(file_name) = file_path.file_name().and_then(|value| value.to_str()) else {
+        return true;
+    };
+
+    !file_name.to_lowercase().contains(".state")
 }
 
 fn normalize_system_key(system: &str) -> Result<String, String> {
