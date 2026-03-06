@@ -15,26 +15,45 @@ const JOYPAD_AUTOCONFIG_REPO_API_URL: &str =
 
 const NES_SYSTEM: &str = "nes";
 const GBA_SYSTEM: &str = "gba";
+const SNES_SYSTEM: &str = "snes";
+const ATARI2600_SYSTEM: &str = "atari2600";
 
 struct CoreSpec {
     system: &'static str,
     core_file: &'static str,
     archive_url: &'static str,
     rom_extensions: &'static [&'static str],
+    supports_save_sync: bool,
 }
 
-const CORE_SPECS: [CoreSpec; 2] = [
+const CORE_SPECS: [CoreSpec; 4] = [
     CoreSpec {
         system: NES_SYSTEM,
         core_file: "nestopia_libretro.so",
         archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/nestopia_libretro.so.zip",
         rom_extensions: &["nes", "fds", "unf", "unif"],
+        supports_save_sync: true,
     },
     CoreSpec {
         system: GBA_SYSTEM,
         core_file: "mgba_libretro.so",
         archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/mgba_libretro.so.zip",
         rom_extensions: &["gba"],
+        supports_save_sync: true,
+    },
+    CoreSpec {
+        system: SNES_SYSTEM,
+        core_file: "snes9x_libretro.so",
+        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/snes9x_libretro.so.zip",
+        rom_extensions: &["sfc", "smc", "swc", "fig", "bs"],
+        supports_save_sync: true,
+    },
+    CoreSpec {
+        system: ATARI2600_SYSTEM,
+        core_file: "stella_libretro.so",
+        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/stella_libretro.so.zip",
+        rom_extensions: &["a26", "bin", "rom"],
+        supports_save_sync: false,
     },
 ];
 
@@ -112,7 +131,13 @@ pub fn sync_saves_down_for_system(system: &str) -> Result<RomSyncReport, String>
 }
 
 pub fn discoverable_systems() -> &'static [&'static str] {
-    &[NES_SYSTEM, GBA_SYSTEM]
+    &[NES_SYSTEM, GBA_SYSTEM, SNES_SYSTEM, ATARI2600_SYSTEM]
+}
+
+pub fn is_save_sync_supported_for_system(system: &str) -> bool {
+    core_spec_for_system(system)
+        .map(|core_spec| core_spec.supports_save_sync)
+        .unwrap_or(false)
 }
 
 pub fn is_supported_rom_for_system(system: &str, file_path: &Path) -> bool {
@@ -493,6 +518,7 @@ fn core_spec_for_system(system: &str) -> Option<CoreSpec> {
             core_file: core_spec.core_file,
             archive_url: core_spec.archive_url,
             rom_extensions: core_spec.rom_extensions,
+            supports_save_sync: core_spec.supports_save_sync,
         })
 }
 
@@ -529,6 +555,13 @@ fn sync_roms_for_system(system: &str, direction: RomSyncDirection) -> Result<Rom
 
 fn sync_saves_for_system(system: &str, direction: RomSyncDirection) -> Result<RomSyncReport, String> {
     let system_key = normalize_system_key(system)?;
+    if !is_save_sync_supported_for_system(&system_key) {
+        return Err(format!(
+            "Save sync is not supported for system: {}",
+            system_key
+        ));
+    }
+
     let remote_paths = settings::load_emulation_remote_paths()?;
 
     let local_dir = saves_root_dir()?.join(&system_key);

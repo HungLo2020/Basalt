@@ -1061,6 +1061,7 @@ fn emulator_system_catalog_path(system: &str) -> Option<&'static str> {
         "gg" => Some("Sega - Game Gear"),
         "psx" | "ps1" => Some("Sony - PlayStation"),
         "psp" => Some("Sony - PlayStation Portable"),
+        "atari2600" | "a2600" => Some("Atari - 2600"),
         _ => None,
     }
 }

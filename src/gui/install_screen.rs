@@ -90,6 +90,8 @@ impl BasaltApp {
                                     Ok(false) => "Not installed",
                                     Err(_) => "Unknown",
                                 };
+                                let supports_save_sync =
+                                    core::is_emulation_save_sync_supported_for_system(system);
                                 ui.label(
                                     RichText::new(format!("Core status: {}", status))
                                         .size(secondary_text_size),
@@ -101,13 +103,20 @@ impl BasaltApp {
                                     ))
                                     .size(secondary_text_size),
                                 );
-                                ui.label(
-                                    RichText::new(format!(
-                                        "Saves: ~/Games/Emulators/saves/{}",
-                                        system
-                                    ))
-                                    .size(secondary_text_size),
-                                );
+                                if supports_save_sync {
+                                    ui.label(
+                                        RichText::new(format!(
+                                            "Saves: ~/Games/Emulators/saves/{}",
+                                            system
+                                        ))
+                                        .size(secondary_text_size),
+                                    );
+                                } else {
+                                    ui.label(
+                                        RichText::new("Saves: not supported")
+                                            .size(secondary_text_size),
+                                    );
+                                }
 
                                 if ui
                                     .button(
@@ -136,18 +145,25 @@ impl BasaltApp {
                                     self.sync_emulator_roms_down_from_gui(system);
                                 }
 
-                                if ui
-                                    .button(RichText::new("Sync Saves Up").size(body_text_size))
-                                    .clicked()
-                                {
-                                    self.sync_emulator_saves_up_from_gui(system);
-                                }
+                                if supports_save_sync {
+                                    if ui
+                                        .button(RichText::new("Sync Saves Up").size(body_text_size))
+                                        .clicked()
+                                    {
+                                        self.sync_emulator_saves_up_from_gui(system);
+                                    }
 
-                                if ui
-                                    .button(RichText::new("Sync Saves Down").size(body_text_size))
-                                    .clicked()
-                                {
-                                    self.sync_emulator_saves_down_from_gui(system);
+                                    if ui
+                                        .button(RichText::new("Sync Saves Down").size(body_text_size))
+                                        .clicked()
+                                    {
+                                        self.sync_emulator_saves_down_from_gui(system);
+                                    }
+                                } else {
+                                    ui.label(
+                                        RichText::new("Save sync: not supported for this system")
+                                            .size(secondary_text_size),
+                                    );
                                 }
                             }
                         }
@@ -201,6 +217,18 @@ impl BasaltApp {
                 title: "NES Core",
                 description: "RetroArch Nestopia core for NES ROMs.",
                 kind: InstallTileKind::EmulatorCore("nes"),
+            },
+            InstallTile {
+                key: "core-snes",
+                title: "SNES Core",
+                description: "RetroArch Snes9x core for SNES ROMs.",
+                kind: InstallTileKind::EmulatorCore("snes"),
+            },
+            InstallTile {
+                key: "core-atari2600",
+                title: "Atari 2600 Core",
+                description: "RetroArch Stella core for Atari 2600 ROMs.",
+                kind: InstallTileKind::EmulatorCore("atari2600"),
             },
         ];
 

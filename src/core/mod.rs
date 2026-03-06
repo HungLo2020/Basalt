@@ -15,6 +15,7 @@ pub use emulation::{
     install_core_for_system as install_emulation_core_for_system,
     install_runtime_and_cores as install_emulation_runtime,
     is_core_installed_for_system as is_emulation_core_installed_for_system,
+    is_save_sync_supported_for_system as is_emulation_save_sync_supported_for_system,
     RomSyncReport as EmulationRomSyncReport,
     sync_saves_down_for_system as sync_emulation_saves_down_for_system,
     sync_saves_up_for_system as sync_emulation_saves_up_for_system,
