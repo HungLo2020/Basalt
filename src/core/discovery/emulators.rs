@@ -29,7 +29,7 @@ pub fn discover_emulator_entries() -> CoreResult<EmulatorDiscoverReport> {
             }
 
             let launch_target = emulation::build_launch_target(system, &rom_path)?;
-            let entry_name = build_entry_name(system, &rom_path);
+            let entry_name = build_entry_name(&rom_path);
 
             discovered.push(GameEntry {
                 name: entry_name,
@@ -68,32 +68,29 @@ pub fn discover_emulator_entries() -> CoreResult<EmulatorDiscoverReport> {
         }
     });
 
-    for discovered_entry in discovered {
-        if let Some(existing_entry) = entries
-            .iter_mut()
-            .find(|entry| entry.name == discovered_entry.name)
-        {
-            if existing_entry.runner_kind == discovered_entry.runner_kind
-                && existing_entry.launch_target == discovered_entry.launch_target
-            {
+    for mut discovered_entry in discovered {
+        if let Some(existing_index) = entries.iter().position(|entry| {
+            entry.runner_kind == discovered_entry.runner_kind
+                && entry.launch_target == discovered_entry.launch_target
+        }) {
+            let desired_name = allocate_unique_entry_name(
+                &entries,
+                &discovered_entry.name,
+                Some(existing_index),
+            );
+
+            if entries[existing_index].name == desired_name {
                 report.already_exists += 1;
                 continue;
             }
 
-            existing_entry.runner_kind = discovered_entry.runner_kind;
-            existing_entry.launch_target = discovered_entry.launch_target;
+            entries[existing_index].name = desired_name;
             report.updated += 1;
             changed = true;
             continue;
         }
 
-        if entries.iter().any(|entry| {
-            entry.runner_kind == discovered_entry.runner_kind
-                && entry.launch_target == discovered_entry.launch_target
-        }) {
-            report.already_exists += 1;
-            continue;
-        }
+        discovered_entry.name = allocate_unique_entry_name(&entries, &discovered_entry.name, None);
 
         entries.push(discovered_entry);
         report.added += 1;
@@ -130,10 +127,41 @@ fn collect_files_recursive(root: &Path, out: &mut Vec<PathBuf>) -> Result<(), St
     Ok(())
 }
 
-fn build_entry_name(system: &str, rom_path: &Path) -> String {
+fn build_entry_name(rom_path: &Path) -> String {
     let file_stem = rom_path
         .file_stem()
         .unwrap_or_else(|| OsStr::new("Unknown ROM"))
         .to_string_lossy();
-    format!("[{}] {}", system.to_uppercase(), file_stem)
+    let trimmed = file_stem.trim();
+    if trimmed.is_empty() {
+        "Unknown ROM".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn allocate_unique_entry_name(
+    entries: &[GameEntry],
+    preferred: &str,
+    skip_index: Option<usize>,
+) -> String {
+    if !is_entry_name_taken(entries, preferred, skip_index) {
+        return preferred.to_string();
+    }
+
+    let mut suffix = 2usize;
+    loop {
+        let candidate = format!("{} ({})", preferred, suffix);
+        if !is_entry_name_taken(entries, &candidate, skip_index) {
+            return candidate;
+        }
+        suffix += 1;
+    }
+}
+
+fn is_entry_name_taken(entries: &[GameEntry], name: &str, skip_index: Option<usize>) -> bool {
+    entries
+        .iter()
+        .enumerate()
+        .any(|(index, entry)| Some(index) != skip_index && entry.name == name)
 }
