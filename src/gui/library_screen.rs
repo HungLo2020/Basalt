@@ -5,7 +5,7 @@ use eframe::egui::{
     RichText, SidePanel,
 };
 
-use crate::core::{self, GameEntry};
+use crate::core::{self, EmulationLaunchTarget, GameEntry};
 
 use super::app::BasaltApp;
 use super::game_tile::paint_game_tile;
@@ -336,9 +336,11 @@ impl BasaltApp {
 }
 
 fn emulator_category_name(launch_target: &str) -> String {
-    let mut parts = launch_target.splitn(3, '|');
-    let _backend = parts.next();
-    let system = parts.next().unwrap_or_default().trim();
+    let system_owned = EmulationLaunchTarget::decode(launch_target)
+        .ok()
+        .map(|target| target.system_key().to_string())
+        .unwrap_or_default();
+    let system = system_owned.trim();
 
     if system.is_empty() {
         "Emulation".to_string()

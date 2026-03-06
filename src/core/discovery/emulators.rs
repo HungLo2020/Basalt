@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::core::emulation;
+use crate::core::EmulationLaunchTarget;
 use crate::core::playlist_service;
 use crate::core::registry;
 use crate::core::runners::RunnerKind;
@@ -57,7 +58,7 @@ pub fn discover_emulator_entries() -> CoreResult<EmulatorDiscoverReport> {
     let mut removed_names = Vec::new();
     entries.retain(|entry| {
         let is_managed_emulator_entry = entry.runner_kind == RunnerKind::Emulator
-            && entry.launch_target.starts_with("retroarch|");
+            && EmulationLaunchTarget::decode(&entry.launch_target).is_ok();
 
         if is_managed_emulator_entry && !discovered_targets.contains(&entry.launch_target) {
             removed_names.push(entry.name.clone());

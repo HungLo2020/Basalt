@@ -1,6 +1,8 @@
 mod discovery;
 mod discovery_service;
 mod emulation;
+mod emulation_target;
+mod emulator_systems;
 mod error;
 mod game_service;
 mod playlist_service;
@@ -20,6 +22,11 @@ pub use emulation::{
     sync_saves_down_for_system as sync_emulation_saves_down_for_system,
     sync_saves_up_for_system as sync_emulation_saves_up_for_system,
     sync_roms_up_for_system as sync_emulation_roms_up_for_system,
+};
+pub use emulation_target::EmulationLaunchTarget;
+pub use emulator_systems::{
+    emulation_install_tiles,
+    emulator_artwork_catalog_path,
 };
 pub use error::CoreResult;
 pub use game_service::{

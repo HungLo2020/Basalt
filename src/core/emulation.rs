@@ -7,71 +7,13 @@ use std::process::Command;
 
 use serde_json::Value;
 
+use super::emulation_target::EmulationLaunchTarget;
+use super::emulator_systems::{self, EmulatorSystemSpec};
 use super::settings;
 
 const RETROARCH_FLATPAK_APP_ID: &str = "org.libretro.RetroArch";
 const JOYPAD_AUTOCONFIG_REPO_API_URL: &str =
     "https://api.github.com/repos/libretro/retroarch-joypad-autoconfig/contents";
-
-const NES_SYSTEM: &str = "nes";
-const GBA_SYSTEM: &str = "gba";
-const SNES_SYSTEM: &str = "snes";
-const ATARI2600_SYSTEM: &str = "atari2600";
-const NDS_SYSTEM: &str = "nds";
-const _3DS_SYSTEM: &str = "3ds";
-
-struct CoreSpec {
-    system: &'static str,
-    core_file: &'static str,
-    archive_url: &'static str,
-    rom_extensions: &'static [&'static str],
-    supports_save_sync: bool,
-}
-
-const CORE_SPECS: [CoreSpec; 6] = [
-    CoreSpec {
-        system: NES_SYSTEM,
-        core_file: "nestopia_libretro.so",
-        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/nestopia_libretro.so.zip",
-        rom_extensions: &["nes", "fds", "unf", "unif"],
-        supports_save_sync: true,
-    },
-    CoreSpec {
-        system: GBA_SYSTEM,
-        core_file: "mgba_libretro.so",
-        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/mgba_libretro.so.zip",
-        rom_extensions: &["gba"],
-        supports_save_sync: true,
-    },
-    CoreSpec {
-        system: SNES_SYSTEM,
-        core_file: "snes9x_libretro.so",
-        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/snes9x_libretro.so.zip",
-        rom_extensions: &["sfc", "smc", "swc", "fig", "bs"],
-        supports_save_sync: true,
-    },
-    CoreSpec {
-        system: ATARI2600_SYSTEM,
-        core_file: "stella_libretro.so",
-        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/stella_libretro.so.zip",
-        rom_extensions: &["a26", "bin", "rom"],
-        supports_save_sync: false,
-    },
-    CoreSpec {
-        system: NDS_SYSTEM,
-        core_file: "melonds_libretro.so",
-        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/melonds_libretro.so.zip",
-        rom_extensions: &["nds"],
-        supports_save_sync: true,
-    },
-    CoreSpec {
-        system: _3DS_SYSTEM,
-        core_file: "citra_libretro.so",
-        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/citra_libretro.so.zip",
-        rom_extensions: &["3ds", "cci", "cxi", "3dsx"],
-        supports_save_sync: true,
-    },
-];
 
 enum RuntimeCommand {
     RetroArchBinary,
@@ -102,7 +44,7 @@ pub fn install_runtime_and_cores() -> Result<EmulationInstallReport, String> {
     let _ = ensure_xbox_autoconfig_profiles();
 
     let mut cores_ready = 0usize;
-    for core_spec in CORE_SPECS {
+    for core_spec in emulator_systems::emulator_system_specs() {
         if ensure_core_installed(core_spec, &runtime_command)?.exists() {
             cores_ready += 1;
         }
@@ -117,14 +59,14 @@ pub fn install_runtime_and_cores() -> Result<EmulationInstallReport, String> {
 pub fn install_core_for_system(system: &str) -> Result<(), String> {
     ensure_emulator_directories()?;
     let runtime_command = ensure_runtime_command()?;
-    let core_spec = core_spec_for_system(system)
+    let core_spec = emulator_systems::emulator_system(system)
         .ok_or_else(|| format!("Unsupported emulator system: {}", system))?;
     ensure_core_installed(core_spec, &runtime_command)?;
     Ok(())
 }
 
 pub fn is_core_installed_for_system(system: &str) -> Result<bool, String> {
-    let core_spec = core_spec_for_system(system)
+    let core_spec = emulator_systems::emulator_system(system)
         .ok_or_else(|| format!("Unsupported emulator system: {}", system))?;
     let core_path = retroarch_cores_dir()?.join(core_spec.core_file);
     Ok(core_path.exists() && core_path.is_file())
@@ -146,19 +88,12 @@ pub fn sync_saves_down_for_system(system: &str) -> Result<RomSyncReport, String>
     sync_saves_for_system(system, RomSyncDirection::Down)
 }
 
-pub fn discoverable_systems() -> &'static [&'static str] {
-    &[
-        NES_SYSTEM,
-        GBA_SYSTEM,
-        SNES_SYSTEM,
-        ATARI2600_SYSTEM,
-        NDS_SYSTEM,
-        _3DS_SYSTEM,
-    ]
+pub fn discoverable_systems() -> Vec<&'static str> {
+    emulator_systems::discoverable_system_keys()
 }
 
 pub fn is_save_sync_supported_for_system(system: &str) -> bool {
-    core_spec_for_system(system)
+    emulator_systems::emulator_system(system)
         .map(|core_spec| core_spec.supports_save_sync)
         .unwrap_or(false)
 }
@@ -169,7 +104,7 @@ pub fn is_supported_rom_for_system(system: &str, file_path: &Path) -> bool {
     };
 
     let normalized_extension = extension.to_lowercase();
-    core_spec_for_system(system)
+    emulator_systems::emulator_system(system)
         .map(|core_spec| {
             core_spec
                 .rom_extensions
@@ -216,23 +151,22 @@ pub fn ensure_emulator_directories() -> Result<(), String> {
 }
 
 pub fn build_launch_target(system: &str, rom_path: &Path) -> Result<String, String> {
-    if core_spec_for_system(system).is_none() {
+    let system_key = normalize_system_key(system)?;
+    if emulator_systems::emulator_system(&system_key).is_none() {
         return Err(format!("Unsupported emulator system: {}", system));
     }
 
     let canonical_rom_path = canonicalize_or_keep(rom_path);
-    let rom_path_string = canonical_rom_path
-        .to_str()
-        .ok_or_else(|| "ROM path contains invalid UTF-8".to_string())?;
-
-    Ok(format!("retroarch|{}|{}", system, rom_path_string))
+    EmulationLaunchTarget::new_retroarch(system_key, canonical_rom_path)?.encode()
 }
 
 pub fn launch_target(launch_target: &str) -> Result<(), String> {
     ensure_emulator_directories()?;
     let runtime_command = ensure_runtime_command()?;
     let _ = ensure_xbox_autoconfig_profiles();
-    let (system, rom_path) = parse_launch_target(launch_target)?;
+    let parsed_launch_target = EmulationLaunchTarget::decode(launch_target)?;
+    let system = normalize_system_key(parsed_launch_target.system_key())?;
+    let rom_path = parsed_launch_target.rom_path().to_path_buf();
 
     if !rom_path.exists() || !rom_path.is_file() {
         return Err(format!("ROM file does not exist: {}", rom_path.display()));
@@ -246,7 +180,7 @@ pub fn launch_target(launch_target: &str) -> Result<(), String> {
         ));
     }
 
-    let core_spec = core_spec_for_system(&system)
+    let core_spec = emulator_systems::emulator_system(&system)
         .ok_or_else(|| format!("Unsupported emulator system: {}", system))?;
     let core_path = ensure_core_installed(core_spec, &runtime_command)?;
 
@@ -325,23 +259,6 @@ pub fn launch_target(launch_target: &str) -> Result<(), String> {
     }
 }
 
-fn parse_launch_target(launch_target: &str) -> Result<(String, PathBuf), String> {
-    let mut parts = launch_target.splitn(3, '|');
-    let backend = parts.next().unwrap_or_default();
-    let system = parts.next().unwrap_or_default();
-    let rom_path = parts.next().unwrap_or_default();
-
-    if backend != "retroarch" {
-        return Err(format!("Unsupported emulator backend '{}'.", backend));
-    }
-
-    if system.is_empty() || rom_path.is_empty() {
-        return Err("Malformed emulator launch target.".to_string());
-    }
-
-    Ok((system.to_string(), PathBuf::from(rom_path)))
-}
-
 fn ensure_runtime_command() -> Result<RuntimeCommand, String> {
     if let Some(command) = detect_runtime_command() {
         return Ok(command);
@@ -401,7 +318,10 @@ fn try_install_with_apt() -> Result<(), String> {
     Err("Apt-based RetroArch installation requires root or passwordless sudo.".to_string())
 }
 
-fn ensure_core_installed(core_spec: CoreSpec, _runtime_command: &RuntimeCommand) -> Result<PathBuf, String> {
+fn ensure_core_installed(
+    core_spec: &EmulatorSystemSpec,
+    _runtime_command: &RuntimeCommand,
+) -> Result<PathBuf, String> {
     let core_path = retroarch_cores_dir()?.join(core_spec.core_file);
     if core_path.exists() {
         return Ok(core_path);
@@ -529,20 +449,6 @@ fn retroarch_cores_dir() -> Result<PathBuf, String> {
 
 fn retroarch_autoconfig_root_dir() -> Result<PathBuf, String> {
     Ok(retroarch_runtime_dir()?.join("autoconfig"))
-}
-
-fn core_spec_for_system(system: &str) -> Option<CoreSpec> {
-    let normalized_system = system.to_lowercase();
-    CORE_SPECS
-        .iter()
-        .find(|core_spec| core_spec.system == normalized_system)
-        .map(|core_spec| CoreSpec {
-            system: core_spec.system,
-            core_file: core_spec.core_file,
-            archive_url: core_spec.archive_url,
-            rom_extensions: core_spec.rom_extensions,
-            supports_save_sync: core_spec.supports_save_sync,
-        })
 }
 
 fn canonicalize_or_keep(path: &Path) -> PathBuf {

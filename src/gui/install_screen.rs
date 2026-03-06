@@ -206,43 +206,16 @@ impl BasaltApp {
                 description: "Install or update MattMC into ~/Games/MattMC.",
                 kind: InstallTileKind::Mattmc,
             },
-            InstallTile {
-                key: "core-gba",
-                title: "GBA Core",
-                description: "RetroArch mGBA core for GBA ROMs.",
-                kind: InstallTileKind::EmulatorCore("gba"),
-            },
-            InstallTile {
-                key: "core-nes",
-                title: "NES Core",
-                description: "RetroArch Nestopia core for NES ROMs.",
-                kind: InstallTileKind::EmulatorCore("nes"),
-            },
-            InstallTile {
-                key: "core-snes",
-                title: "SNES Core",
-                description: "RetroArch Snes9x core for SNES ROMs.",
-                kind: InstallTileKind::EmulatorCore("snes"),
-            },
-            InstallTile {
-                key: "core-atari2600",
-                title: "Atari 2600 Core",
-                description: "RetroArch Stella core for Atari 2600 ROMs.",
-                kind: InstallTileKind::EmulatorCore("atari2600"),
-            },
-            InstallTile {
-                key: "core-nds",
-                title: "NDS Core",
-                description: "RetroArch melonDS core for Nintendo DS ROMs.",
-                kind: InstallTileKind::EmulatorCore("nds"),
-            },
-            InstallTile {
-                key: "core-3ds",
-                title: "3DS Core",
-                description: "RetroArch Citra core for Nintendo 3DS ROMs.",
-                kind: InstallTileKind::EmulatorCore("3ds"),
-            },
         ];
+
+        for emulator_tile in core::emulation_install_tiles() {
+            tiles.push(InstallTile {
+                key: emulator_tile.key,
+                title: emulator_tile.title,
+                description: emulator_tile.description,
+                kind: InstallTileKind::EmulatorCore(emulator_tile.system_key),
+            });
+        }
 
         tiles.sort_by(|left, right| left.title.cmp(right.title));
         tiles
