@@ -3,7 +3,6 @@ use eframe::egui::{
 };
 
 use super::artwork::ArtworkTextures;
-use super::tile_math::fit_height_rect;
 
 pub(super) fn paint_game_tile(
     ui: &mut Ui,
@@ -40,15 +39,12 @@ pub(super) fn paint_game_tile(
         .rect_filled(icon_rect, artwork_rounding, Color32::from_rgb(36, 42, 52));
 
     if let Some(artwork) = artwork {
-        let [fg_width, fg_height] = artwork.foreground.size();
-        let draw_rect = fit_height_rect(icon_rect, fg_width as f32, fg_height as f32);
-
-        ui.painter().image(
-            artwork.foreground.id(),
-            draw_rect,
-            Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-            Color32::WHITE,
-        );
+        egui::Image::from_texture(&artwork.foreground)
+            .fit_to_exact_size(icon_rect.size())
+            .maintain_aspect_ratio(true)
+            .corner_radius(artwork_rounding)
+            .bg_fill(Color32::from_rgb(36, 42, 52))
+            .paint_at(ui, icon_rect);
     }
 
     ui.painter().rect_stroke(
