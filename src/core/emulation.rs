@@ -221,7 +221,7 @@ pub fn launch_target(launch_target: &str) -> Result<(), String> {
         .to_str()
         .ok_or_else(|| "Autoconfig path contains invalid UTF-8".to_string())?;
     let append_config_contents = format!(
-        "savefile_directory = \"{}\"\nsavestate_directory = \"{}\"\nsavefiles_in_content_dir = \"false\"\nsavestates_in_content_dir = \"false\"\nsort_savefiles_enable = \"false\"\nsort_savestates_enable = \"false\"\nsort_savefiles_by_content_enable = \"false\"\nsort_savestates_by_content_enable = \"false\"\ninput_autodetect_enable = \"true\"\njoypad_autoconfig_dir = \"{}\"\n",
+        "savefile_directory = \"{}\"\nsavestate_directory = \"{}\"\nsavefiles_in_content_dir = \"false\"\nsavestates_in_content_dir = \"false\"\nsort_savefiles_enable = \"false\"\nsort_savestates_enable = \"false\"\nsort_savefiles_by_content_enable = \"false\"\nsort_savestates_by_content_enable = \"false\"\nvideo_fullscreen = \"true\"\ninput_autodetect_enable = \"true\"\njoypad_autoconfig_dir = \"{}\"\n",
         save_directory_string, save_directory_string, autoconfig_directory_string
     );
     fs::write(&append_config_path, append_config_contents)
@@ -241,6 +241,7 @@ pub fn launch_target(launch_target: &str) -> Result<(), String> {
 
     let output = command
         .args([
+            "--fullscreen",
             "-L",
             core_path_string,
             "--appendconfig",
