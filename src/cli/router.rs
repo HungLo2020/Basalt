@@ -16,6 +16,8 @@ pub(super) enum CliCommand {
     Launch,
     BackupMattmc,
     SyncMattmc,
+    SyncRomsUp,
+    SyncRomsDown,
 }
 
 impl CliCommand {
@@ -34,6 +36,8 @@ impl CliCommand {
             Some("launch") => Ok(Self::Launch),
             Some("backup-mattmc") => Ok(Self::BackupMattmc),
             Some("sync-mattmc") => Ok(Self::SyncMattmc),
+            Some("sync-roms-up") => Ok(Self::SyncRomsUp),
+            Some("sync-roms-down") => Ok(Self::SyncRomsDown),
             Some(other) => Err(format!("Unknown command: {}\n\n{}", other, usage::full_usage())),
             None => Err(usage::full_usage()),
         }
@@ -57,6 +61,8 @@ impl CliCommand {
             Self::Launch => commands::launch::run(args),
             Self::BackupMattmc => commands::backup_mattmc::run(args),
             Self::SyncMattmc => commands::sync_mattmc::run(args),
+            Self::SyncRomsUp => commands::sync_roms::run_up(args),
+            Self::SyncRomsDown => commands::sync_roms::run_down(args),
         }
     }
 }

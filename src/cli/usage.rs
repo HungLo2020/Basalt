@@ -26,6 +26,14 @@ pub fn usage_discover() -> String {
     "Usage: basalt discover [--steam] [--mattmc] [--emulators]".to_string()
 }
 
+pub fn usage_sync_roms_up() -> String {
+    "Usage: basalt sync-roms-up <system>".to_string()
+}
+
+pub fn usage_sync_roms_down() -> String {
+    "Usage: basalt sync-roms-down <system>".to_string()
+}
+
 pub fn full_usage() -> String {
     [
         "Basalt CLI",
@@ -60,6 +68,10 @@ pub fn full_usage() -> String {
         "                               Run backup.sh from MattMC launch script directory",
         "  basalt sync-mattmc",
         "                               Run SyncGameData.sh from MattMC launch script directory",
+        "  basalt sync-roms-up <system>",
+        "                               Sync local ROMs to remote for a system key (e.g. nes, gba)",
+        "  basalt sync-roms-down <system>",
+        "                               Sync remote ROMs to local and run emulator-only discovery",
     ]
     .join("\n")
 }

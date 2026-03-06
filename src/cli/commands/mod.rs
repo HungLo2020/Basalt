@@ -9,4 +9,5 @@ pub mod list;
 pub mod remove;
 pub mod remove_from_playlist;
 pub mod remove_all;
+pub mod sync_roms;
 pub mod sync_mattmc;

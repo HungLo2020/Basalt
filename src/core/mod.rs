@@ -14,6 +14,8 @@ pub use emulation::{
     install_core_for_system as install_emulation_core_for_system,
     install_runtime_and_cores as install_emulation_runtime,
     is_core_installed_for_system as is_emulation_core_installed_for_system,
+    RomSyncReport as EmulationRomSyncReport,
+    sync_roms_up_for_system as sync_emulation_roms_up_for_system,
 };
 pub use error::CoreResult;
 pub use game_service::{
@@ -30,3 +32,18 @@ pub use types::{
 pub type CoreError = error::CoreError;
 
 pub(crate) use discovery_service::{is_already_exists_error, is_blacklisted_error};
+
+pub fn sync_emulation_roms_down_and_discover_for_system(
+    system: &str,
+) -> CoreResult<(EmulationRomSyncReport, EmulatorDiscoverReport)> {
+    let sync_report = emulation::sync_roms_down_for_system(system)?;
+    let discover_report = discovery_service::discover_with_runners(&[DiscoverRunner::Emulators])?;
+    let emulator_report = discover_report.emulators.unwrap_or(EmulatorDiscoverReport {
+        found: 0,
+        added: 0,
+        updated: 0,
+        already_exists: 0,
+    });
+
+    Ok((sync_report, emulator_report))
+}

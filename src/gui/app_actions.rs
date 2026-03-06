@@ -57,7 +57,7 @@ impl BasaltApp {
     }
 
     pub(super) fn discover_games(&mut self) {
-        match core::discover_games() {
+        match core::discover_with_runners(&core::ALL_DISCOVER_RUNNERS) {
             Ok(report) => {
                 self.refresh_games();
 
@@ -231,6 +231,53 @@ impl BasaltApp {
             Err(err) => {
                 self.install_status_message =
                     format!("{} core install failed: {}", system.to_uppercase(), err);
+            }
+        }
+    }
+
+    pub(super) fn sync_emulator_roms_up_from_gui(&mut self, system: &str) {
+        match core::sync_emulation_roms_up_for_system(system) {
+            Ok(report) => {
+                self.install_status_message = format!(
+                    "Sync Roms Up ({}) completed: copied {}, unchanged {}, deleted {}",
+                    system.to_uppercase(),
+                    report.copied,
+                    report.unchanged,
+                    report.deleted
+                );
+            }
+            Err(err) => {
+                self.install_status_message = format!(
+                    "Sync Roms Up ({}) failed: {}",
+                    system.to_uppercase(),
+                    err
+                );
+            }
+        }
+    }
+
+    pub(super) fn sync_emulator_roms_down_from_gui(&mut self, system: &str) {
+        match core::sync_emulation_roms_down_and_discover_for_system(system) {
+            Ok((sync_report, emulator_report)) => {
+                self.refresh_games();
+                self.install_status_message = format!(
+                    "Sync Roms Down ({}) completed: copied {}, unchanged {}, deleted {} | Emulator discover: found {}, added {}, updated {}, existing {}",
+                    system.to_uppercase(),
+                    sync_report.copied,
+                    sync_report.unchanged,
+                    sync_report.deleted,
+                    emulator_report.found,
+                    emulator_report.added,
+                    emulator_report.updated,
+                    emulator_report.already_exists
+                );
+            }
+            Err(err) => {
+                self.install_status_message = format!(
+                    "Sync Roms Down ({}) failed: {}",
+                    system.to_uppercase(),
+                    err
+                );
             }
         }
     }
