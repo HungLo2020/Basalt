@@ -20,11 +20,18 @@ const MATTMC_SVG_TARGET_MAX_DIMENSION: u32 = 1024;
 const MATTMC_BLUR_BACKGROUND_RGB: [u8; 3] = [56, 68, 88];
 const PREPARED_ARTWORK_MAX_WIDTH: u32 = 360;
 const PREPARED_ARTWORK_MAX_HEIGHT: u32 = 540;
-const MAX_PENDING_DOWNLOADS: usize = 6;
-const MAX_DOWNLOAD_QUEUE: usize = 48;
+const MAX_PENDING_STEAM_DOWNLOADS: usize = 6;
+const MAX_PENDING_EMULATOR_DOWNLOADS: usize = 6;
+const MAX_STEAM_DOWNLOAD_QUEUE: usize = 48;
+const MAX_EMULATOR_DOWNLOAD_QUEUE: usize = 48;
 const MAX_RESULT_QUEUE: usize = 96;
-const ARTWORK_WORKER_COUNT: usize = 4;
+const STEAM_ARTWORK_WORKER_COUNT: usize = 2;
+const EMULATOR_ARTWORK_WORKER_COUNT: usize = 4;
 const MAX_TEXTURE_UPLOADS_PER_TICK: usize = 2;
+const EMULATOR_ARTWORK_USER_AGENT: &str = "Basalt-Emulator-Artwork";
+const EMULATOR_ARTWORK_IMAGES_PATH: &str = "images";
+const EMULATOR_ARTWORK_MIN_WIDTH: u32 = 120;
+const EMULATOR_ARTWORK_MIN_HEIGHT: u32 = 120;
 
 #[derive(Clone)]
 pub(super) struct ArtworkTextures {
@@ -35,18 +42,36 @@ pub(super) struct ArtworkTextures {
 pub(super) struct ArtworkStore {
     textures: HashMap<String, ArtworkTextures>,
     missing: HashSet<String>,
-    requested: HashSet<String>,
-    download_tx: Sender<ArtworkDownloadJob>,
+    requested_by_runner: HashMap<String, ArtworkRunnerKind>,
+    steam_download_tx: Sender<ArtworkDownloadJob>,
+    emulator_download_tx: Sender<ArtworkDownloadJob>,
     result_rx: Receiver<ArtworkDownloadResult>,
 }
 
 impl ArtworkStore {
     pub(super) fn new() -> Self {
-        let (download_tx, download_rx) = bounded::<ArtworkDownloadJob>(MAX_DOWNLOAD_QUEUE);
+        let (steam_download_tx, steam_download_rx) =
+            bounded::<ArtworkDownloadJob>(MAX_STEAM_DOWNLOAD_QUEUE);
+        let (emulator_download_tx, emulator_download_rx) =
+            bounded::<ArtworkDownloadJob>(MAX_EMULATOR_DOWNLOAD_QUEUE);
         let (result_tx, result_rx) = bounded::<ArtworkDownloadResult>(MAX_RESULT_QUEUE);
 
-        for _ in 0..ARTWORK_WORKER_COUNT {
-            let worker_download_rx = download_rx.clone();
+        for _ in 0..STEAM_ARTWORK_WORKER_COUNT {
+            let worker_download_rx = steam_download_rx.clone();
+            let worker_result_tx = result_tx.clone();
+
+            thread::spawn(move || {
+                while let Ok(job) = worker_download_rx.recv() {
+                    let result = process_download_job(job);
+                    if worker_result_tx.send(result).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+
+        for _ in 0..EMULATOR_ARTWORK_WORKER_COUNT {
+            let worker_download_rx = emulator_download_rx.clone();
             let worker_result_tx = result_tx.clone();
 
             thread::spawn(move || {
@@ -62,8 +87,9 @@ impl ArtworkStore {
         Self {
             textures: HashMap::new(),
             missing: HashSet::new(),
-            requested: HashSet::new(),
-            download_tx,
+            requested_by_runner: HashMap::new(),
+            steam_download_tx,
+            emulator_download_tx,
             result_rx,
         }
     }
@@ -80,7 +106,7 @@ impl ArtworkStore {
 
             match result {
                 ArtworkDownloadResult::Ready { key, payload } => {
-                    self.requested.remove(&key);
+                    self.requested_by_runner.remove(&key);
 
                     if let Some(textures) = build_artwork_textures_from_payload(ctx, &key, payload) {
                         self.textures.insert(key.clone(), textures);
@@ -91,7 +117,7 @@ impl ArtworkStore {
                     }
                 }
                 ArtworkDownloadResult::Missing { key } => {
-                    self.requested.remove(&key);
+                    self.requested_by_runner.remove(&key);
                     self.missing.insert(key);
                 }
             }
@@ -106,6 +132,7 @@ impl ArtworkStore {
 
     pub(super) fn prepare_for_games(&mut self, games: &[GameEntry]) {
         let mut visible_keys = HashSet::new();
+        let mut emulator_prefetch_requests = Vec::new();
 
         for game in games {
             let runner = ArtworkRunnerKind::from_game(game);
@@ -114,11 +141,24 @@ impl ArtworkStore {
             };
 
             visible_keys.insert(request.key.clone());
+
+            if request.runner == ArtworkRunnerKind::Emulator {
+                emulator_prefetch_requests.push(request);
+            }
         }
 
         self.textures.retain(|key, _| visible_keys.contains(key));
-        self.requested.retain(|key| visible_keys.contains(key));
+        self.requested_by_runner
+            .retain(|key, _| visible_keys.contains(key));
         self.missing.retain(|key| visible_keys.contains(key));
+
+        for request in emulator_prefetch_requests {
+            if self.textures.contains_key(&request.key) {
+                continue;
+            }
+
+            self.request_download(request);
+        }
     }
 
     pub(super) fn artwork_for_game(
@@ -164,13 +204,23 @@ impl ArtworkStore {
     }
 
     fn request_download(&mut self, request: ArtworkRequest) {
-        if self.missing.contains(&request.key) || self.requested.contains(&request.key) {
+        if self.missing.contains(&request.key) || self.requested_by_runner.contains_key(&request.key) {
             return;
         }
 
         let has_cached_artwork = request.runner.has_cached_artwork(&request.target);
+        let pending_count_for_runner = self
+            .requested_by_runner
+            .values()
+            .filter(|runner| **runner == request.runner)
+            .count();
+        let max_pending_for_runner = match request.runner {
+            ArtworkRunnerKind::Steam => MAX_PENDING_STEAM_DOWNLOADS,
+            ArtworkRunnerKind::Emulator => MAX_PENDING_EMULATOR_DOWNLOADS,
+            ArtworkRunnerKind::Mattmc | ArtworkRunnerKind::Noop => 0,
+        };
 
-        if !has_cached_artwork && self.requested.len() >= MAX_PENDING_DOWNLOADS {
+        if !has_cached_artwork && pending_count_for_runner >= max_pending_for_runner {
             return;
         }
 
@@ -181,9 +231,15 @@ impl ArtworkStore {
             return;
         };
 
-        match self.download_tx.try_send(job) {
+        let enqueue_result = match request.runner {
+            ArtworkRunnerKind::Steam => self.steam_download_tx.try_send(job),
+            ArtworkRunnerKind::Emulator => self.emulator_download_tx.try_send(job),
+            ArtworkRunnerKind::Mattmc | ArtworkRunnerKind::Noop => return,
+        };
+
+        match enqueue_result {
             Ok(_) => {
-                self.requested.insert(request.key);
+                self.requested_by_runner.insert(request.key, request.runner);
             }
             Err(TrySendError::Full(_)) => {}
             Err(TrySendError::Disconnected(_)) => {
@@ -193,10 +249,11 @@ impl ArtworkStore {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum ArtworkRunnerKind {
     Mattmc,
     Steam,
+    Emulator,
     Noop,
 }
 
@@ -206,6 +263,8 @@ impl ArtworkRunnerKind {
             Self::Mattmc
         } else if game.runner_kind.as_str() == "steam" {
             Self::Steam
+        } else if game.runner_kind.as_str() == "emulator" {
+            Self::Emulator
         } else {
             Self::Noop
         }
@@ -226,6 +285,17 @@ impl ArtworkRunnerKind {
                     runner: self,
                 })
             }
+            Self::Emulator => {
+                let (system, rom_path) = parse_emulator_launch_target(&game.launch_target)?;
+                let rom_stem = rom_path.file_stem()?.to_string_lossy();
+                let normalized_title = normalize_matching_title(&rom_stem);
+                let key_seed = format!("{}|{}", system, normalized_title);
+                Some(ArtworkRequest {
+                    key: format!("emulator:{}", stable_hash_hex(&key_seed)),
+                    target: game.launch_target.clone(),
+                    runner: self,
+                })
+            }
             Self::Noop => None,
         }
     }
@@ -233,20 +303,21 @@ impl ArtworkRunnerKind {
     fn load_builtin_artwork(self, ctx: &Context, key: &str) -> Option<ArtworkTextures> {
         match self {
             Self::Mattmc => load_artwork_textures_from_svg_bytes(ctx, key, MATTMC_SVG_BYTES),
-            Self::Steam | Self::Noop => None,
+            Self::Steam | Self::Emulator | Self::Noop => None,
         }
     }
 
     fn has_cached_artwork(self, target: &str) -> bool {
         match self {
             Self::Steam => find_cached_steam_portrait_artwork_path(target).is_some(),
+            Self::Emulator => find_cached_emulator_artwork_path(target).is_some(),
             Self::Mattmc | Self::Noop => false,
         }
     }
 
     fn to_download_job(self, key: String, target: String) -> Option<ArtworkDownloadJob> {
         match self {
-            Self::Steam => Some(ArtworkDownloadJob {
+            Self::Steam | Self::Emulator => Some(ArtworkDownloadJob {
                 key,
                 target,
                 runner: self,
@@ -299,6 +370,22 @@ fn process_download_job(job: ArtworkDownloadJob) -> ArtworkDownloadResult {
                 None => ArtworkDownloadResult::Missing { key: job.key },
             }
         }
+        ArtworkRunnerKind::Emulator => {
+            if let Some(payload) = prepare_cached_emulator_artwork_payload(&job.target) {
+                return ArtworkDownloadResult::Ready {
+                    key: job.key,
+                    payload,
+                };
+            }
+
+            match download_and_prepare_emulator_artwork_payload(&job.target) {
+                Some(payload) => ArtworkDownloadResult::Ready {
+                    key: job.key,
+                    payload,
+                },
+                None => ArtworkDownloadResult::Missing { key: job.key },
+            }
+        }
         ArtworkRunnerKind::Mattmc | ArtworkRunnerKind::Noop => {
             ArtworkDownloadResult::Missing { key: job.key }
         }
@@ -318,6 +405,261 @@ fn prepare_cached_steam_artwork_payload(appid: &str) -> Option<PreparedArtwork> 
 fn download_and_prepare_steam_artwork_payload(appid: &str) -> Option<PreparedArtwork> {
     let cached_path = download_and_cache_steam_portrait_artwork(appid)?;
     prepare_artwork_payload_from_path(&cached_path, None)
+}
+
+fn prepare_cached_emulator_artwork_payload(launch_target: &str) -> Option<PreparedArtwork> {
+    let cached_path = find_cached_emulator_artwork_path(launch_target)?;
+    if let Some(payload) = prepare_artwork_payload_from_path(&cached_path, None) {
+        return Some(payload);
+    }
+
+    let _ = std::fs::remove_file(cached_path);
+    None
+}
+
+fn download_and_prepare_emulator_artwork_payload(launch_target: &str) -> Option<PreparedArtwork> {
+    let cached_path = download_and_cache_emulator_artwork(launch_target)?;
+    prepare_artwork_payload_from_path(&cached_path, None)
+}
+
+fn find_cached_emulator_artwork_path(launch_target: &str) -> Option<PathBuf> {
+    let images_dir = emulator_artwork_images_cache_dir()?;
+    let image_hash = stable_hash_hex(launch_target);
+    let candidates = [
+        images_dir.join(format!("{}.png", image_hash)),
+        images_dir.join(format!("{}.jpg", image_hash)),
+        images_dir.join(format!("{}.jpeg", image_hash)),
+    ];
+
+    for candidate in candidates {
+        if !candidate.is_file() {
+            continue;
+        }
+
+        if is_valid_emulator_artwork(&candidate) {
+            return Some(candidate);
+        }
+
+        let _ = std::fs::remove_file(&candidate);
+    }
+
+    None
+}
+
+fn download_and_cache_emulator_artwork(launch_target: &str) -> Option<PathBuf> {
+    let (system, rom_path) = parse_emulator_launch_target(launch_target)?;
+    let rom_stem = rom_path.file_stem()?.to_string_lossy().to_string();
+    let system_catalog = emulator_system_catalog_path(&system)?;
+    let candidate_titles = build_emulator_boxart_title_candidates(&rom_stem);
+    if candidate_titles.is_empty() {
+        return None;
+    }
+
+    let images_dir = emulator_artwork_images_cache_dir()?;
+    let image_hash = stable_hash_hex(launch_target);
+    for candidate_title in candidate_titles {
+        for extension in ["png", "jpg", "jpeg"] {
+            let target_path = images_dir.join(format!("{}.{}", image_hash, extension));
+            if target_path.is_file() && is_valid_emulator_artwork(&target_path) {
+                return Some(target_path);
+            }
+
+            let artwork_url = build_emulator_boxart_url(system_catalog, &candidate_title, extension);
+            if download_url_to_file_with_user_agent(
+                &artwork_url,
+                &target_path,
+                EMULATOR_ARTWORK_USER_AGENT,
+            ) && target_path.is_file()
+                && is_valid_emulator_artwork(&target_path)
+            {
+                return Some(target_path);
+            }
+
+            let _ = std::fs::remove_file(&target_path);
+        }
+    }
+
+    None
+}
+
+fn build_emulator_boxart_title_candidates(rom_stem: &str) -> Vec<String> {
+    let base_trimmed = rom_stem.trim();
+    if base_trimmed.is_empty() {
+        return Vec::new();
+    }
+
+    let stripped = strip_bracketed_segments(base_trimmed)
+        .split_whitespace()
+        .collect::<Vec<&str>>()
+        .join(" ");
+
+    let mut candidates = Vec::new();
+    push_unique_candidate(&mut candidates, base_trimmed);
+    push_unique_candidate(&mut candidates, &stripped);
+
+    if !stripped.is_empty() {
+        for region_tag in ["(USA)", "(Europe)", "(Japan)", "(World)"] {
+            let tagged = format!("{} {}", stripped, region_tag);
+            push_unique_candidate(&mut candidates, &tagged);
+        }
+
+        let without_the = stripped
+            .strip_prefix("The ")
+            .or_else(|| stripped.strip_prefix("the "))
+            .unwrap_or(&stripped)
+            .trim();
+        push_unique_candidate(&mut candidates, without_the);
+    }
+
+    candidates
+}
+
+fn push_unique_candidate(candidates: &mut Vec<String>, candidate: &str) {
+    let normalized = candidate.split_whitespace().collect::<Vec<&str>>().join(" ");
+    if normalized.is_empty() {
+        return;
+    }
+
+    if candidates.iter().any(|existing| existing.eq_ignore_ascii_case(&normalized)) {
+        return;
+    }
+
+    candidates.push(normalized);
+}
+
+fn build_emulator_boxart_url(system_catalog: &str, title: &str, extension: &str) -> String {
+    let encoded_catalog = encode_url_path_segment(system_catalog);
+    let encoded_title = encode_url_path_segment(title);
+    format!(
+        "https://thumbnails.libretro.com/{}/Named_Boxarts/{}.{}",
+        encoded_catalog, encoded_title, extension
+    )
+}
+
+fn emulator_system_catalog_path(system: &str) -> Option<&'static str> {
+    match normalize_matching_title(system).as_str() {
+        "nes" => Some("Nintendo - Nintendo Entertainment System"),
+        "gba" => Some("Nintendo - Game Boy Advance"),
+        "gb" => Some("Nintendo - Game Boy"),
+        "gbc" => Some("Nintendo - Game Boy Color"),
+        "snes" => Some("Nintendo - Super Nintendo Entertainment System"),
+        "n64" => Some("Nintendo - Nintendo 64"),
+        "genesis" | "megadrive" | "md" => Some("Sega - Mega Drive - Genesis"),
+        "sms" => Some("Sega - Master System - Mark III"),
+        "gg" => Some("Sega - Game Gear"),
+        "psx" | "ps1" => Some("Sony - PlayStation"),
+        "psp" => Some("Sony - PlayStation Portable"),
+        _ => None,
+    }
+}
+
+fn emulator_artwork_cache_root_dir() -> Option<PathBuf> {
+    let home = env::var("HOME").ok()?;
+    let cache_root = PathBuf::from(home)
+        .join(".basalt")
+        .join("cache")
+        .join("emulator_artwork");
+
+    if std::fs::create_dir_all(&cache_root).is_err() {
+        return None;
+    }
+
+    Some(cache_root)
+}
+
+fn emulator_artwork_images_cache_dir() -> Option<PathBuf> {
+    let cache_dir = emulator_artwork_cache_root_dir()?.join(EMULATOR_ARTWORK_IMAGES_PATH);
+    if std::fs::create_dir_all(&cache_dir).is_err() {
+        return None;
+    }
+    Some(cache_dir)
+}
+
+fn parse_emulator_launch_target(launch_target: &str) -> Option<(String, PathBuf)> {
+    let mut parts = launch_target.splitn(3, '|');
+    let backend = parts.next()?.trim().to_lowercase();
+    let system = parts.next()?.trim().to_string();
+    let rom_path = parts.next()?.trim();
+
+    if backend != "retroarch" || system.is_empty() || rom_path.is_empty() {
+        return None;
+    }
+
+    Some((system, PathBuf::from(rom_path)))
+}
+
+fn normalize_matching_title(raw: &str) -> String {
+    let stripped = strip_bracketed_segments(raw);
+
+    let mut normalized = String::new();
+    let mut previous_was_space = false;
+    for character in stripped.chars() {
+        let lower = character.to_ascii_lowercase();
+        if lower.is_ascii_alphanumeric() {
+            normalized.push(lower);
+            previous_was_space = false;
+        } else if !previous_was_space {
+            normalized.push(' ');
+            previous_was_space = true;
+        }
+    }
+
+    normalized.split_whitespace().collect::<Vec<&str>>().join(" ")
+}
+
+fn strip_bracketed_segments(raw: &str) -> String {
+    let mut output = String::new();
+    let mut round_depth = 0usize;
+    let mut square_depth = 0usize;
+    let mut curly_depth = 0usize;
+
+    for character in raw.chars() {
+        match character {
+            '(' => round_depth += 1,
+            ')' => {
+                round_depth = round_depth.saturating_sub(1);
+            }
+            '[' => square_depth += 1,
+            ']' => {
+                square_depth = square_depth.saturating_sub(1);
+            }
+            '{' => curly_depth += 1,
+            '}' => {
+                curly_depth = curly_depth.saturating_sub(1);
+            }
+            _ => {
+                if round_depth == 0 && square_depth == 0 && curly_depth == 0 {
+                    output.push(character);
+                }
+            }
+        }
+    }
+
+    output
+}
+
+fn stable_hash_hex(input: &str) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in input.as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x00000100000001B3);
+    }
+
+    format!("{:016x}", hash)
+}
+
+fn encode_url_path_segment(raw: &str) -> String {
+    let mut encoded = String::new();
+    for byte in raw.bytes() {
+        let is_unreserved = byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~');
+        if is_unreserved {
+            encoded.push(byte as char);
+        } else {
+            encoded.push('%');
+            encoded.push_str(&format!("{:02X}", byte));
+        }
+    }
+    encoded
 }
 
 fn prepare_artwork_payload_from_path(
@@ -609,11 +951,17 @@ fn download_and_cache_steam_portrait_artwork(appid: &str) -> Option<PathBuf> {
 }
 
 fn download_url_to_file(url: &str, target_path: &Path) -> bool {
+    download_url_to_file_with_user_agent(url, target_path, "Basalt-Steam-Artwork")
+}
+
+fn download_url_to_file_with_user_agent(url: &str, target_path: &Path, user_agent: &str) -> bool {
     const MAX_RETRIES: usize = 2;
     const HTTP_TIMEOUT_SECONDS: u64 = 12;
 
     for _ in 0..=MAX_RETRIES {
-        let request = ureq::get(url).timeout(Duration::from_secs(HTTP_TIMEOUT_SECONDS));
+        let request = ureq::get(url)
+            .set("User-Agent", user_agent)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SECONDS));
         let response = match request.call() {
             Ok(response) => response,
             Err(_) => continue,
@@ -673,4 +1021,16 @@ fn is_valid_portrait_artwork(path: &Path) -> bool {
 
     let aspect_ratio = width as f32 / height as f32;
     (0.60..=0.74).contains(&aspect_ratio)
+}
+
+fn is_valid_emulator_artwork(path: &Path) -> bool {
+    let Ok(image_reader) = image::ImageReader::open(path) else {
+        return false;
+    };
+
+    let Ok((width, height)) = image_reader.into_dimensions() else {
+        return false;
+    };
+
+    width >= EMULATOR_ARTWORK_MIN_WIDTH && height >= EMULATOR_ARTWORK_MIN_HEIGHT
 }
