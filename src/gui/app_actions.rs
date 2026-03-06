@@ -41,6 +41,15 @@ impl BasaltApp {
             self.refresh_games();
             self.status_message = "Game list refreshed".to_string();
         }
+        if actions.trigger_refresh_metadata {
+            self.refresh_metadata_from_gui();
+        }
+    }
+
+    pub(super) fn refresh_metadata_from_gui(&mut self) {
+        self.artwork_store.refresh_metadata_for_games(&self.games);
+        self.status_message = "Metadata refresh started: caches cleared, artwork requeued"
+            .to_string();
     }
 
     pub(super) fn refresh_games(&mut self) {

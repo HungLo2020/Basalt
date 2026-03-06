@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::env;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::copy;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, TrySendError};
 
@@ -20,18 +21,15 @@ const MATTMC_SVG_TARGET_MAX_DIMENSION: u32 = 1024;
 const MATTMC_BLUR_BACKGROUND_RGB: [u8; 3] = [56, 68, 88];
 const PREPARED_ARTWORK_MAX_WIDTH: u32 = 360;
 const PREPARED_ARTWORK_MAX_HEIGHT: u32 = 540;
-const MAX_PENDING_STEAM_DOWNLOADS: usize = 6;
-const MAX_PENDING_EMULATOR_DOWNLOADS: usize = 6;
 const MAX_STEAM_DOWNLOAD_QUEUE: usize = 48;
 const MAX_EMULATOR_DOWNLOAD_QUEUE: usize = 48;
 const MAX_RESULT_QUEUE: usize = 96;
-const STEAM_ARTWORK_WORKER_COUNT: usize = 2;
-const EMULATOR_ARTWORK_WORKER_COUNT: usize = 4;
 const MAX_TEXTURE_UPLOADS_PER_TICK: usize = 6;
 const EMULATOR_ARTWORK_USER_AGENT: &str = "Basalt-Emulator-Artwork";
 const EMULATOR_ARTWORK_IMAGES_PATH: &str = "images";
-const EMULATOR_ARTWORK_MISSING_CACHE_FILE: &str = "missing.tsv";
-const EMULATOR_ARTWORK_MISSING_TTL_SECONDS: u64 = 60 * 60 * 24 * 7;
+const EMULATOR_ARTWORK_INDEX_PATH: &str = "index";
+const EMULATOR_ARTWORK_INDEX_TTL_SECONDS: u64 = 60 * 60 * 24;
+const EMULATOR_ARTWORK_KEY_VERSION: &str = "v2";
 const EMULATOR_ARTWORK_MIN_WIDTH: u32 = 120;
 const EMULATOR_ARTWORK_MIN_HEIGHT: u32 = 120;
 
@@ -45,7 +43,9 @@ pub(super) struct ArtworkStore {
     textures: HashMap<String, ArtworkTextures>,
     missing: HashSet<String>,
     requested_by_runner: HashMap<String, ArtworkRunnerKind>,
-    emulator_known_missing: HashMap<String, u64>,
+    metadata_prefetch_queue: Vec<ArtworkRequest>,
+    max_pending_steam_downloads: usize,
+    max_pending_emulator_downloads: usize,
     steam_download_tx: Sender<ArtworkDownloadJob>,
     emulator_download_tx: Sender<ArtworkDownloadJob>,
     result_rx: Receiver<ArtworkDownloadResult>,
@@ -53,13 +53,19 @@ pub(super) struct ArtworkStore {
 
 impl ArtworkStore {
     pub(super) fn new() -> Self {
+        let host_thread_count = detect_host_thread_count();
+        let (steam_worker_count, emulator_worker_count) =
+            compute_artwork_worker_counts(host_thread_count);
+        let max_pending_steam_downloads = (steam_worker_count * 3).clamp(4, 24);
+        let max_pending_emulator_downloads = (emulator_worker_count * 3).clamp(6, 64);
+
         let (steam_download_tx, steam_download_rx) =
             bounded::<ArtworkDownloadJob>(MAX_STEAM_DOWNLOAD_QUEUE);
         let (emulator_download_tx, emulator_download_rx) =
             bounded::<ArtworkDownloadJob>(MAX_EMULATOR_DOWNLOAD_QUEUE);
         let (result_tx, result_rx) = bounded::<ArtworkDownloadResult>(MAX_RESULT_QUEUE);
 
-        for _ in 0..STEAM_ARTWORK_WORKER_COUNT {
+        for _ in 0..steam_worker_count {
             let worker_download_rx = steam_download_rx.clone();
             let worker_result_tx = result_tx.clone();
 
@@ -73,7 +79,7 @@ impl ArtworkStore {
             });
         }
 
-        for _ in 0..EMULATOR_ARTWORK_WORKER_COUNT {
+        for _ in 0..emulator_worker_count {
             let worker_download_rx = emulator_download_rx.clone();
             let worker_result_tx = result_tx.clone();
 
@@ -91,7 +97,9 @@ impl ArtworkStore {
             textures: HashMap::new(),
             missing: HashSet::new(),
             requested_by_runner: HashMap::new(),
-            emulator_known_missing: load_emulator_missing_cache(),
+            metadata_prefetch_queue: Vec::new(),
+            max_pending_steam_downloads,
+            max_pending_emulator_downloads,
             steam_download_tx,
             emulator_download_tx,
             result_rx,
@@ -112,16 +120,10 @@ impl ArtworkStore {
                 ArtworkDownloadResult::Ready { key, .. } => key.clone(),
                 ArtworkDownloadResult::Missing { key } => key.clone(),
             };
-            let completed_runner = self.requested_by_runner.remove(&key_for_state);
+            let _ = self.requested_by_runner.remove(&key_for_state);
 
             match result {
                 ArtworkDownloadResult::Ready { key, payload } => {
-                    if completed_runner == Some(ArtworkRunnerKind::Emulator)
-                        && self.emulator_known_missing.remove(&key).is_some()
-                    {
-                        let _ = save_emulator_missing_cache(&self.emulator_known_missing);
-                    }
-
                     if let Some(textures) = build_artwork_textures_from_payload(ctx, &key, payload) {
                         self.textures.insert(key.clone(), textures);
                         self.missing.remove(&key);
@@ -131,10 +133,6 @@ impl ArtworkStore {
                     }
                 }
                 ArtworkDownloadResult::Missing { key } => {
-                    if completed_runner == Some(ArtworkRunnerKind::Emulator) {
-                        self.emulator_known_missing.insert(key.clone(), unix_timestamp_seconds());
-                        let _ = save_emulator_missing_cache(&self.emulator_known_missing);
-                    }
                     self.missing.insert(key);
                 }
             }
@@ -145,11 +143,13 @@ impl ArtworkStore {
         if has_updates {
             ctx.request_repaint();
         }
+
+        self.pump_metadata_prefetch_queue();
     }
 
     pub(super) fn prepare_for_games(&mut self, games: &[GameEntry]) {
         let mut visible_keys = HashSet::new();
-        let mut emulator_prefetch_requests = Vec::new();
+        let mut metadata_prefetch_requests = Vec::new();
 
         for game in games {
             let runner = ArtworkRunnerKind::from_game(game);
@@ -159,8 +159,10 @@ impl ArtworkStore {
 
             visible_keys.insert(request.key.clone());
 
-            if request.runner == ArtworkRunnerKind::Emulator {
-                emulator_prefetch_requests.push(request);
+            if request.runner == ArtworkRunnerKind::Steam
+                || request.runner == ArtworkRunnerKind::Emulator
+            {
+                metadata_prefetch_requests.push(request);
             }
         }
 
@@ -169,13 +171,19 @@ impl ArtworkStore {
             .retain(|key, _| visible_keys.contains(key));
         self.missing.retain(|key| visible_keys.contains(key));
 
-        for request in emulator_prefetch_requests {
-            if self.textures.contains_key(&request.key) {
-                continue;
-            }
+        self.metadata_prefetch_queue = metadata_prefetch_requests;
+        self.pump_metadata_prefetch_queue();
+    }
 
-            self.request_download(request);
-        }
+    pub(super) fn refresh_metadata_for_games(&mut self, games: &[GameEntry]) {
+        clear_artwork_cache_files();
+
+        self.textures.clear();
+        self.missing.clear();
+        self.requested_by_runner.clear();
+        self.metadata_prefetch_queue.clear();
+
+        self.prepare_for_games(games);
     }
 
     pub(super) fn artwork_for_game(
@@ -216,22 +224,13 @@ impl ArtworkStore {
             return Some(builtin_textures);
         }
 
-        self.request_download(request);
+        let _ = self.request_download(request);
         None
     }
 
-    fn request_download(&mut self, request: ArtworkRequest) {
+    fn request_download(&mut self, request: ArtworkRequest) -> bool {
         if self.missing.contains(&request.key) || self.requested_by_runner.contains_key(&request.key) {
-            return;
-        }
-
-        if request.runner == ArtworkRunnerKind::Emulator {
-            if let Some(last_failed_at) = self.emulator_known_missing.get(&request.key) {
-                let now = unix_timestamp_seconds();
-                if now.saturating_sub(*last_failed_at) < EMULATOR_ARTWORK_MISSING_TTL_SECONDS {
-                    return;
-                }
-            }
+            return true;
         }
 
         let has_cached_artwork = request.runner.has_cached_artwork(&request.target);
@@ -241,37 +240,84 @@ impl ArtworkStore {
             .filter(|runner| **runner == request.runner)
             .count();
         let max_pending_for_runner = match request.runner {
-            ArtworkRunnerKind::Steam => MAX_PENDING_STEAM_DOWNLOADS,
-            ArtworkRunnerKind::Emulator => MAX_PENDING_EMULATOR_DOWNLOADS,
+            ArtworkRunnerKind::Steam => self.max_pending_steam_downloads,
+            ArtworkRunnerKind::Emulator => self.max_pending_emulator_downloads,
             ArtworkRunnerKind::Mattmc | ArtworkRunnerKind::Noop => 0,
         };
 
         if !has_cached_artwork && pending_count_for_runner >= max_pending_for_runner {
-            return;
+            return false;
         }
 
         let Some(job) = request
             .runner
             .to_download_job(request.key.clone(), request.target.clone())
         else {
-            return;
+            return true;
         };
 
         let enqueue_result = match request.runner {
             ArtworkRunnerKind::Steam => self.steam_download_tx.try_send(job),
             ArtworkRunnerKind::Emulator => self.emulator_download_tx.try_send(job),
-            ArtworkRunnerKind::Mattmc | ArtworkRunnerKind::Noop => return,
+            ArtworkRunnerKind::Mattmc | ArtworkRunnerKind::Noop => return true,
         };
 
         match enqueue_result {
             Ok(_) => {
                 self.requested_by_runner.insert(request.key, request.runner);
+                true
             }
-            Err(TrySendError::Full(_)) => {}
+            Err(TrySendError::Full(_)) => false,
             Err(TrySendError::Disconnected(_)) => {
                 self.missing.insert(request.key);
+                true
             }
         }
+    }
+
+    fn pump_metadata_prefetch_queue(&mut self) {
+        if self.metadata_prefetch_queue.is_empty() {
+            return;
+        }
+
+        let queued_requests = std::mem::take(&mut self.metadata_prefetch_queue);
+        let mut remaining_queue = Vec::new();
+        for request in queued_requests {
+            if self.textures.contains_key(&request.key)
+                || self.missing.contains(&request.key)
+                || self.requested_by_runner.contains_key(&request.key)
+            {
+                continue;
+            }
+
+            if !self.request_download(request.clone()) {
+                remaining_queue.push(request);
+            }
+        }
+
+        self.metadata_prefetch_queue = remaining_queue;
+    }
+}
+
+fn clear_artwork_cache_files() {
+    if let Some(steam_dir) = steam_artwork_cache_dir() {
+        let _ = std::fs::remove_dir_all(&steam_dir);
+    }
+
+    if let Some(emulator_root_dir) = emulator_artwork_cache_root_dir() {
+        let _ = std::fs::remove_dir_all(&emulator_root_dir);
+    }
+
+    if let Some(steam_dir) = steam_artwork_cache_dir() {
+        let _ = std::fs::create_dir_all(steam_dir);
+    }
+
+    if let Some(emulator_images_dir) = emulator_artwork_images_cache_dir() {
+        let _ = std::fs::create_dir_all(emulator_images_dir);
+    }
+
+    if let Some(emulator_index_dir) = emulator_artwork_index_cache_dir() {
+        let _ = std::fs::create_dir_all(emulator_index_dir);
     }
 }
 
@@ -313,7 +359,11 @@ impl ArtworkRunnerKind {
             }
             Self::Emulator => {
                 Some(ArtworkRequest {
-                    key: format!("emulator:{}", stable_hash_hex(&game.launch_target)),
+                    key: format!(
+                        "emulator:{}:{}",
+                        EMULATOR_ARTWORK_KEY_VERSION,
+                        stable_hash_hex(&game.launch_target)
+                    ),
                     target: game.launch_target.clone(),
                     runner: self,
                 })
@@ -472,21 +522,49 @@ fn download_and_cache_emulator_artwork(launch_target: &str) -> Option<PathBuf> {
     let (system, rom_path) = parse_emulator_launch_target(launch_target)?;
     let rom_stem = rom_path.file_stem()?.to_string_lossy().to_string();
     let system_catalog = emulator_system_catalog_path(&system)?;
-    let candidate_titles = build_emulator_boxart_title_candidates(&rom_stem);
-    if candidate_titles.is_empty() {
+    let (primary_titles, region_fallback_titles) =
+        build_emulator_boxart_title_candidates(&rom_stem);
+    if primary_titles.is_empty() {
         return None;
     }
 
     let images_dir = emulator_artwork_images_cache_dir()?;
     let image_hash = stable_hash_hex(launch_target);
-    for candidate_title in candidate_titles {
+
+    for artwork_set in ["Named_Boxarts", "Named_Titles", "Named_Snaps"] {
+        for candidate_title in &primary_titles {
+            for extension in ["png", "jpg"] {
+                let target_path = images_dir.join(format!("{}.{}", image_hash, extension));
+                if target_path.is_file() && is_valid_emulator_artwork(&target_path) {
+                    return Some(target_path);
+                }
+
+                let artwork_url =
+                    build_emulator_boxart_url(system_catalog, artwork_set, candidate_title, extension);
+                if download_url_to_file_with_user_agent(
+                    &artwork_url,
+                    &target_path,
+                    EMULATOR_ARTWORK_USER_AGENT,
+                ) && target_path.is_file()
+                    && is_valid_emulator_artwork(&target_path)
+                {
+                    return Some(target_path);
+                }
+
+                let _ = std::fs::remove_file(&target_path);
+            }
+        }
+    }
+
+    for candidate_title in &region_fallback_titles {
         for extension in ["png", "jpg"] {
             let target_path = images_dir.join(format!("{}.{}", image_hash, extension));
             if target_path.is_file() && is_valid_emulator_artwork(&target_path) {
                 return Some(target_path);
             }
 
-            let artwork_url = build_emulator_boxart_url(system_catalog, &candidate_title, extension);
+            let artwork_url =
+                build_emulator_boxart_url(system_catalog, "Named_Boxarts", candidate_title, extension);
             if download_url_to_file_with_user_agent(
                 &artwork_url,
                 &target_path,
@@ -501,13 +579,53 @@ fn download_and_cache_emulator_artwork(launch_target: &str) -> Option<PathBuf> {
         }
     }
 
+    let fuzzy_query_titles: Vec<String> = primary_titles
+        .iter()
+        .chain(region_fallback_titles.iter())
+        .cloned()
+        .collect();
+
+    for artwork_set in ["Named_Boxarts", "Named_Titles", "Named_Snaps"] {
+        let Some(best_filename) =
+            find_best_fuzzy_listing_match_filename(system_catalog, artwork_set, &fuzzy_query_titles)
+        else {
+            continue;
+        };
+
+        let extension = Path::new(&best_filename)
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(|value| value.to_lowercase())
+            .filter(|value| value == "png" || value == "jpg" || value == "jpeg")
+            .unwrap_or_else(|| "png".to_string());
+
+        let target_path = images_dir.join(format!("{}.{}", image_hash, extension));
+        if target_path.is_file() && is_valid_emulator_artwork(&target_path) {
+            return Some(target_path);
+        }
+
+        let artwork_url =
+            build_emulator_boxart_file_url(system_catalog, artwork_set, &best_filename);
+        if download_url_to_file_with_user_agent(
+            &artwork_url,
+            &target_path,
+            EMULATOR_ARTWORK_USER_AGENT,
+        ) && target_path.is_file()
+            && is_valid_emulator_artwork(&target_path)
+        {
+            return Some(target_path);
+        }
+
+        let _ = std::fs::remove_file(&target_path);
+    }
+
     None
 }
 
-fn build_emulator_boxart_title_candidates(rom_stem: &str) -> Vec<String> {
+fn build_emulator_boxart_title_candidates(rom_stem: &str) -> (Vec<String>, Vec<String>) {
     let base_trimmed = rom_stem.trim();
     if base_trimmed.is_empty() {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
 
     let stripped = strip_bracketed_segments(base_trimmed)
@@ -515,20 +633,81 @@ fn build_emulator_boxart_title_candidates(rom_stem: &str) -> Vec<String> {
         .collect::<Vec<&str>>()
         .join(" ");
 
-    let mut candidates = Vec::new();
-    push_unique_candidate(&mut candidates, base_trimmed);
-    push_unique_candidate(&mut candidates, &stripped);
+    let mut primary_candidates = Vec::new();
+    push_unique_candidate(&mut primary_candidates, base_trimmed);
+    push_unique_candidate(&mut primary_candidates, &stripped);
 
     if !stripped.is_empty() {
+        let punctuation_softened = stripped
+            .replace(':', " -")
+            .replace(" - ", " ")
+            .split_whitespace()
+            .collect::<Vec<&str>>()
+            .join(" ");
+        push_unique_candidate(&mut primary_candidates, &punctuation_softened);
+
         let without_the = stripped
             .strip_prefix("The ")
             .or_else(|| stripped.strip_prefix("the "))
             .unwrap_or(&stripped)
             .trim();
-        push_unique_candidate(&mut candidates, without_the);
+        push_unique_candidate(&mut primary_candidates, without_the);
+
+        if let Some(with_trailing_article) = move_leading_article_to_trailing(without_the) {
+            push_unique_candidate(&mut primary_candidates, &with_trailing_article);
+        }
+
+        if let Some(with_leading_article) = move_trailing_article_to_leading(without_the) {
+            push_unique_candidate(&mut primary_candidates, &with_leading_article);
+        }
+
+        if without_the.contains(" and ") {
+            push_unique_candidate(&mut primary_candidates, &without_the.replace(" and ", " & "));
+        }
+
+        if without_the.contains(" & ") {
+            push_unique_candidate(&mut primary_candidates, &without_the.replace(" & ", " and "));
+        }
     }
 
-    candidates
+    let mut region_fallback_candidates = Vec::new();
+    let base_for_region = if stripped.is_empty() {
+        base_trimmed
+    } else {
+        stripped.as_str()
+    };
+    if !base_for_region.is_empty() {
+        for region_tag in ["(USA)", "(Europe)", "(Japan)", "(World)"] {
+            let tagged = format!("{} {}", base_for_region, region_tag);
+            push_unique_candidate(&mut region_fallback_candidates, &tagged);
+        }
+    }
+
+    (primary_candidates, region_fallback_candidates)
+}
+
+fn move_trailing_article_to_leading(value: &str) -> Option<String> {
+    for article in [", The", ", A", ", An"] {
+        if let Some(base) = value.strip_suffix(article) {
+            let article_word = article.trim_start_matches(',').trim();
+            let candidate = format!("{} {}", article_word, base.trim());
+            return Some(candidate.split_whitespace().collect::<Vec<&str>>().join(" "));
+        }
+    }
+
+    None
+}
+
+fn move_leading_article_to_trailing(value: &str) -> Option<String> {
+    for article in ["The ", "A ", "An "] {
+        if let Some(base) = value.strip_prefix(article) {
+            let article_word = article.trim();
+            let candidate = format!("{}, {}", base.trim(), article_word);
+            return Some(candidate.split_whitespace().collect::<Vec<&str>>().join(" "));
+        }
+    }
+
+    None
 }
 
 fn push_unique_candidate(candidates: &mut Vec<String>, candidate: &str) {
@@ -544,13 +723,307 @@ fn push_unique_candidate(candidates: &mut Vec<String>, candidate: &str) {
     candidates.push(normalized);
 }
 
-fn build_emulator_boxart_url(system_catalog: &str, title: &str, extension: &str) -> String {
+fn build_emulator_boxart_url(
+    system_catalog: &str,
+    artwork_set: &str,
+    title: &str,
+    extension: &str,
+) -> String {
     let encoded_catalog = encode_url_path_segment(system_catalog);
+    let encoded_set = encode_url_path_segment(artwork_set);
     let encoded_title = encode_url_path_segment(title);
     format!(
-        "https://thumbnails.libretro.com/{}/Named_Boxarts/{}.{}",
-        encoded_catalog, encoded_title, extension
+        "https://thumbnails.libretro.com/{}/{}/{}.{}",
+        encoded_catalog, encoded_set, encoded_title, extension
     )
+}
+
+fn build_emulator_boxart_file_url(system_catalog: &str, artwork_set: &str, file_name: &str) -> String {
+    let encoded_catalog = encode_url_path_segment(system_catalog);
+    let encoded_set = encode_url_path_segment(artwork_set);
+    let encoded_file_name = encode_url_path_segment(file_name);
+    format!(
+        "https://thumbnails.libretro.com/{}/{}/{}",
+        encoded_catalog, encoded_set, encoded_file_name
+    )
+}
+
+fn find_best_fuzzy_listing_match_filename(
+    system_catalog: &str,
+    artwork_set: &str,
+    query_titles: &[String],
+) -> Option<String> {
+    let listing = load_thumbnail_listing(system_catalog, artwork_set)?;
+    if listing.is_empty() {
+        return None;
+    }
+
+    let query_norms: Vec<String> = query_titles
+        .iter()
+        .map(|title| normalize_matching_title(title))
+        .filter(|value| !value.is_empty())
+        .collect();
+    if query_norms.is_empty() {
+        return None;
+    }
+
+    let mut best_score = 0.0f32;
+    let mut best_filename: Option<String> = None;
+
+    for file_name in listing {
+        let Some(stem) = Path::new(&file_name).file_stem().and_then(|value| value.to_str()) else {
+            continue;
+        };
+
+        let candidate_norm = normalize_matching_title(stem);
+        if candidate_norm.is_empty() {
+            continue;
+        }
+
+        let mut score = 0.0f32;
+        for query_norm in &query_norms {
+            score = score.max(fuzzy_title_similarity(query_norm, &candidate_norm));
+            if score >= 0.999 {
+                break;
+            }
+        }
+
+        if score > best_score {
+            best_score = score;
+            best_filename = Some(file_name);
+        }
+    }
+
+    if best_score >= 0.58 {
+        best_filename
+    } else {
+        None
+    }
+}
+
+fn fuzzy_title_similarity(left: &str, right: &str) -> f32 {
+    if left == right {
+        return 1.0;
+    }
+
+    let left_tokens: Vec<&str> = left.split_whitespace().collect();
+    let right_tokens: Vec<&str> = right.split_whitespace().collect();
+    if left_tokens.is_empty() || right_tokens.is_empty() {
+        return 0.0;
+    }
+
+    let mut matches = 0usize;
+    for token in &left_tokens {
+        if right_tokens.iter().any(|value| value == token) {
+            matches += 1;
+        }
+    }
+
+    let union = left_tokens.len() + right_tokens.len() - matches;
+    let token_jaccard = if union == 0 {
+        0.0
+    } else {
+        matches as f32 / union as f32
+    };
+
+    let contains_bonus = if left.contains(right) || right.contains(left) {
+        1.0
+    } else {
+        0.0
+    };
+
+    let prefix_bonus = if left.starts_with(right) || right.starts_with(left) {
+        1.0
+    } else {
+        0.0
+    };
+
+    let length_ratio = (left.len().min(right.len()) as f32) / (left.len().max(right.len()) as f32);
+
+    (token_jaccard * 0.55) + (contains_bonus * 0.20) + (prefix_bonus * 0.15) + (length_ratio * 0.10)
+}
+
+fn load_thumbnail_listing(system_catalog: &str, artwork_set: &str) -> Option<Vec<String>> {
+    let cache_key = format!("{}|{}", system_catalog, artwork_set);
+    let in_memory_cache = thumbnail_listing_memory_cache();
+
+    if let Ok(cache) = in_memory_cache.lock() {
+        if let Some(existing) = cache.get(&cache_key) {
+            return Some(existing.clone());
+        }
+    }
+
+    let listing = if let Some(cached_listing) = read_thumbnail_listing_from_disk(system_catalog, artwork_set) {
+        cached_listing
+    } else {
+        let fetched_listing = fetch_thumbnail_listing_from_remote(system_catalog, artwork_set)?;
+        let _ = write_thumbnail_listing_to_disk(system_catalog, artwork_set, &fetched_listing);
+        fetched_listing
+    };
+
+    if let Ok(mut cache) = in_memory_cache.lock() {
+        cache.insert(cache_key, listing.clone());
+    }
+
+    Some(listing)
+}
+
+fn thumbnail_listing_memory_cache() -> &'static Mutex<HashMap<String, Vec<String>>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Vec<String>>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn read_thumbnail_listing_from_disk(system_catalog: &str, artwork_set: &str) -> Option<Vec<String>> {
+    let file_path = thumbnail_listing_cache_file_path(system_catalog, artwork_set)?;
+    let contents = std::fs::read_to_string(file_path).ok()?;
+
+    let mut lines = contents.lines();
+    let header = lines.next().unwrap_or_default();
+    let Some(timestamp) = header
+        .strip_prefix("#ts=")
+        .and_then(|value| value.parse::<u64>().ok())
+    else {
+        return None;
+    };
+
+    let now = current_unix_timestamp_seconds();
+    if now.saturating_sub(timestamp) > EMULATOR_ARTWORK_INDEX_TTL_SECONDS {
+        return None;
+    }
+
+    let mut listing = Vec::new();
+    for line in lines {
+        let file_name = line.trim();
+        if file_name.is_empty() {
+            continue;
+        }
+
+        listing.push(file_name.to_string());
+    }
+
+    if listing.is_empty() {
+        None
+    } else {
+        Some(listing)
+    }
+}
+
+fn write_thumbnail_listing_to_disk(
+    system_catalog: &str,
+    artwork_set: &str,
+    listing: &[String],
+) -> Result<(), String> {
+    let Some(file_path) = thumbnail_listing_cache_file_path(system_catalog, artwork_set) else {
+        return Err("Failed to resolve thumbnail listing cache file path".to_string());
+    };
+
+    let mut serialized = format!("#ts={}\n", current_unix_timestamp_seconds());
+    for file_name in listing {
+        serialized.push_str(file_name);
+        serialized.push('\n');
+    }
+
+    std::fs::write(file_path, serialized)
+        .map_err(|error| format!("Failed to write thumbnail listing cache: {}", error))
+}
+
+fn thumbnail_listing_cache_file_path(system_catalog: &str, artwork_set: &str) -> Option<PathBuf> {
+    let cache_dir = emulator_artwork_index_cache_dir()?;
+    let cache_key = format!("{}|{}", system_catalog, artwork_set);
+    let file_name = format!("{}.tsv", stable_hash_hex(&cache_key));
+    Some(cache_dir.join(file_name))
+}
+
+fn fetch_thumbnail_listing_from_remote(system_catalog: &str, artwork_set: &str) -> Option<Vec<String>> {
+    let directory_url = format!(
+        "https://thumbnails.libretro.com/{}/{}/",
+        encode_url_path_segment(system_catalog),
+        encode_url_path_segment(artwork_set),
+    );
+
+    let response = ureq::get(&directory_url)
+        .set("User-Agent", EMULATOR_ARTWORK_USER_AGENT)
+        .timeout(Duration::from_secs(18))
+        .call()
+        .ok()?;
+
+    if !(200..=299).contains(&response.status()) {
+        return None;
+    }
+
+    let body = response.into_string().ok()?;
+    let mut listing = Vec::new();
+    let mut cursor = 0usize;
+
+    while let Some(href_start_rel) = body[cursor..].find("href=\"") {
+        let href_start = cursor + href_start_rel + 6;
+        let Some(href_end_rel) = body[href_start..].find('"') else {
+            break;
+        };
+        let href_end = href_start + href_end_rel;
+        let href_value = &body[href_start..href_end];
+        cursor = href_end + 1;
+
+        if href_value.starts_with('?') || href_value.starts_with('/') {
+            continue;
+        }
+
+        let decoded = decode_url_component(&href_value.replace("&amp;", "&"));
+        let file_name = decoded
+            .split('/')
+            .next_back()
+            .unwrap_or_default()
+            .trim();
+
+        if file_name.is_empty() {
+            continue;
+        }
+
+        let lower = file_name.to_lowercase();
+        if !(lower.ends_with(".png") || lower.ends_with(".jpg") || lower.ends_with(".jpeg")) {
+            continue;
+        }
+
+        listing.push(file_name.to_string());
+    }
+
+    if listing.is_empty() {
+        None
+    } else {
+        Some(listing)
+    }
+}
+
+fn decode_url_component(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0usize;
+
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            let hi = bytes[index + 1];
+            let lo = bytes[index + 2];
+            if let (Some(hi_val), Some(lo_val)) = (hex_value(hi), hex_value(lo)) {
+                output.push((hi_val << 4) | lo_val);
+                index += 3;
+                continue;
+            }
+        }
+
+        output.push(bytes[index]);
+        index += 1;
+    }
+
+    String::from_utf8_lossy(&output).to_string()
+}
+
+fn hex_value(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(10 + value - b'a'),
+        b'A'..=b'F' => Some(10 + value - b'A'),
+        _ => None,
+    }
 }
 
 fn emulator_system_catalog_path(system: &str) -> Option<&'static str> {
@@ -592,71 +1065,40 @@ fn emulator_artwork_images_cache_dir() -> Option<PathBuf> {
     Some(cache_dir)
 }
 
-fn emulator_artwork_missing_cache_path() -> Option<PathBuf> {
-    Some(emulator_artwork_cache_root_dir()?.join(EMULATOR_ARTWORK_MISSING_CACHE_FILE))
-}
-
-fn load_emulator_missing_cache() -> HashMap<String, u64> {
-    let Some(cache_path) = emulator_artwork_missing_cache_path() else {
-        return HashMap::new();
-    };
-
-    let contents = match fs::read_to_string(cache_path) {
-        Ok(contents) => contents,
-        Err(_) => return HashMap::new(),
-    };
-
-    let now = unix_timestamp_seconds();
-    let mut loaded = HashMap::new();
-    for line in contents.lines() {
-        let mut parts = line.splitn(2, '\t');
-        let key = parts.next().unwrap_or_default().trim();
-        let timestamp_raw = parts.next().unwrap_or_default().trim();
-        let Ok(timestamp) = timestamp_raw.parse::<u64>() else {
-            continue;
-        };
-
-        if key.is_empty() {
-            continue;
-        }
-
-        if now.saturating_sub(timestamp) >= EMULATOR_ARTWORK_MISSING_TTL_SECONDS {
-            continue;
-        }
-
-        loaded.insert(key.to_string(), timestamp);
+fn emulator_artwork_index_cache_dir() -> Option<PathBuf> {
+    let cache_dir = emulator_artwork_cache_root_dir()?.join(EMULATOR_ARTWORK_INDEX_PATH);
+    if std::fs::create_dir_all(&cache_dir).is_err() {
+        return None;
     }
-
-    loaded
+    Some(cache_dir)
 }
 
-fn save_emulator_missing_cache(cache: &HashMap<String, u64>) -> Result<(), String> {
-    let Some(cache_path) = emulator_artwork_missing_cache_path() else {
-        return Err("Missing emulator artwork cache path".to_string());
-    };
-
-    let now = unix_timestamp_seconds();
-    let mut serialized = String::new();
-    for (key, timestamp) in cache {
-        if now.saturating_sub(*timestamp) >= EMULATOR_ARTWORK_MISSING_TTL_SECONDS {
-            continue;
-        }
-
-        serialized.push_str(key);
-        serialized.push('\t');
-        serialized.push_str(&timestamp.to_string());
-        serialized.push('\n');
-    }
-
-    fs::write(cache_path, serialized)
-        .map_err(|error| format!("Failed to write emulator missing-artwork cache: {}", error))
-}
-
-fn unix_timestamp_seconds() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
+fn current_unix_timestamp_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0)
+}
+
+fn detect_host_thread_count() -> usize {
+    std::thread::available_parallelism()
+        .map(|value| value.get())
+        .unwrap_or(4)
+}
+
+fn compute_artwork_worker_counts(host_threads: usize) -> (usize, usize) {
+    let clamped_threads = host_threads.max(2);
+    let emulator_workers = (clamped_threads / 2).clamp(2, 12);
+
+    let steam_workers = if clamped_threads >= 16 {
+        4
+    } else if clamped_threads >= 8 {
+        3
+    } else {
+        2
+    };
+
+    (steam_workers, emulator_workers)
 }
 
 fn parse_emulator_launch_target(launch_target: &str) -> Option<(String, PathBuf)> {

@@ -25,6 +25,7 @@ pub(super) struct TopBarActions {
     pub(super) go_back_from_settings: bool,
     pub(super) trigger_discover: bool,
     pub(super) trigger_refresh: bool,
+    pub(super) trigger_refresh_metadata: bool,
 }
 
 impl TopBarActions {
@@ -36,6 +37,7 @@ impl TopBarActions {
             go_back_from_settings: false,
             trigger_discover: false,
             trigger_refresh: false,
+            trigger_refresh_metadata: false,
         }
     }
 }
@@ -70,7 +72,7 @@ impl BasaltApp {
                 let in_settings = self.active_tab == TopBarTab::Settings;
 
                 let horizontal_gap = 10.0;
-                let mut action_region_width = 290.0;
+                let mut action_region_width = 430.0;
                 let action_region_min_width = 170.0;
 
                 let mut search_region_width = (top_row_rect.width() * 0.30).clamp(180.0, 360.0);
@@ -128,6 +130,9 @@ impl BasaltApp {
                     }
                     if action_ui.button("Refresh").clicked() {
                         actions.trigger_refresh = true;
+                    }
+                    if action_ui.button("Refresh Metadata").clicked() {
+                        actions.trigger_refresh_metadata = true;
                     }
                 }
 
