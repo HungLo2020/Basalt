@@ -7,6 +7,7 @@ mod playlist_service;
 mod registry;
 mod runners;
 mod script_service;
+mod settings;
 mod types;
 
 pub use discovery_service::{discover_games, discover_with_runners};
@@ -26,6 +27,11 @@ pub use game_service::{
 };
 pub use playlist_service::FAVORITES_PLAYLIST_NAME;
 pub use script_service::{run_game_sibling_script, run_game_sibling_script_with_input};
+pub use settings::{
+    default_emulation_remote_paths,
+    load_emulation_remote_paths,
+    save_emulation_remote_paths,
+};
 pub use types::{
     DiscoverReport, DiscoverResult, DiscoverRunner, EmulatorDiscoverReport, GameEntry, Playlist,
     SteamDiscoverReport, ALL_DISCOVER_RUNNERS,

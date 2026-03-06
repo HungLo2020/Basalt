@@ -7,11 +7,11 @@ use std::process::Command;
 
 use serde_json::Value;
 
+use super::settings;
+
 const RETROARCH_FLATPAK_APP_ID: &str = "org.libretro.RetroArch";
 const JOYPAD_AUTOCONFIG_REPO_API_URL: &str =
     "https://api.github.com/repos/libretro/retroarch-joypad-autoconfig/contents";
-const REMOTE_ROMS_ROOT_DIR: &str = "/mnt/storage/OneDrive/Apps/Games/Emulators/ROMs";
-const REMOTE_SAVES_ROOT_DIR: &str = "/mnt/storage/OneDrive/Apps/Games/Emulators/Saves";
 
 const NES_SYSTEM: &str = "nes";
 const GBA_SYSTEM: &str = "gba";
@@ -501,9 +501,10 @@ fn canonicalize_or_keep(path: &Path) -> PathBuf {
 
 fn sync_roms_for_system(system: &str, direction: RomSyncDirection) -> Result<RomSyncReport, String> {
     let system_key = normalize_system_key(system)?;
+    let remote_paths = settings::load_emulation_remote_paths()?;
 
     let local_dir = roms_root_dir()?.join(&system_key);
-    let remote_dir = Path::new(REMOTE_ROMS_ROOT_DIR).join(&system_key);
+    let remote_dir = Path::new(&remote_paths.roms_root_dir).join(&system_key);
 
     let (source_dir, destination_dir) = match direction {
         RomSyncDirection::Up => (local_dir, remote_dir),
@@ -527,9 +528,10 @@ fn sync_roms_for_system(system: &str, direction: RomSyncDirection) -> Result<Rom
 
 fn sync_saves_for_system(system: &str, direction: RomSyncDirection) -> Result<RomSyncReport, String> {
     let system_key = normalize_system_key(system)?;
+    let remote_paths = settings::load_emulation_remote_paths()?;
 
     let local_dir = saves_root_dir()?.join(&system_key);
-    let remote_dir = Path::new(REMOTE_SAVES_ROOT_DIR).join(&system_key);
+    let remote_dir = Path::new(&remote_paths.saves_root_dir).join(&system_key);
 
     fs::create_dir_all(&local_dir).map_err(|error| {
         format!(

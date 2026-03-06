@@ -16,8 +16,11 @@ pub(super) struct BasaltApp {
     pub(super) selected_install_tile_key: Option<String>,
     pub(super) library_search_query: String,
     pub(super) install_search_query: String,
+    pub(super) settings_remote_roms_root_input: String,
+    pub(super) settings_remote_saves_root_input: String,
     pub(super) status_message: String,
     pub(super) install_status_message: String,
+    pub(super) settings_status_message: String,
     pub(super) artwork_store: ArtworkStore,
     pub(super) startup_games_rx: Option<Receiver<core::CoreResult<Vec<GameEntry>>>>,
 }
@@ -28,6 +31,23 @@ impl Default for BasaltApp {
         thread::spawn(move || {
             let _ = startup_games_tx.send(core::list_games());
         });
+
+        let (settings_remote_roms_root_input, settings_remote_saves_root_input, settings_status_message) =
+            match core::load_emulation_remote_paths() {
+                Ok(paths) => (
+                    paths.roms_root_dir,
+                    paths.saves_root_dir,
+                    String::new(),
+                ),
+                Err(error) => {
+                    let defaults = core::default_emulation_remote_paths();
+                    (
+                        defaults.roms_root_dir,
+                        defaults.saves_root_dir,
+                        format!("Settings load warning: {}", error),
+                    )
+                }
+            };
 
         let mut app = Self {
             active_tab: TopBarTab::Library,
@@ -42,8 +62,11 @@ impl Default for BasaltApp {
             selected_install_tile_key: None,
             library_search_query: String::new(),
             install_search_query: String::new(),
+            settings_remote_roms_root_input,
+            settings_remote_saves_root_input,
             status_message: "Loading games...".to_string(),
             install_status_message: String::new(),
+            settings_status_message,
             artwork_store: ArtworkStore::new(),
             startup_games_rx: Some(startup_games_rx),
         };

@@ -351,4 +351,21 @@ impl BasaltApp {
             }
         }
     }
+
+    pub(super) fn save_emulation_remote_paths_from_gui(&mut self) {
+        match core::save_emulation_remote_paths(
+            &self.settings_remote_roms_root_input,
+            &self.settings_remote_saves_root_input,
+        ) {
+            Ok(saved) => {
+                self.settings_remote_roms_root_input = saved.roms_root_dir;
+                self.settings_remote_saves_root_input = saved.saves_root_dir;
+                self.settings_status_message =
+                    "Saved remote ROM/Saves default paths".to_string();
+            }
+            Err(err) => {
+                self.settings_status_message = format!("Save failed: {}", err);
+            }
+        }
+    }
 }
