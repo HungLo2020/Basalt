@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use eframe::egui::{
     self, vec2, CentralPanel, Color32, FontId, Frame, Layout, Margin, ScrollArea, Sense,
     RichText, SidePanel,
@@ -189,42 +191,119 @@ impl BasaltApp {
                 return;
             }
 
-            let mut visible_index = 0usize;
-            while visible_index < filtered_indices.len() {
-                ui.horizontal(|ui| {
-                    ui.add_space(WALL_PADDING);
+            let categorized_indices = self.categorize_filtered_indices(filtered_indices);
 
-                    for col in 0..columns {
-                        if visible_index >= filtered_indices.len() {
-                            break;
-                        }
+            for (category_position, (category_name, category_indices))
+                in categorized_indices.iter().enumerate()
+            {
+                let header_text = format!("{} ({})", category_name, category_indices.len());
+                let collapsing = egui::CollapsingHeader::new(header_text)
+                    .id_salt(format!("library_category_{}", category_name))
+                    .default_open(true);
 
-                        let game_index = filtered_indices[visible_index];
-                        let game = self.games[game_index].clone();
-                        let is_selected = self.selected_index == Some(game_index);
-                        if self
-                            .render_tile(ui, TILE_WIDTH, TILE_HEIGHT, &game, is_selected)
-                        {
-                            self.selected_index = Some(game_index);
-                        }
-
-                        if col + 1 < columns && visible_index + 1 < filtered_indices.len() {
-                            ui.add_space(TILE_SPACING);
-                        }
-
-                        visible_index += 1;
-                    }
-
-                    ui.add_space(WALL_PADDING + SCROLLBAR_GUTTER);
+                collapsing.show(ui, |ui| {
+                    ui.add_space(8.0);
+                    self.render_category_tile_rows(
+                        ui,
+                        category_indices,
+                        columns,
+                        TILE_WIDTH,
+                        TILE_HEIGHT,
+                        TILE_SPACING,
+                        WALL_PADDING,
+                        SCROLLBAR_GUTTER,
+                    );
                 });
 
-                if visible_index < filtered_indices.len() {
-                    ui.add_space(TILE_SPACING);
+                if category_position + 1 < categorized_indices.len() {
+                    ui.add_space(12.0);
                 }
             }
 
             ui.add_space(WALL_PADDING);
         });
+    }
+
+    fn render_category_tile_rows(
+        &mut self,
+        ui: &mut egui::Ui,
+        category_indices: &[usize],
+        columns: usize,
+        tile_width: f32,
+        tile_height: f32,
+        tile_spacing: f32,
+        wall_padding: f32,
+        scrollbar_gutter: f32,
+    ) {
+        let mut visible_index = 0usize;
+        while visible_index < category_indices.len() {
+            ui.horizontal(|ui| {
+                ui.add_space(wall_padding);
+
+                for col in 0..columns {
+                    if visible_index >= category_indices.len() {
+                        break;
+                    }
+
+                    let game_index = category_indices[visible_index];
+                    let game = self.games[game_index].clone();
+                    let is_selected = self.selected_index == Some(game_index);
+                    if self.render_tile(ui, tile_width, tile_height, &game, is_selected) {
+                        self.selected_index = Some(game_index);
+                    }
+
+                    if col + 1 < columns && visible_index + 1 < category_indices.len() {
+                        ui.add_space(tile_spacing);
+                    }
+
+                    visible_index += 1;
+                }
+
+                ui.add_space(wall_padding + scrollbar_gutter);
+            });
+
+            if visible_index < category_indices.len() {
+                ui.add_space(tile_spacing);
+            }
+        }
+    }
+
+    fn categorize_filtered_indices(&self, filtered_indices: &[usize]) -> Vec<(String, Vec<usize>)> {
+        let mut steam_indices = Vec::new();
+        let mut my_games_indices = Vec::new();
+        let mut emulator_sections: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+
+        for &game_index in filtered_indices {
+            let game = &self.games[game_index];
+            match game.runner_kind.as_str() {
+                "steam" => steam_indices.push(game_index),
+                "bash" => my_games_indices.push(game_index),
+                "emulator" => {
+                    let category_name = emulator_category_name(&game.launch_target);
+                    emulator_sections
+                        .entry(category_name)
+                        .or_default()
+                        .push(game_index);
+                }
+                _ => my_games_indices.push(game_index),
+            }
+        }
+
+        let mut categories = Vec::new();
+        if !steam_indices.is_empty() {
+            categories.push(("Steam".to_string(), steam_indices));
+        }
+        if !my_games_indices.is_empty() {
+            categories.push(("MyGames".to_string(), my_games_indices));
+        }
+
+        for (category_name, indices) in emulator_sections {
+            if !indices.is_empty() {
+                categories.push((category_name, indices));
+            }
+        }
+
+        categories
     }
 
     fn render_tile(
@@ -253,5 +332,17 @@ impl BasaltApp {
         );
 
         response.clicked()
+    }
+}
+
+fn emulator_category_name(launch_target: &str) -> String {
+    let mut parts = launch_target.splitn(3, '|');
+    let _backend = parts.next();
+    let system = parts.next().unwrap_or_default().trim();
+
+    if system.is_empty() {
+        "Emulation".to_string()
+    } else {
+        system.to_uppercase()
     }
 }
