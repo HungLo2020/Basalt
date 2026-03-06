@@ -1,10 +1,12 @@
 pub mod bashrunner;
+pub mod emulatorrunner;
 pub mod steamrunner;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RunnerKind {
     Bash,
     Steam,
+    Emulator,
 }
 
 pub struct ResolvedTarget {
@@ -17,6 +19,7 @@ impl RunnerKind {
         match self {
             RunnerKind::Bash => "bash",
             RunnerKind::Steam => "steam",
+            RunnerKind::Emulator => "emulator",
         }
     }
 
@@ -24,6 +27,7 @@ impl RunnerKind {
         match value {
             "bash" => Some(RunnerKind::Bash),
             "steam" => Some(RunnerKind::Steam),
+            "emulator" => Some(RunnerKind::Emulator),
             _ => None,
         }
     }
@@ -48,5 +52,6 @@ pub fn launch(runner_kind: RunnerKind, launch_target: &str) -> Result<(), String
     match runner_kind {
         RunnerKind::Bash => bashrunner::launch(launch_target),
         RunnerKind::Steam => steamrunner::launch(launch_target),
+        RunnerKind::Emulator => emulatorrunner::launch(launch_target),
     }
 }

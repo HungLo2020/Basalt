@@ -23,7 +23,7 @@ pub fn usage_launch() -> String {
 }
 
 pub fn usage_discover() -> String {
-    "Usage: basalt discover [--steam] [--mattmc]".to_string()
+    "Usage: basalt discover [--steam] [--mattmc] [--emulators]".to_string()
 }
 
 pub fn full_usage() -> String {
@@ -45,10 +45,13 @@ pub fn full_usage() -> String {
         "                               Remove all saved games",
         "  basalt list",
         "                               List all added games",
-        "  basalt discover [--steam] [--mattmc]",
+        "  basalt discover [--steam] [--mattmc] [--emulators]",
         "                               Discover games and add new entries (no switches = all discover runners)",
         "                               --steam discovers Steam games only",
         "                               --mattmc discovers MattMC only",
+        "                               --emulators discovers emulator ROM entries only",
+        "  basalt install-emulators",
+        "                               Install RetroArch runtime plus built-in NES/GBA cores",
         "  basalt install-mattmc",
         "                               Download latest MattMC release into ~/Games/MattMC",
         "  basalt launch <name>",

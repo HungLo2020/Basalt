@@ -9,11 +9,13 @@ pub fn discover_games() -> CoreResult<DiscoverReport> {
 pub fn discover_with_runners(runners: &[DiscoverRunner]) -> CoreResult<DiscoverReport> {
     let mut should_run_mattmc = false;
     let mut should_run_steam = false;
+    let mut should_run_emulators = false;
 
     for runner in runners {
         match runner {
             DiscoverRunner::Mattmc => should_run_mattmc = true,
             DiscoverRunner::Steam => should_run_steam = true,
+            DiscoverRunner::Emulators => should_run_emulators = true,
         }
     }
 
@@ -34,7 +36,17 @@ pub fn discover_with_runners(runners: &[DiscoverRunner]) -> CoreResult<DiscoverR
         None
     };
 
-    Ok(DiscoverReport { mattmc, steam })
+    let emulators = if should_run_emulators {
+        Some(discovery::emulators::discover_emulator_entries()?)
+    } else {
+        None
+    };
+
+    Ok(DiscoverReport {
+        mattmc,
+        steam,
+        emulators,
+    })
 }
 
 pub(crate) fn is_already_exists_error(error: &CoreError) -> bool {

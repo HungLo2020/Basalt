@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-use crate::cli;
 use crate::core::{self, DiscoverResult, GameEntry};
 
 use super::app::BasaltApp;
@@ -77,8 +76,21 @@ impl BasaltApp {
                     None => "Steam skipped".to_string(),
                 };
 
-                self.status_message =
-                    format!("Discover complete | {} | {}", mattmc_message, steam_message);
+                let emulator_message = match report.emulators {
+                    Some(emulators) => format!(
+                        "Emulators: found {}, added {}, updated {}, existing {}",
+                        emulators.found,
+                        emulators.added,
+                        emulators.updated,
+                        emulators.already_exists
+                    ),
+                    None => "Emulators skipped".to_string(),
+                };
+
+                self.status_message = format!(
+                    "Discover complete | {} | {} | {}",
+                    mattmc_message, steam_message, emulator_message
+                );
             }
             Err(err) => {
                 self.status_message = format!("Discover failed: {}", err);
@@ -199,13 +211,26 @@ impl BasaltApp {
     }
 
     pub(super) fn install_mattmc_from_gui(&mut self) {
-        match cli::run_install_mattmc_command() {
+        match crate::cli::run_install_mattmc_command() {
             Ok(_) => {
                 self.install_status_message = "MattMC install completed".to_string();
                 self.refresh_games();
             }
             Err(err) => {
                 self.install_status_message = format!("Install failed: {}", err);
+            }
+        }
+    }
+
+    pub(super) fn install_emulator_core_from_gui(&mut self, system: &str) {
+        match core::install_emulation_core_for_system(system) {
+            Ok(_) => {
+                self.install_status_message =
+                    format!("Installed {} emulator core", system.to_uppercase());
+            }
+            Err(err) => {
+                self.install_status_message =
+                    format!("{} core install failed: {}", system.to_uppercase(), err);
             }
         }
     }

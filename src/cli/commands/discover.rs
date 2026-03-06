@@ -10,6 +10,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         match argument.as_str() {
             "--mattmc" => runners.push(DiscoverRunner::Mattmc),
             "--steam" => runners.push(DiscoverRunner::Steam),
+            "--emulators" => runners.push(DiscoverRunner::Emulators),
             _ => return Err(usage::usage_discover()),
         }
     }
@@ -41,6 +42,20 @@ pub fn run(args: &[String]) -> Result<(), String> {
             println!(
                 "Steam discovery complete: found {}, added {}, already existed {}.",
                 steam_report.found, steam_report.added, steam_report.already_exists
+            );
+        }
+    }
+
+    if let Some(emulator_report) = report.emulators {
+        if emulator_report.found == 0 {
+            println!("No emulator ROMs discovered.");
+        } else {
+            println!(
+                "Emulator discovery complete: found {}, added {}, updated {}, already existed {}.",
+                emulator_report.found,
+                emulator_report.added,
+                emulator_report.updated,
+                emulator_report.already_exists
             );
         }
     }
