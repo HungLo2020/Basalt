@@ -4,7 +4,11 @@ use std::io::copy;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use serde_json::Value;
+
 const RETROARCH_FLATPAK_APP_ID: &str = "org.libretro.RetroArch";
+const JOYPAD_AUTOCONFIG_REPO_API_URL: &str =
+    "https://api.github.com/repos/libretro/retroarch-joypad-autoconfig/contents";
 
 const NES_SYSTEM: &str = "nes";
 const GBA_SYSTEM: &str = "gba";
@@ -44,6 +48,8 @@ pub struct EmulationInstallReport {
 pub fn install_runtime_and_cores() -> Result<EmulationInstallReport, String> {
     ensure_emulator_directories()?;
     let runtime_command = ensure_runtime_command()?;
+
+    let _ = ensure_xbox_autoconfig_profiles();
 
     let mut cores_ready = 0usize;
     for core_spec in CORE_SPECS {
@@ -146,6 +152,7 @@ pub fn build_launch_target(system: &str, rom_path: &Path) -> Result<String, Stri
 pub fn launch_target(launch_target: &str) -> Result<(), String> {
     ensure_emulator_directories()?;
     let runtime_command = ensure_runtime_command()?;
+    let _ = ensure_xbox_autoconfig_profiles();
     let (system, rom_path) = parse_launch_target(launch_target)?;
 
     if !rom_path.exists() || !rom_path.is_file() {
@@ -178,9 +185,13 @@ pub fn launch_target(launch_target: &str) -> Result<(), String> {
     let save_directory_string = save_directory
         .to_str()
         .ok_or_else(|| "Save directory path contains invalid UTF-8".to_string())?;
+    let autoconfig_directory = retroarch_autoconfig_root_dir()?;
+    let autoconfig_directory_string = autoconfig_directory
+        .to_str()
+        .ok_or_else(|| "Autoconfig path contains invalid UTF-8".to_string())?;
     let append_config_contents = format!(
-        "savefile_directory = \"{}\"\nsavestate_directory = \"{}\"\n",
-        save_directory_string, save_directory_string
+        "savefile_directory = \"{}\"\nsavestate_directory = \"{}\"\ninput_autodetect_enable = \"true\"\njoypad_autoconfig_dir = \"{}\"\n",
+        save_directory_string, save_directory_string, autoconfig_directory_string
     );
     fs::write(&append_config_path, append_config_contents)
         .map_err(|error| format!("Failed to write RetroArch append config: {}", error))?;
@@ -436,6 +447,10 @@ fn retroarch_cores_dir() -> Result<PathBuf, String> {
     Ok(retroarch_runtime_dir()?.join("cores"))
 }
 
+fn retroarch_autoconfig_root_dir() -> Result<PathBuf, String> {
+    Ok(retroarch_runtime_dir()?.join("autoconfig"))
+}
+
 fn core_spec_for_system(system: &str) -> Option<CoreSpec> {
     let normalized_system = system.to_lowercase();
     CORE_SPECS
@@ -451,4 +466,66 @@ fn core_spec_for_system(system: &str) -> Option<CoreSpec> {
 
 fn canonicalize_or_keep(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn ensure_xbox_autoconfig_profiles() -> Result<(), String> {
+    for backend in ["udev", "sdl2"] {
+        sync_xbox_autoconfig_backend(backend)?;
+    }
+
+    Ok(())
+}
+
+fn sync_xbox_autoconfig_backend(backend: &str) -> Result<(), String> {
+    let backend_url = format!("{}/{}", JOYPAD_AUTOCONFIG_REPO_API_URL, backend);
+    let response = ureq::get(&backend_url)
+        .set("User-Agent", "Basalt-Emulation-Installer")
+        .call()
+        .map_err(|error| format!("Failed to fetch joypad profile list: {}", error))?;
+
+    let payload = response
+        .into_string()
+        .map_err(|error| format!("Failed to read joypad profile list payload: {}", error))?;
+    let listing: Value = serde_json::from_str(&payload)
+        .map_err(|error| format!("Failed to parse joypad profile list: {}", error))?;
+
+    let entries = listing
+        .as_array()
+        .ok_or_else(|| "Joypad profile listing has unexpected format".to_string())?;
+
+    let backend_dir = retroarch_autoconfig_root_dir()?.join(backend);
+    fs::create_dir_all(&backend_dir)
+        .map_err(|error| format!("Failed to create autoconfig directory: {}", error))?;
+
+    for entry in entries {
+        let Some(name) = entry.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        if !is_xbox_profile_name(name) {
+            continue;
+        }
+
+        let Some(download_url) = entry.get("download_url").and_then(Value::as_str) else {
+            continue;
+        };
+
+        let destination = backend_dir.join(name);
+        if destination.exists() {
+            continue;
+        }
+
+        if let Err(error) = download_file(download_url, &destination) {
+            eprintln!(
+                "Warning: Failed to download controller profile {}: {}",
+                name, error
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn is_xbox_profile_name(name: &str) -> bool {
+    let normalized = name.to_lowercase();
+    normalized.contains("xbox") || normalized.contains("x-box") || normalized.contains("microsoft")
 }
