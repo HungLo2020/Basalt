@@ -44,6 +44,7 @@ pub fn add_game(name: &str, raw_script_path: &str) -> CoreResult<()> {
     });
 
     registry::save_entries(&entries)?;
+    playlist_service::sync_automatic_playlists()?;
     Ok(())
 }
 
@@ -72,6 +73,7 @@ pub fn remove_game(name: &str) -> CoreResult<()> {
 
     registry::save_entries(&entries)?;
     playlist_service::remove_game_from_all_playlists(name)?;
+    playlist_service::sync_automatic_playlists()?;
     Ok(())
 }
 
@@ -82,6 +84,7 @@ pub fn remove_all_games() -> CoreResult<usize> {
 
     registry::save_entries(&[])?;
     playlist_service::remove_games_from_all_playlists(&removed_names)?;
+    playlist_service::sync_automatic_playlists()?;
 
     Ok(removed_count)
 }

@@ -5,13 +5,18 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 
 use super::error::{CoreError, CoreResult};
+use super::registry;
+use super::runners::RunnerKind;
 use super::types::Playlist;
 
 const APP_DIR_NAME: &str = ".basalt";
 const PLAYLISTS_FILE_NAME: &str = "playlists.tsv";
 pub const FAVORITES_PLAYLIST_NAME: &str = "Favorites";
+pub const STEAM_PLAYLIST_NAME: &str = "Steam";
+pub const EMULATION_PLAYLIST_NAME: &str = "Emulation";
 
 pub fn list_playlists() -> CoreResult<Vec<Playlist>> {
+    sync_automatic_playlists()?;
     let mut memberships = load_playlist_memberships()?;
 
     let favorite_games = memberships
@@ -19,10 +24,28 @@ pub fn list_playlists() -> CoreResult<Vec<Playlist>> {
         .unwrap_or_default()
         .into_iter()
         .collect();
+    let steam_games = memberships
+        .remove(STEAM_PLAYLIST_NAME)
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    let emulation_games = memberships
+        .remove(EMULATION_PLAYLIST_NAME)
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
 
     let mut playlists = vec![Playlist {
         name: FAVORITES_PLAYLIST_NAME.to_string(),
         game_names: favorite_games,
+    },
+    Playlist {
+        name: STEAM_PLAYLIST_NAME.to_string(),
+        game_names: steam_games,
+    },
+    Playlist {
+        name: EMULATION_PLAYLIST_NAME.to_string(),
+        game_names: emulation_games,
     }];
 
     for (playlist_name, game_names) in memberships {
@@ -119,6 +142,44 @@ pub(super) fn remove_games_from_all_playlists(game_names: &[String]) -> CoreResu
     Ok(())
 }
 
+pub(super) fn sync_automatic_playlists() -> CoreResult<()> {
+    let mut memberships = load_playlist_memberships()?;
+    let entries = registry::load_entries()?;
+
+    let mut steam_games = BTreeSet::new();
+    let mut emulation_games = BTreeSet::new();
+
+    for entry in entries {
+        match entry.runner_kind {
+            RunnerKind::Steam => {
+                steam_games.insert(entry.name);
+            }
+            RunnerKind::Emulator => {
+                emulation_games.insert(entry.name);
+            }
+            RunnerKind::Bash => {}
+        }
+    }
+
+    let steam_changed = memberships
+        .get(STEAM_PLAYLIST_NAME)
+        .map(|existing| existing != &steam_games)
+        .unwrap_or(!steam_games.is_empty());
+    let emulation_changed = memberships
+        .get(EMULATION_PLAYLIST_NAME)
+        .map(|existing| existing != &emulation_games)
+        .unwrap_or(!emulation_games.is_empty());
+
+    memberships.insert(STEAM_PLAYLIST_NAME.to_string(), steam_games);
+    memberships.insert(EMULATION_PLAYLIST_NAME.to_string(), emulation_games);
+
+    if steam_changed || emulation_changed {
+        save_playlist_memberships(&memberships)?;
+    }
+
+    Ok(())
+}
+
 fn playlists_file_path() -> CoreResult<std::path::PathBuf> {
     let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
     Ok(Path::new(&home)
@@ -204,6 +265,12 @@ fn resolve_playlist_name(
 
     if trimmed.eq_ignore_ascii_case(FAVORITES_PLAYLIST_NAME) {
         return Ok(FAVORITES_PLAYLIST_NAME.to_string());
+    }
+    if trimmed.eq_ignore_ascii_case(STEAM_PLAYLIST_NAME) {
+        return Ok(STEAM_PLAYLIST_NAME.to_string());
+    }
+    if trimmed.eq_ignore_ascii_case(EMULATION_PLAYLIST_NAME) {
+        return Ok(EMULATION_PLAYLIST_NAME.to_string());
     }
 
     for existing_name in memberships.keys() {

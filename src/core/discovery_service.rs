@@ -1,5 +1,6 @@
 use super::discovery;
 use super::error::{CoreError, CoreResult};
+use super::playlist_service;
 use super::{DiscoverReport, DiscoverRunner, SteamDiscoverReport, ALL_DISCOVER_RUNNERS};
 
 pub fn discover_games() -> CoreResult<DiscoverReport> {
@@ -41,6 +42,8 @@ pub fn discover_with_runners(runners: &[DiscoverRunner]) -> CoreResult<DiscoverR
     } else {
         None
     };
+
+    playlist_service::sync_automatic_playlists()?;
 
     Ok(DiscoverReport {
         mattmc,

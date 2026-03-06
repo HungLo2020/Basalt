@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::core::emulation;
+use crate::core::playlist_service;
 use crate::core::registry;
 use crate::core::runners::RunnerKind;
 use crate::core::{CoreResult, EmulatorDiscoverReport, GameEntry};
@@ -48,6 +49,25 @@ pub fn discover_emulator_entries() -> CoreResult<EmulatorDiscoverReport> {
     let mut entries = registry::load_entries()?;
     let mut changed = false;
 
+    let discovered_targets: std::collections::BTreeSet<String> = discovered
+        .iter()
+        .map(|entry| entry.launch_target.clone())
+        .collect();
+
+    let mut removed_names = Vec::new();
+    entries.retain(|entry| {
+        let is_managed_emulator_entry = entry.runner_kind == RunnerKind::Emulator
+            && entry.launch_target.starts_with("retroarch|");
+
+        if is_managed_emulator_entry && !discovered_targets.contains(&entry.launch_target) {
+            removed_names.push(entry.name.clone());
+            changed = true;
+            false
+        } else {
+            true
+        }
+    });
+
     for discovered_entry in discovered {
         if let Some(existing_entry) = entries
             .iter_mut()
@@ -82,6 +102,10 @@ pub fn discover_emulator_entries() -> CoreResult<EmulatorDiscoverReport> {
 
     if changed {
         registry::save_entries(&entries)?;
+        if !removed_names.is_empty() {
+            playlist_service::remove_games_from_all_playlists(&removed_names)?;
+        }
+        playlist_service::sync_automatic_playlists()?;
     }
 
     Ok(report)
