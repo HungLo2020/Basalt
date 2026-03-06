@@ -17,6 +17,8 @@ const NES_SYSTEM: &str = "nes";
 const GBA_SYSTEM: &str = "gba";
 const SNES_SYSTEM: &str = "snes";
 const ATARI2600_SYSTEM: &str = "atari2600";
+const NDS_SYSTEM: &str = "nds";
+const _3DS_SYSTEM: &str = "3ds";
 
 struct CoreSpec {
     system: &'static str,
@@ -26,7 +28,7 @@ struct CoreSpec {
     supports_save_sync: bool,
 }
 
-const CORE_SPECS: [CoreSpec; 4] = [
+const CORE_SPECS: [CoreSpec; 6] = [
     CoreSpec {
         system: NES_SYSTEM,
         core_file: "nestopia_libretro.so",
@@ -54,6 +56,20 @@ const CORE_SPECS: [CoreSpec; 4] = [
         archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/stella_libretro.so.zip",
         rom_extensions: &["a26", "bin", "rom"],
         supports_save_sync: false,
+    },
+    CoreSpec {
+        system: NDS_SYSTEM,
+        core_file: "melonds_libretro.so",
+        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/melonds_libretro.so.zip",
+        rom_extensions: &["nds"],
+        supports_save_sync: true,
+    },
+    CoreSpec {
+        system: _3DS_SYSTEM,
+        core_file: "citra_libretro.so",
+        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/citra_libretro.so.zip",
+        rom_extensions: &["3ds", "cci", "cxi", "3dsx"],
+        supports_save_sync: true,
     },
 ];
 
@@ -131,7 +147,14 @@ pub fn sync_saves_down_for_system(system: &str) -> Result<RomSyncReport, String>
 }
 
 pub fn discoverable_systems() -> &'static [&'static str] {
-    &[NES_SYSTEM, GBA_SYSTEM, SNES_SYSTEM, ATARI2600_SYSTEM]
+    &[
+        NES_SYSTEM,
+        GBA_SYSTEM,
+        SNES_SYSTEM,
+        ATARI2600_SYSTEM,
+        NDS_SYSTEM,
+        _3DS_SYSTEM,
+    ]
 }
 
 pub fn is_save_sync_supported_for_system(system: &str) -> bool {

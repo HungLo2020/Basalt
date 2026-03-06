@@ -1056,6 +1056,8 @@ fn emulator_system_catalog_path(system: &str) -> Option<&'static str> {
         "gbc" => Some("Nintendo - Game Boy Color"),
         "snes" => Some("Nintendo - Super Nintendo Entertainment System"),
         "n64" => Some("Nintendo - Nintendo 64"),
+        "nds" => Some("Nintendo - Nintendo DS"),
+        "3ds" => Some("Nintendo - Nintendo 3DS"),
         "genesis" | "megadrive" | "md" => Some("Sega - Mega Drive - Genesis"),
         "sms" => Some("Sega - Master System - Mark III"),
         "gg" => Some("Sega - Game Gear"),

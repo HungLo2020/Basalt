@@ -230,6 +230,18 @@ impl BasaltApp {
                 description: "RetroArch Stella core for Atari 2600 ROMs.",
                 kind: InstallTileKind::EmulatorCore("atari2600"),
             },
+            InstallTile {
+                key: "core-nds",
+                title: "NDS Core",
+                description: "RetroArch melonDS core for Nintendo DS ROMs.",
+                kind: InstallTileKind::EmulatorCore("nds"),
+            },
+            InstallTile {
+                key: "core-3ds",
+                title: "3DS Core",
+                description: "RetroArch Citra core for Nintendo 3DS ROMs.",
+                kind: InstallTileKind::EmulatorCore("3ds"),
+            },
         ];
 
         tiles.sort_by(|left, right| left.title.cmp(right.title));
