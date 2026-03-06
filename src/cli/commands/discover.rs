@@ -29,7 +29,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 println!("MattMC entry already exists.");
             }
             core::DiscoverResult::NotFound => {
-                println!("MattMC not found at ~/Documents/MattMC/run-mattmc.sh");
+                println!("MattMC not found at ~/Games/MattMC/run-mattmc.sh");
             }
         }
     }

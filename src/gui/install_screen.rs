@@ -32,7 +32,7 @@ impl BasaltApp {
                     ui.heading("MattMC Install");
                     ui.separator();
                     ui.label(
-                        RichText::new("Install or update MattMC into ~/Documents/MattMC.")
+                        RichText::new("Install or update MattMC into ~/Games/MattMC.")
                             .size(body_text_size),
                     );
 

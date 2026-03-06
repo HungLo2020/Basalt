@@ -50,7 +50,7 @@ pub fn full_usage() -> String {
         "                               --steam discovers Steam games only",
         "                               --mattmc discovers MattMC only",
         "  basalt install-mattmc",
-        "                               Download latest MattMC release into ~/Documents/MattMC",
+        "                               Download latest MattMC release into ~/Games/MattMC",
         "  basalt launch <name>",
         "                               Launch a saved game script by name",
         "  basalt backup-mattmc",

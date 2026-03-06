@@ -17,7 +17,11 @@ pub fn run(args: &[String]) -> Result<(), String> {
     }
 
     let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
-    let target_dir = Path::new(&home).join("Documents").join("MattMC");
+    let games_dir = Path::new(&home).join("Games");
+    let target_dir = games_dir.join("MattMC");
+
+    fs::create_dir_all(&games_dir)
+        .map_err(|err| format!("Failed to create Games directory: {}", err))?;
 
     fs::create_dir_all(&target_dir)
         .map_err(|err| format!("Failed to create MattMC directory: {}", err))?;
@@ -44,7 +48,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
             "MattMC game entry already exists; no changes made.".to_string()
         }
         Some(core::DiscoverResult::NotFound) | None => {
-            return Err("MattMC install completed, but discovery did not find ~/Documents/MattMC/run-mattmc.sh".to_string())
+            return Err("MattMC install completed, but discovery did not find ~/Games/MattMC/run-mattmc.sh".to_string())
         }
     };
 
