@@ -235,38 +235,116 @@ impl BasaltApp {
             ui.set_min_width(ui.available_width());
             ui.add_space(WALL_PADDING);
 
-            let mut visible_index = 0usize;
-            while visible_index < tiles.len() {
+            if tiles.is_empty() {
                 ui.horizontal(|ui| {
                     ui.add_space(WALL_PADDING);
-
-                    for col in 0..columns {
-                        if visible_index >= tiles.len() {
-                            break;
-                        }
-
-                        let tile = tiles[visible_index];
-                        if self.render_install_tile(ui, TILE_WIDTH, TILE_HEIGHT, tile) {
-                            self.selected_install_tile_key = Some(tile.key.to_string());
-                        }
-
-                        if col + 1 < columns && visible_index + 1 < tiles.len() {
-                            ui.add_space(TILE_SPACING);
-                        }
-
-                        visible_index += 1;
+                    if self.install_search_query.trim().is_empty() {
+                        ui.label("No installable items available.");
+                    } else {
+                        ui.label("No install items match your search.");
                     }
-
                     ui.add_space(WALL_PADDING + SCROLLBAR_GUTTER);
                 });
+                ui.add_space(WALL_PADDING);
+                return;
+            }
 
-                if visible_index < tiles.len() {
-                    ui.add_space(TILE_SPACING);
+            let categorized_tiles = self.categorized_install_tiles(tiles);
+
+            for (category_position, (category_name, category_tiles))
+                in categorized_tiles.iter().enumerate()
+            {
+                let header_text = format!("{} ({})", category_name, category_tiles.len());
+                let collapsing = egui::CollapsingHeader::new(header_text)
+                    .id_salt(format!("install_category_{}", category_name))
+                    .default_open(true);
+
+                collapsing.show(ui, |ui| {
+                    ui.add_space(8.0);
+                    self.render_install_tile_rows(
+                        ui,
+                        category_tiles,
+                        columns,
+                        TILE_WIDTH,
+                        TILE_HEIGHT,
+                        TILE_SPACING,
+                        WALL_PADDING,
+                        SCROLLBAR_GUTTER,
+                    );
+                });
+
+                if category_position + 1 < categorized_tiles.len() {
+                    ui.add_space(12.0);
                 }
             }
 
             ui.add_space(WALL_PADDING);
         });
+    }
+
+    fn categorized_install_tiles(&self, tiles: &[InstallTile]) -> Vec<(&'static str, Vec<InstallTile>)> {
+        let mut my_games_tiles = Vec::new();
+        let mut emulator_tiles = Vec::new();
+
+        for tile in tiles {
+            match tile.kind {
+                InstallTileKind::Mattmc => my_games_tiles.push(*tile),
+                InstallTileKind::EmulatorCore(_) => emulator_tiles.push(*tile),
+            }
+        }
+
+        let mut categories = Vec::new();
+        if !my_games_tiles.is_empty() {
+            categories.push(("MyGames", my_games_tiles));
+        }
+
+        if !emulator_tiles.is_empty() {
+            categories.push(("Emulators", emulator_tiles));
+        }
+
+        categories
+    }
+
+    fn render_install_tile_rows(
+        &mut self,
+        ui: &mut egui::Ui,
+        tiles: &[InstallTile],
+        columns: usize,
+        tile_width: f32,
+        tile_height: f32,
+        tile_spacing: f32,
+        wall_padding: f32,
+        scrollbar_gutter: f32,
+    ) {
+        let mut visible_index = 0usize;
+        while visible_index < tiles.len() {
+            ui.horizontal(|ui| {
+                ui.add_space(wall_padding);
+
+                for col in 0..columns {
+                    if visible_index >= tiles.len() {
+                        break;
+                    }
+
+                    let tile = tiles[visible_index];
+                    if self.render_install_tile(ui, tile_width, tile_height, tile) {
+                        self.selected_install_tile_key = Some(tile.key.to_string());
+                    }
+
+                    if col + 1 < columns && visible_index + 1 < tiles.len() {
+                        ui.add_space(tile_spacing);
+                    }
+
+                    visible_index += 1;
+                }
+
+                ui.add_space(wall_padding + scrollbar_gutter);
+            });
+
+            if visible_index < tiles.len() {
+                ui.add_space(tile_spacing);
+            }
+        }
     }
 
     fn render_install_tile(

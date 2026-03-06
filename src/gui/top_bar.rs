@@ -139,7 +139,7 @@ impl BasaltApp {
                 if !in_settings {
                     let tab_spacing = ui.spacing().item_spacing.x;
                     let tab_button_width =
-                        (((center_rect.width() - tab_spacing).max(140.0)) / 2.0).min(130.0);
+                        (((center_rect.width() - tab_spacing).max(2.0)) / 2.0).min(130.0);
                     let tabs_total_width = (tab_button_width * 2.0) + tab_spacing;
                     let tabs_width = tabs_total_width.min(center_rect.width());
                     let tabs_left = (center_rect.center().x - (tabs_width / 2.0))

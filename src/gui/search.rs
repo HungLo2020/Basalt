@@ -7,8 +7,7 @@ pub(super) fn render_search_field(
     _text_size: f32,
 ) {
     ui.horizontal(|ui| {
-        let available_width = ui.available_width().max(120.0);
-        let text_edit_width = available_width.max(110.0);
+        let text_edit_width = ui.available_width().max(1.0);
 
         let text_edit = egui::TextEdit::singleline(query)
             .desired_width(text_edit_width)
