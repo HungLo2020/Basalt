@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::env;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::copy;
 use std::path::{Path, PathBuf};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, TrySendError};
 
@@ -27,9 +27,11 @@ const MAX_EMULATOR_DOWNLOAD_QUEUE: usize = 48;
 const MAX_RESULT_QUEUE: usize = 96;
 const STEAM_ARTWORK_WORKER_COUNT: usize = 2;
 const EMULATOR_ARTWORK_WORKER_COUNT: usize = 4;
-const MAX_TEXTURE_UPLOADS_PER_TICK: usize = 2;
+const MAX_TEXTURE_UPLOADS_PER_TICK: usize = 6;
 const EMULATOR_ARTWORK_USER_AGENT: &str = "Basalt-Emulator-Artwork";
 const EMULATOR_ARTWORK_IMAGES_PATH: &str = "images";
+const EMULATOR_ARTWORK_MISSING_CACHE_FILE: &str = "missing.tsv";
+const EMULATOR_ARTWORK_MISSING_TTL_SECONDS: u64 = 60 * 60 * 24 * 7;
 const EMULATOR_ARTWORK_MIN_WIDTH: u32 = 120;
 const EMULATOR_ARTWORK_MIN_HEIGHT: u32 = 120;
 
@@ -43,6 +45,7 @@ pub(super) struct ArtworkStore {
     textures: HashMap<String, ArtworkTextures>,
     missing: HashSet<String>,
     requested_by_runner: HashMap<String, ArtworkRunnerKind>,
+    emulator_known_missing: HashMap<String, u64>,
     steam_download_tx: Sender<ArtworkDownloadJob>,
     emulator_download_tx: Sender<ArtworkDownloadJob>,
     result_rx: Receiver<ArtworkDownloadResult>,
@@ -88,6 +91,7 @@ impl ArtworkStore {
             textures: HashMap::new(),
             missing: HashSet::new(),
             requested_by_runner: HashMap::new(),
+            emulator_known_missing: load_emulator_missing_cache(),
             steam_download_tx,
             emulator_download_tx,
             result_rx,
@@ -104,9 +108,19 @@ impl ArtworkStore {
                 Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
             };
 
+            let key_for_state = match &result {
+                ArtworkDownloadResult::Ready { key, .. } => key.clone(),
+                ArtworkDownloadResult::Missing { key } => key.clone(),
+            };
+            let completed_runner = self.requested_by_runner.remove(&key_for_state);
+
             match result {
                 ArtworkDownloadResult::Ready { key, payload } => {
-                    self.requested_by_runner.remove(&key);
+                    if completed_runner == Some(ArtworkRunnerKind::Emulator)
+                        && self.emulator_known_missing.remove(&key).is_some()
+                    {
+                        let _ = save_emulator_missing_cache(&self.emulator_known_missing);
+                    }
 
                     if let Some(textures) = build_artwork_textures_from_payload(ctx, &key, payload) {
                         self.textures.insert(key.clone(), textures);
@@ -117,7 +131,10 @@ impl ArtworkStore {
                     }
                 }
                 ArtworkDownloadResult::Missing { key } => {
-                    self.requested_by_runner.remove(&key);
+                    if completed_runner == Some(ArtworkRunnerKind::Emulator) {
+                        self.emulator_known_missing.insert(key.clone(), unix_timestamp_seconds());
+                        let _ = save_emulator_missing_cache(&self.emulator_known_missing);
+                    }
                     self.missing.insert(key);
                 }
             }
@@ -208,6 +225,15 @@ impl ArtworkStore {
             return;
         }
 
+        if request.runner == ArtworkRunnerKind::Emulator {
+            if let Some(last_failed_at) = self.emulator_known_missing.get(&request.key) {
+                let now = unix_timestamp_seconds();
+                if now.saturating_sub(*last_failed_at) < EMULATOR_ARTWORK_MISSING_TTL_SECONDS {
+                    return;
+                }
+            }
+        }
+
         let has_cached_artwork = request.runner.has_cached_artwork(&request.target);
         let pending_count_for_runner = self
             .requested_by_runner
@@ -286,12 +312,8 @@ impl ArtworkRunnerKind {
                 })
             }
             Self::Emulator => {
-                let (system, rom_path) = parse_emulator_launch_target(&game.launch_target)?;
-                let rom_stem = rom_path.file_stem()?.to_string_lossy();
-                let normalized_title = normalize_matching_title(&rom_stem);
-                let key_seed = format!("{}|{}", system, normalized_title);
                 Some(ArtworkRequest {
-                    key: format!("emulator:{}", stable_hash_hex(&key_seed)),
+                    key: format!("emulator:{}", stable_hash_hex(&game.launch_target)),
                     target: game.launch_target.clone(),
                     runner: self,
                 })
@@ -458,7 +480,7 @@ fn download_and_cache_emulator_artwork(launch_target: &str) -> Option<PathBuf> {
     let images_dir = emulator_artwork_images_cache_dir()?;
     let image_hash = stable_hash_hex(launch_target);
     for candidate_title in candidate_titles {
-        for extension in ["png", "jpg", "jpeg"] {
+        for extension in ["png", "jpg"] {
             let target_path = images_dir.join(format!("{}.{}", image_hash, extension));
             if target_path.is_file() && is_valid_emulator_artwork(&target_path) {
                 return Some(target_path);
@@ -498,11 +520,6 @@ fn build_emulator_boxart_title_candidates(rom_stem: &str) -> Vec<String> {
     push_unique_candidate(&mut candidates, &stripped);
 
     if !stripped.is_empty() {
-        for region_tag in ["(USA)", "(Europe)", "(Japan)", "(World)"] {
-            let tagged = format!("{} {}", stripped, region_tag);
-            push_unique_candidate(&mut candidates, &tagged);
-        }
-
         let without_the = stripped
             .strip_prefix("The ")
             .or_else(|| stripped.strip_prefix("the "))
@@ -573,6 +590,73 @@ fn emulator_artwork_images_cache_dir() -> Option<PathBuf> {
         return None;
     }
     Some(cache_dir)
+}
+
+fn emulator_artwork_missing_cache_path() -> Option<PathBuf> {
+    Some(emulator_artwork_cache_root_dir()?.join(EMULATOR_ARTWORK_MISSING_CACHE_FILE))
+}
+
+fn load_emulator_missing_cache() -> HashMap<String, u64> {
+    let Some(cache_path) = emulator_artwork_missing_cache_path() else {
+        return HashMap::new();
+    };
+
+    let contents = match fs::read_to_string(cache_path) {
+        Ok(contents) => contents,
+        Err(_) => return HashMap::new(),
+    };
+
+    let now = unix_timestamp_seconds();
+    let mut loaded = HashMap::new();
+    for line in contents.lines() {
+        let mut parts = line.splitn(2, '\t');
+        let key = parts.next().unwrap_or_default().trim();
+        let timestamp_raw = parts.next().unwrap_or_default().trim();
+        let Ok(timestamp) = timestamp_raw.parse::<u64>() else {
+            continue;
+        };
+
+        if key.is_empty() {
+            continue;
+        }
+
+        if now.saturating_sub(timestamp) >= EMULATOR_ARTWORK_MISSING_TTL_SECONDS {
+            continue;
+        }
+
+        loaded.insert(key.to_string(), timestamp);
+    }
+
+    loaded
+}
+
+fn save_emulator_missing_cache(cache: &HashMap<String, u64>) -> Result<(), String> {
+    let Some(cache_path) = emulator_artwork_missing_cache_path() else {
+        return Err("Missing emulator artwork cache path".to_string());
+    };
+
+    let now = unix_timestamp_seconds();
+    let mut serialized = String::new();
+    for (key, timestamp) in cache {
+        if now.saturating_sub(*timestamp) >= EMULATOR_ARTWORK_MISSING_TTL_SECONDS {
+            continue;
+        }
+
+        serialized.push_str(key);
+        serialized.push('\t');
+        serialized.push_str(&timestamp.to_string());
+        serialized.push('\n');
+    }
+
+    fs::write(cache_path, serialized)
+        .map_err(|error| format!("Failed to write emulator missing-artwork cache: {}", error))
+}
+
+fn unix_timestamp_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
 }
 
 fn parse_emulator_launch_target(launch_target: &str) -> Option<(String, PathBuf)> {
@@ -681,21 +765,11 @@ fn prepare_artwork_payload_from_rgba(
         PREPARED_ARTWORK_MAX_HEIGHT,
     );
 
-    let blur_source = if let Some(background_rgb) = blur_background_rgb {
+    let background_rgba = if let Some(background_rgb) = blur_background_rgb {
         composite_on_solid_background(&foreground_rgba, background_rgb)
     } else {
         foreground_rgba.clone()
     };
-
-    let mut blurred_rgba = image::DynamicImage::ImageRgba8(blur_source)
-        .blur(10.0)
-        .to_rgba8();
-
-    for pixel in blurred_rgba.pixels_mut() {
-        pixel.0[0] = ((pixel.0[0] as u16 * 70) / 100) as u8;
-        pixel.0[1] = ((pixel.0[1] as u16 * 70) / 100) as u8;
-        pixel.0[2] = ((pixel.0[2] as u16 * 70) / 100) as u8;
-    }
 
     let width = usize::try_from(foreground_rgba.width()).ok()?;
     let height = usize::try_from(foreground_rgba.height()).ok()?;
@@ -704,7 +778,7 @@ fn prepare_artwork_payload_from_rgba(
         width,
         height,
         foreground_rgba: foreground_rgba.into_raw(),
-        background_rgba: blurred_rgba.into_raw(),
+        background_rgba: background_rgba.into_raw(),
     })
 }
 
@@ -964,6 +1038,13 @@ fn download_url_to_file_with_user_agent(url: &str, target_path: &Path, user_agen
             .timeout(Duration::from_secs(HTTP_TIMEOUT_SECONDS));
         let response = match request.call() {
             Ok(response) => response,
+            Err(ureq::Error::Status(status, _)) => {
+                if (500..=599).contains(&status) {
+                    continue;
+                }
+
+                return false;
+            }
             Err(_) => continue,
         };
 
