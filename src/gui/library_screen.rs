@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 
 use eframe::egui::{
-    self, vec2, CentralPanel, Color32, FontId, Frame, Layout, Margin, ScrollArea, Sense,
-    RichText, SidePanel,
+    self, vec2, Align, CentralPanel, Color32, FontId, Frame, Layout, Margin, RichText,
+    ScrollArea, Sense, SidePanel,
 };
+use gilrs::{Axis, Button, EventType};
 
 use crate::core::{self, EmulationLaunchTarget, GameEntry};
 
@@ -192,6 +193,7 @@ impl BasaltApp {
             }
 
             let categorized_indices = self.categorize_filtered_indices(filtered_indices);
+            self.process_library_controller_input(&categorized_indices, columns);
 
             for (category_position, (category_name, category_indices))
                 in categorized_indices.iter().enumerate()
@@ -222,6 +224,110 @@ impl BasaltApp {
 
             ui.add_space(WALL_PADDING);
         });
+    }
+
+    fn process_library_controller_input(
+        &mut self,
+        categorized_indices: &[(String, Vec<usize>)],
+        columns: usize,
+    ) {
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+
+        let mut move_x = 0i32;
+        let mut move_y = 0i32;
+        let mut launch_selected = false;
+
+        while let Some(event) = controller.next_event() {
+            match event.event {
+                EventType::ButtonPressed(Button::DPadLeft, _) => move_x -= 1,
+                EventType::ButtonPressed(Button::DPadRight, _) => move_x += 1,
+                EventType::ButtonPressed(Button::DPadUp, _) => move_y -= 1,
+                EventType::ButtonPressed(Button::DPadDown, _) => move_y += 1,
+                EventType::ButtonPressed(Button::South, _) => launch_selected = true,
+                EventType::AxisChanged(Axis::LeftStickX, value, _) => {
+                    if value <= -0.6 && !self.controller_stick_x_held {
+                        move_x -= 1;
+                        self.controller_stick_x_held = true;
+                    } else if value >= 0.6 && !self.controller_stick_x_held {
+                        move_x += 1;
+                        self.controller_stick_x_held = true;
+                    } else if value.abs() < 0.3 {
+                        self.controller_stick_x_held = false;
+                    }
+                }
+                EventType::AxisChanged(Axis::LeftStickY, value, _) => {
+                    if value <= -0.6 && !self.controller_stick_y_held {
+                        move_y += 1;
+                        self.controller_stick_y_held = true;
+                    } else if value >= 0.6 && !self.controller_stick_y_held {
+                        move_y -= 1;
+                        self.controller_stick_y_held = true;
+                    } else if value.abs() < 0.3 {
+                        self.controller_stick_y_held = false;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let mut ordered_indices = Vec::new();
+        for (_, category_indices) in categorized_indices {
+            ordered_indices.extend(category_indices.iter().copied());
+        }
+
+        if ordered_indices.is_empty() {
+            self.selected_index = None;
+            return;
+        }
+
+        let has_navigation_input = move_x != 0 || move_y != 0;
+        if (has_navigation_input || launch_selected) && self.selected_index.is_none() {
+            self.selected_index = Some(ordered_indices[0]);
+            self.pending_scroll_to_selected = true;
+        }
+
+        if has_navigation_input {
+            let max_index = ordered_indices.len().saturating_sub(1);
+            let mut selected_position = self
+                .selected_index
+                .and_then(|selected| ordered_indices.iter().position(|&index| index == selected))
+                .unwrap_or(0);
+
+            if move_x < 0 {
+                selected_position = selected_position.saturating_sub(1);
+            } else if move_x > 0 {
+                selected_position = selected_position.saturating_add(1).min(max_index);
+            }
+
+            if move_y < 0 {
+                selected_position = selected_position.saturating_sub(columns.max(1));
+            } else if move_y > 0 {
+                selected_position = selected_position
+                    .saturating_add(columns.max(1))
+                    .min(max_index);
+            }
+
+            let next_selection = ordered_indices[selected_position];
+            if self.selected_index != Some(next_selection) {
+                self.selected_index = Some(next_selection);
+                self.pending_scroll_to_selected = true;
+            }
+        }
+
+        if launch_selected {
+            if let Some(selected_game) = self.selected_game().cloned() {
+                match core::launch_game(&selected_game.name) {
+                    Ok(_) => {
+                        self.status_message = format!("Launched {}", selected_game.name);
+                    }
+                    Err(err) => {
+                        self.status_message = format!("Launch failed: {}", err);
+                    }
+                }
+            }
+        }
     }
 
     fn render_category_tile_rows(
@@ -330,6 +436,11 @@ impl BasaltApp {
             artwork.as_ref(),
             selected,
         );
+
+        if selected && self.pending_scroll_to_selected {
+            response.scroll_to_me(Some(Align::Center));
+            self.pending_scroll_to_selected = false;
+        }
 
         response.clicked()
     }

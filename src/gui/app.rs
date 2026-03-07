@@ -1,7 +1,9 @@
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
+use std::time::Duration;
 
 use crate::core::{self, GameEntry, Playlist};
+use gilrs::Gilrs;
 
 use super::artwork::ArtworkStore;
 use super::top_bar::TopBarTab;
@@ -23,6 +25,10 @@ pub(super) struct BasaltApp {
     pub(super) settings_status_message: String,
     pub(super) artwork_store: ArtworkStore,
     pub(super) startup_games_rx: Option<Receiver<core::CoreResult<Vec<GameEntry>>>>,
+    pub(super) controller: Option<Gilrs>,
+    pub(super) controller_stick_x_held: bool,
+    pub(super) controller_stick_y_held: bool,
+    pub(super) pending_scroll_to_selected: bool,
 }
 
 impl Default for BasaltApp {
@@ -69,6 +75,10 @@ impl Default for BasaltApp {
             settings_status_message,
             artwork_store: ArtworkStore::new(),
             startup_games_rx: Some(startup_games_rx),
+            controller: Gilrs::new().ok(),
+            controller_stick_x_held: false,
+            controller_stick_y_held: false,
+            pending_scroll_to_selected: false,
         };
         app.artwork_store.prepare_for_games(&app.games);
         app
@@ -107,6 +117,7 @@ impl eframe::App for BasaltApp {
                     right_region_gray,
                     right_panel_width,
                 );
+                ctx.request_repaint_after(Duration::from_millis(16));
             }
             TopBarTab::Install => {
                 self.render_install_screen(

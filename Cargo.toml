@@ -10,3 +10,4 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png"]
 resvg = "0.45"
 crossbeam-channel = "0.5"
 ureq = "2"
+gilrs = "0.11"
