@@ -5,6 +5,21 @@ use super::registry;
 use super::runners;
 use super::runners::RunnerKind;
 
+const MATTMC_GAME_NAME: &str = "MattMC";
+const MATTMC_SYNC_SCRIPT: &str = "SyncGameData.sh";
+
+pub fn sync_mattmc() -> CoreResult<()> {
+    run_game_sibling_script(MATTMC_GAME_NAME, MATTMC_SYNC_SCRIPT)
+}
+
+pub fn sync_mattmc_up() -> CoreResult<()> {
+    run_game_sibling_script_with_input(MATTMC_GAME_NAME, MATTMC_SYNC_SCRIPT, "up\n")
+}
+
+pub fn sync_mattmc_down() -> CoreResult<()> {
+    run_game_sibling_script_with_input(MATTMC_GAME_NAME, MATTMC_SYNC_SCRIPT, "down\n")
+}
+
 pub fn run_game_sibling_script(game_name: &str, sibling_script_name: &str) -> CoreResult<()> {
     let sibling_script_path = resolve_game_sibling_script_path(game_name, sibling_script_name)?;
     runners::bashrunner::launch(&sibling_script_path)?;

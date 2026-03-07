@@ -1,3 +1,4 @@
+mod artwork_cache;
 mod discovery;
 mod discovery_service;
 mod emulation;
@@ -13,6 +14,7 @@ mod settings;
 mod types;
 
 pub use discovery_service::{discover_games, discover_with_runners};
+pub use artwork_cache::clear_artwork_cache;
 pub use emulation::{
     install_core_for_system as install_emulation_core_for_system,
     install_runtime_and_cores as install_emulation_runtime,
@@ -34,7 +36,12 @@ pub use game_service::{
     remove_game, remove_game_from_playlist,
 };
 pub use playlist_service::FAVORITES_PLAYLIST_NAME;
-pub use script_service::{run_game_sibling_script, run_game_sibling_script_with_input};
+pub use script_service::{
+    run_game_sibling_script,
+    sync_mattmc,
+    sync_mattmc_down,
+    sync_mattmc_up,
+};
 pub use settings::{
     default_emulation_remote_paths,
     load_emulation_remote_paths,

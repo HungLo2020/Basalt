@@ -334,20 +334,23 @@ impl BasaltApp {
     }
 
     pub(super) fn sync_mattmc_up_from_gui(&mut self) {
-        self.run_mattmc_sync_with_input("up\n", "SyncUp");
+        match core::sync_mattmc_up() {
+            Ok(_) => {
+                self.status_message = "SyncUp completed for MattMC".to_string();
+            }
+            Err(err) => {
+                self.status_message = format!("SyncUp failed: {}", err);
+            }
+        }
     }
 
     pub(super) fn sync_mattmc_down_from_gui(&mut self) {
-        self.run_mattmc_sync_with_input("down\n", "SyncDown");
-    }
-
-    fn run_mattmc_sync_with_input(&mut self, stdin_content: &str, action_label: &str) {
-        match core::run_game_sibling_script_with_input("MattMC", "SyncGameData.sh", stdin_content) {
+        match core::sync_mattmc_down() {
             Ok(_) => {
-                self.status_message = format!("{} completed for MattMC", action_label);
+                self.status_message = "SyncDown completed for MattMC".to_string();
             }
             Err(err) => {
-                self.status_message = format!("{} failed: {}", action_label, err);
+                self.status_message = format!("SyncDown failed: {}", err);
             }
         }
     }

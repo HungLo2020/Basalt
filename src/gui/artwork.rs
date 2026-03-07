@@ -184,7 +184,7 @@ impl ArtworkStore {
     }
 
     pub(super) fn refresh_metadata_for_games(&mut self, games: &[GameEntry]) {
-        cache::clear_artwork_cache_files();
+        let _ = core::clear_artwork_cache();
 
         self.textures.clear();
         self.missing.clear();

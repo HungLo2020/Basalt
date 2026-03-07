@@ -3,28 +3,6 @@ use std::path::PathBuf;
 
 use super::{EMULATOR_ARTWORK_IMAGES_PATH, EMULATOR_ARTWORK_INDEX_PATH};
 
-pub(super) fn clear_artwork_cache_files() {
-    if let Some(steam_dir) = steam_artwork_cache_dir() {
-        let _ = std::fs::remove_dir_all(&steam_dir);
-    }
-
-    if let Some(emulator_root_dir) = emulator_artwork_cache_root_dir() {
-        let _ = std::fs::remove_dir_all(&emulator_root_dir);
-    }
-
-    if let Some(steam_dir) = steam_artwork_cache_dir() {
-        let _ = std::fs::create_dir_all(steam_dir);
-    }
-
-    if let Some(emulator_images_dir) = emulator_artwork_images_cache_dir() {
-        let _ = std::fs::create_dir_all(emulator_images_dir);
-    }
-
-    if let Some(emulator_index_dir) = emulator_artwork_index_cache_dir() {
-        let _ = std::fs::create_dir_all(emulator_index_dir);
-    }
-}
-
 pub(super) fn emulator_artwork_images_cache_dir() -> Option<PathBuf> {
     let cache_dir = emulator_artwork_cache_root_dir()?.join(EMULATOR_ARTWORK_IMAGES_PATH);
     if std::fs::create_dir_all(&cache_dir).is_err() {
