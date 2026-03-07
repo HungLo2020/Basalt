@@ -44,7 +44,10 @@ pub use script_service::{
 };
 pub use settings::{
     default_emulation_remote_paths,
+    LauncherDisplaySettings,
+    load_launcher_display_settings,
     load_emulation_remote_paths,
+    save_launcher_display_settings,
     save_emulation_remote_paths,
 };
 pub use types::{

@@ -34,12 +34,12 @@ pub fn usage_core_status() -> String {
     "Usage: basalt core-status <system>".to_string()
 }
 
-pub fn usage_sync_roms_up() -> String {
-    "Usage: basalt sync-roms-up <system>".to_string()
+pub fn usage_sync_up() -> String {
+    "Usage: basalt sync-up <platform>".to_string()
 }
 
-pub fn usage_sync_roms_down() -> String {
-    "Usage: basalt sync-roms-down <system>".to_string()
+pub fn usage_sync_down() -> String {
+    "Usage: basalt sync-down <platform>".to_string()
 }
 
 pub fn usage_sync_saves_up() -> String {
@@ -73,14 +73,6 @@ pub fn usage_refresh_metadata() -> String {
 
 pub fn usage_sync_mattmc() -> String {
     "Usage: basalt sync-mattmc".to_string()
-}
-
-pub fn usage_sync_mattmc_up() -> String {
-    "Usage: basalt sync-mattmc-up".to_string()
-}
-
-pub fn usage_sync_mattmc_down() -> String {
-    "Usage: basalt sync-mattmc-down".to_string()
 }
 
 pub fn full_usage() -> String {
@@ -121,14 +113,10 @@ pub fn full_usage() -> String {
         "                               Run backup.sh from MattMC launch script directory",
         "  basalt sync-mattmc",
         "                               Run SyncGameData.sh from MattMC launch script directory",
-        "  basalt sync-mattmc-up",
-        "                               Run SyncGameData.sh for MattMC with 'up' input",
-        "  basalt sync-mattmc-down",
-        "                               Run SyncGameData.sh for MattMC with 'down' input",
-        "  basalt sync-roms-up <system>",
-        "                               Sync local ROMs to remote for a system key (e.g. nes, gba)",
-        "  basalt sync-roms-down <system>",
-        "                               Sync remote ROMs to local and run emulator-only discovery",
+        "  basalt sync-up <platform>",
+        "                               Sync up for a platform: use mattmc or emulator system key (e.g. nes, gba)",
+        "  basalt sync-down <platform>",
+        "                               Sync down for a platform: mattmc or emulator system key (emulators also run discover)",
         "  basalt sync-saves-up <system>",
         "                               Sync local save files to remote for a system key",
         "  basalt sync-saves-down <system>",

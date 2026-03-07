@@ -89,6 +89,43 @@ impl BasaltApp {
                 if ui.button("Save Remote Paths").clicked() {
                     self.save_emulation_remote_paths_from_gui();
                 }
+
+                ui.add_space(16.0);
+                ui.separator();
+                ui.label("Launcher Display");
+                ui.label("Applies immediately and persists across launcher restarts.");
+
+                let previous_fullscreen_value = self.settings_launcher_fullscreen_enabled;
+                let previous_maximized_value = self.settings_launcher_maximized_enabled;
+                if ui
+                    .checkbox(
+                        &mut self.settings_launcher_fullscreen_enabled,
+                        "Fullscreen",
+                    )
+                    .changed()
+                {
+                    self.save_launcher_display_settings_from_gui(
+                        ctx,
+                        previous_fullscreen_value,
+                        previous_maximized_value,
+                    );
+                }
+
+                let previous_fullscreen_value = self.settings_launcher_fullscreen_enabled;
+                let previous_maximized_value = self.settings_launcher_maximized_enabled;
+                if ui
+                    .checkbox(
+                        &mut self.settings_launcher_maximized_enabled,
+                        "Maximized (windowed)",
+                    )
+                    .changed()
+                {
+                    self.save_launcher_display_settings_from_gui(
+                        ctx,
+                        previous_fullscreen_value,
+                        previous_maximized_value,
+                    );
+                }
             });
     }
 }

@@ -371,4 +371,56 @@ impl BasaltApp {
             }
         }
     }
+
+    pub(super) fn save_launcher_display_settings_from_gui(
+        &mut self,
+        ctx: &eframe::egui::Context,
+        previous_fullscreen_value: bool,
+        previous_maximized_value: bool,
+    ) {
+        let mut desired_fullscreen = self.settings_launcher_fullscreen_enabled;
+        let mut desired_maximized = self.settings_launcher_maximized_enabled;
+
+        if desired_fullscreen {
+            desired_maximized = false;
+        }
+
+        if desired_maximized {
+            desired_fullscreen = false;
+        }
+
+        self.settings_launcher_fullscreen_enabled = desired_fullscreen;
+        self.settings_launcher_maximized_enabled = desired_maximized;
+
+        match core::save_launcher_display_settings(desired_fullscreen, desired_maximized) {
+            Ok(saved) => {
+                self.settings_launcher_fullscreen_enabled = saved.fullscreen_enabled;
+                self.settings_launcher_maximized_enabled = saved.maximized_enabled;
+
+                if saved.fullscreen_enabled {
+                    ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Maximized(false));
+                    ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Fullscreen(true));
+                } else if saved.maximized_enabled {
+                    ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Fullscreen(false));
+                    ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Maximized(true));
+                } else {
+                    ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Fullscreen(false));
+                    ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Maximized(false));
+                }
+
+                self.settings_status_message = if saved.fullscreen_enabled {
+                    "Enabled launcher fullscreen".to_string()
+                } else if saved.maximized_enabled {
+                    "Enabled launcher maximized window mode".to_string()
+                } else {
+                    "Disabled launcher fullscreen/maximized window mode".to_string()
+                };
+            }
+            Err(err) => {
+                self.settings_launcher_fullscreen_enabled = previous_fullscreen_value;
+                self.settings_launcher_maximized_enabled = previous_maximized_value;
+                self.settings_status_message = format!("Save failed: {}", err);
+            }
+        }
+    }
 }
