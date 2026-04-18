@@ -12,6 +12,47 @@ require_cmd() {
   fi
 }
 
+detach_volume_if_mounted() {
+  local volume_name="$1"
+  local volume_path="/Volumes/${volume_name}"
+
+  if [[ -d "$volume_path" ]]; then
+    hdiutil detach "$volume_path" -force >/dev/null 2>&1 || true
+    sleep 1
+  fi
+}
+
+create_dmg_with_retry() {
+  local volume_name="$1"
+  local source_folder="$2"
+  local output_path="$3"
+  local attempt
+
+  rm -f "$output_path"
+  detach_volume_if_mounted "$volume_name"
+
+  for attempt in 1 2 3; do
+    if hdiutil create \
+      -volname "$volume_name" \
+      -srcfolder "$source_folder" \
+      -ov \
+      -format UDZO \
+      "$output_path"; then
+      return 0
+    fi
+
+    if [[ "$attempt" -lt 3 ]]; then
+      log "hdiutil create failed (attempt $attempt); retrying after cleanup"
+      sleep 2
+      rm -f "$output_path"
+      detach_volume_if_mounted "$volume_name"
+    fi
+  done
+
+  echo "[build-macos-arm64] Failed to create DMG after retries." >&2
+  return 1
+}
+
 read_cargo_package_version() {
   local cargo_toml_path="$1"
 
@@ -102,15 +143,10 @@ PLIST
 
   mkdir -p "$dmg_root"
   cp -R "$app_dir" "$dmg_root/"
-  ln -s /Applications "$dmg_root/Applications"
+  ln -sfn /Applications "$dmg_root/Applications"
 
   log "Creating DMG"
-  hdiutil create \
-    -volname "Basalt" \
-    -srcfolder "$dmg_root" \
-    -ov \
-    -format UDZO \
-    "$dmg_path"
+  create_dmg_with_retry "Basalt" "$dmg_root" "$dmg_path"
 
   cat > "$build_meta" <<EOF
 BUILD_PLATFORM=macos-arm64
