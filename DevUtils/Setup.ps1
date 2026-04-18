@@ -66,15 +66,45 @@ function Ensure-PathContainsCargoBin {
     $env:Path = "$cargoBin;$env:Path"
 }
 
+function Ensure-PathContainsInnoSetup {
+    $candidateDirs = @(
+        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6'),
+        (Join-Path $env:ProgramFiles 'Inno Setup 6'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6')
+    )
+
+    $pathEntries = $env:Path -split ';'
+    foreach ($candidateDir in $candidateDirs) {
+        if ([string]::IsNullOrWhiteSpace($candidateDir)) {
+            continue
+        }
+
+        $compilerPath = Join-Path $candidateDir 'ISCC.exe'
+        if (-not (Test-Path $compilerPath)) {
+            continue
+        }
+
+        if ($pathEntries -contains $candidateDir) {
+            return
+        }
+
+        $env:Path = "$candidateDir;$env:Path"
+        return
+    }
+}
+
 function Setup-WindowsDependencies {
     Require-Command -CommandName winget
 
     Install-WingetPackageIfMissing -PackageId 'Git.Git' -FriendlyName 'Git'
     Install-WingetPackageIfMissing -PackageId 'Kitware.CMake' -FriendlyName 'CMake'
     Install-WingetPackageIfMissing -PackageId 'LLVM.LLVM' -FriendlyName 'LLVM'
+    Install-WingetPackageIfMissing -PackageId 'JRSoftware.InnoSetup' -FriendlyName 'Inno Setup'
 
     $vsOverride = '--quiet --wait --norestart --nocache --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
     Install-WingetPackageIfMissing -PackageId 'Microsoft.VisualStudio.2022.BuildTools' -FriendlyName 'Visual Studio 2022 Build Tools' -AdditionalInstallArgs $vsOverride
+
+    Ensure-PathContainsInnoSetup
 }
 
 function Setup-RustToolchain {
@@ -111,8 +141,10 @@ function Setup-RustToolchain {
 
 function Verify-Toolchain {
     Ensure-PathContainsCargoBin
+    Ensure-PathContainsInnoSetup
     Require-Command -CommandName rustc
     Require-Command -CommandName cargo
+    Require-Command -CommandName iscc
 
     Write-Log 'Verifying toolchain'
     & rustc --version
@@ -124,6 +156,8 @@ function Verify-Toolchain {
     if ($LASTEXITCODE -ne 0) {
         throw '[setup-windows] cargo --version failed.'
     }
+
+    Write-Host "[setup-windows] Inno Setup compiler found: $((Get-Command iscc).Source)"
 }
 
 function Test-IsWindowsHost {

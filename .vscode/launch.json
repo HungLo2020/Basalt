@@ -5,7 +5,7 @@
 			"name": "Build",
 			"type": "node-terminal",
 			"request": "launch",
-			"command": "bash DevUtils/BuildDeb.sh; exit",
+            "command": "bash DevUtils/Build.sh; exit",
 			"cwd": "${workspaceFolder}"
 		},
         {

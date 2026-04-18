@@ -34,7 +34,7 @@ main() {
   fi
 
   log "Building local platform artifact"
-  "$repo_root/DevUtils/BuildDeb.sh"
+  "$repo_root/DevUtils/Build.sh"
 
   if [[ ! -f "$build_meta" ]]; then
     echo "[export-github] Build metadata file not found: $build_meta" >&2
@@ -81,10 +81,20 @@ main() {
     linux-amd64)
       log "Triggering CI workflow for macOS arm64 DMG"
       gh workflow run "release-macos-dmg.yml" -f release_tag="$tag_name"
+      log "Triggering CI workflow for Windows amd64 installer"
+      gh workflow run "release-windows-installer.yml" -f release_tag="$tag_name"
       ;;
     macos-arm64)
       log "Triggering CI workflow for Linux amd64 DEB"
       gh workflow run "release-linux-deb.yml" -f release_tag="$tag_name"
+      log "Triggering CI workflow for Windows amd64 installer"
+      gh workflow run "release-windows-installer.yml" -f release_tag="$tag_name"
+      ;;
+    windows-amd64)
+      log "Triggering CI workflow for Linux amd64 DEB"
+      gh workflow run "release-linux-deb.yml" -f release_tag="$tag_name"
+      log "Triggering CI workflow for macOS arm64 DMG"
+      gh workflow run "release-macos-dmg.yml" -f release_tag="$tag_name"
       ;;
     *)
       echo "[export-github] Unsupported BUILD_PLATFORM in metadata: $build_platform" >&2

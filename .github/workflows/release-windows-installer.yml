@@ -1,0 +1,57 @@
+name: Build Windows amd64 Installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing release tag to upload built Windows installer to"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-amd64-installer:
+    runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: |
+          choco install innosetup --no-progress -y
+
+      - name: Build Windows amd64 installer
+        shell: powershell
+        run: .\DevUtils\BuildScripts\build-windows-amd64.ps1
+
+      - name: Read build metadata
+        id: metadata
+        shell: powershell
+        run: |
+          $line = Get-Content -Path .\builds\latest-build.env | Where-Object { $_ -like 'BUILD_ARTIFACT_PATH=*' } | Select-Object -First 1
+          if (-not $line) {
+            throw 'BUILD_ARTIFACT_PATH not found in builds/latest-build.env'
+          }
+
+          $artifactPath = $line.Substring('BUILD_ARTIFACT_PATH='.Length)
+          "artifact_path=$artifactPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Upload Windows installer to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: ${{ steps.metadata.outputs.artifact_path }}
+          overwrite_files: true
+          fail_on_unmatched_files: true
