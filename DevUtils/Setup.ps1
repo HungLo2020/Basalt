@@ -93,10 +93,38 @@ function Ensure-PathContainsInnoSetup {
     }
 }
 
+function Ensure-PathContainsGitHubCli {
+    $candidateDirs = @(
+        (Join-Path $env:ProgramFiles 'GitHub CLI'),
+        (Join-Path ${env:ProgramFiles(x86)} 'GitHub CLI'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\GitHub CLI')
+    )
+
+    $pathEntries = $env:Path -split ';'
+    foreach ($candidateDir in $candidateDirs) {
+        if ([string]::IsNullOrWhiteSpace($candidateDir)) {
+            continue
+        }
+
+        $ghPath = Join-Path $candidateDir 'gh.exe'
+        if (-not (Test-Path $ghPath)) {
+            continue
+        }
+
+        if ($pathEntries -contains $candidateDir) {
+            return
+        }
+
+        $env:Path = "$candidateDir;$env:Path"
+        return
+    }
+}
+
 function Setup-WindowsDependencies {
     Require-Command -CommandName winget
 
     Install-WingetPackageIfMissing -PackageId 'Git.Git' -FriendlyName 'Git'
+    Install-WingetPackageIfMissing -PackageId 'GitHub.cli' -FriendlyName 'GitHub CLI'
     Install-WingetPackageIfMissing -PackageId 'Kitware.CMake' -FriendlyName 'CMake'
     Install-WingetPackageIfMissing -PackageId 'LLVM.LLVM' -FriendlyName 'LLVM'
     Install-WingetPackageIfMissing -PackageId 'JRSoftware.InnoSetup' -FriendlyName 'Inno Setup'
@@ -105,6 +133,7 @@ function Setup-WindowsDependencies {
     Install-WingetPackageIfMissing -PackageId 'Microsoft.VisualStudio.2022.BuildTools' -FriendlyName 'Visual Studio 2022 Build Tools' -AdditionalInstallArgs $vsOverride
 
     Ensure-PathContainsInnoSetup
+    Ensure-PathContainsGitHubCli
 }
 
 function Setup-RustToolchain {
@@ -142,9 +171,11 @@ function Setup-RustToolchain {
 function Verify-Toolchain {
     Ensure-PathContainsCargoBin
     Ensure-PathContainsInnoSetup
+    Ensure-PathContainsGitHubCli
     Require-Command -CommandName rustc
     Require-Command -CommandName cargo
     Require-Command -CommandName iscc
+    Require-Command -CommandName gh
 
     Write-Log 'Verifying toolchain'
     & rustc --version
@@ -158,6 +189,13 @@ function Verify-Toolchain {
     }
 
     Write-Host "[setup-windows] Inno Setup compiler found: $((Get-Command iscc).Source)"
+
+    & gh --version
+    if ($LASTEXITCODE -ne 0) {
+        throw '[setup-windows] gh --version failed.'
+    }
+
+    Write-Host "[setup-windows] GitHub CLI found: $((Get-Command gh).Source)"
 }
 
 function Test-IsWindowsHost {
