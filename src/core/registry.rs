@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::env;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -7,15 +6,13 @@ use std::path::{Path, PathBuf};
 use super::GameEntry;
 use super::runners::RunnerKind;
 
-const APP_DIR_NAME: &str = ".basalt";
 const REGISTRY_FILE_NAME: &str = "games.tsv";
 const BLACKLIST_FILE_NAME: &str = "blacklist.txt";
 const DEFAULT_BLACKLIST_TEMPLATE: &str =
     "# Basalt blacklist\n# One game name per line.\n# Lines starting with # are ignored.\n";
 
 pub(super) fn get_app_dir() -> Result<PathBuf, String> {
-    let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
-    Ok(Path::new(&home).join(APP_DIR_NAME))
+    crate::platform::app_dir()
 }
 
 fn get_registry_path() -> Result<PathBuf, String> {

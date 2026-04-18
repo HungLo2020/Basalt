@@ -1,20 +1,18 @@
-use std::env;
-use std::path::Path;
-
 use crate::core::{
     add_game, is_already_exists_error, is_blacklisted_error, CoreResult, DiscoverResult,
 };
 use crate::core::registry;
 use crate::core::runners::RunnerKind;
+use crate::platform;
 
 const MATTMC_ENTRY_NAME: &str = "MattMC";
 
 pub fn discover_mattmc_entry() -> CoreResult<DiscoverResult> {
-    let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
-    let mattmc_script = Path::new(&home)
+    let home = platform::home_dir()?;
+    let mattmc_script = home
         .join("Games")
         .join("MattMC")
-        .join("run-mattmc.sh");
+        .join(platform::mattmc_launch_script_name());
 
     if !mattmc_script.exists() || !mattmc_script.is_file() {
         return Ok(DiscoverResult::NotFound);

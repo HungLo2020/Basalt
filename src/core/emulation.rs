@@ -1,11 +1,11 @@
 use std::collections::HashSet;
-use std::env;
 use std::fs;
 use std::io::{copy, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde_json::Value;
+use crate::platform;
 
 use super::emulation_target::EmulationLaunchTarget;
 use super::emulator_systems::{self, EmulatorSystemSpec};
@@ -402,14 +402,7 @@ fn run_command(command: &str, args: &[&str]) -> Result<(), String> {
 }
 
 fn command_exists(command_name: &str) -> bool {
-    let Some(path_value) = env::var_os("PATH") else {
-        return false;
-    };
-
-    env::split_paths(&path_value).any(|directory| {
-        let candidate = directory.join(command_name);
-        candidate.exists() && candidate.is_file()
-    })
+    platform::command_exists(command_name)
 }
 
 fn flatpak_app_is_installed() -> bool {
@@ -435,8 +428,7 @@ fn is_root_user() -> bool {
 }
 
 fn emulators_root_dir() -> Result<PathBuf, String> {
-    let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
-    Ok(Path::new(&home).join("Games").join("Emulators"))
+    Ok(platform::home_dir()?.join("Games").join("Emulators"))
 }
 
 fn retroarch_runtime_dir() -> Result<PathBuf, String> {

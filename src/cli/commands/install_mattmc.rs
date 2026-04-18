@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 
 use crate::core;
+use crate::platform;
 
 const MATTMC_RELEASES_API_LATEST_URL: &str =
     "https://api.github.com/repos/HungLo2020/MattMC/releases/latest";
@@ -16,8 +17,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
         return Err("Usage: basalt install-mattmc".to_string());
     }
 
-    let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
-    let games_dir = Path::new(&home).join("Games");
+    let home = platform::home_dir()?;
+    let games_dir = home.join("Games");
     let target_dir = games_dir.join("MattMC");
 
     fs::create_dir_all(&games_dir)

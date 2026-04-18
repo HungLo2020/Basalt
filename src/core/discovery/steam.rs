@@ -1,11 +1,11 @@
 use std::collections::HashSet;
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::core::{
     add_game, is_already_exists_error, is_blacklisted_error, CoreResult,
 };
+use crate::platform;
 
 pub fn discover_steam_entries() -> CoreResult<(usize, usize, usize)> {
     let manifest_paths = collect_steam_manifest_paths()?;
@@ -74,24 +74,8 @@ fn collect_steam_manifest_paths() -> CoreResult<Vec<PathBuf>> {
 }
 
 fn discover_steam_library_paths() -> CoreResult<Vec<PathBuf>> {
-    let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
-    let home_path = Path::new(&home);
-
-    let candidate_roots = [
-        home_path.join(".local").join("share").join("Steam"),
-        home_path.join(".steam").join("steam"),
-        home_path
-            .join("Library")
-            .join("Application Support")
-            .join("Steam"),
-        home_path
-            .join(".var")
-            .join("app")
-            .join("com.valvesoftware.Steam")
-            .join(".local")
-            .join("share")
-            .join("Steam"),
-    ];
+    let home_path = platform::home_dir()?;
+    let candidate_roots = platform::steam_candidate_roots(&home_path);
 
     let mut discovered = HashSet::new();
 

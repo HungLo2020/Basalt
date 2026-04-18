@@ -1,5 +1,7 @@
 use std::process::Command;
 
+use crate::platform;
+
 pub fn detect_appid(raw_input: &str) -> Option<String> {
     let trimmed = raw_input.trim();
     if trimmed.is_empty() {
@@ -42,13 +44,13 @@ pub fn launch(appid: &str) -> Result<(), String> {
         return Err(format!("Invalid Steam appid: {}", appid));
     }
 
-    let status = if command_available("steam") {
+    let status = if platform::command_exists("steam") {
         Command::new("steam")
             .arg("-applaunch")
             .arg(appid)
             .status()
             .map_err(|err| format!("Failed to launch Steam app via steam command: {}", err))?
-    } else if command_available("flatpak") && flatpak_has_steam()? {
+    } else if platform::command_exists("flatpak") && flatpak_has_steam()? {
         Command::new("flatpak")
             .arg("run")
             .arg("com.valvesoftware.Steam")
@@ -56,7 +58,7 @@ pub fn launch(appid: &str) -> Result<(), String> {
             .arg(appid)
             .status()
             .map_err(|err| format!("Failed to launch Steam app via flatpak: {}", err))?
-    } else if cfg!(target_os = "macos") && command_available("open") {
+    } else if cfg!(target_os = "macos") && platform::command_exists("open") {
         Command::new("open")
             .arg(format!("steam://rungameid/{}", appid))
             .status()
@@ -77,16 +79,6 @@ pub fn launch(appid: &str) -> Result<(), String> {
 
     Ok(())
 }
-
-fn command_available(command: &str) -> bool {
-    Command::new("sh")
-        .arg("-c")
-        .arg(format!("command -v {} >/dev/null 2>&1", command))
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
-}
-
 fn flatpak_has_steam() -> Result<bool, String> {
     let status = Command::new("flatpak")
         .arg("info")

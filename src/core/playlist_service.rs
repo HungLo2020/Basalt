@@ -1,15 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
 
 use super::error::{CoreError, CoreResult};
 use super::registry;
 use super::runners::RunnerKind;
 use super::types::Playlist;
 
-const APP_DIR_NAME: &str = ".basalt";
 const PLAYLISTS_FILE_NAME: &str = "playlists.tsv";
 pub const FAVORITES_PLAYLIST_NAME: &str = "Favorites";
 pub const STEAM_PLAYLIST_NAME: &str = "Steam";
@@ -181,15 +178,11 @@ pub(super) fn sync_automatic_playlists() -> CoreResult<()> {
 }
 
 fn playlists_file_path() -> CoreResult<std::path::PathBuf> {
-    let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
-    Ok(Path::new(&home)
-        .join(APP_DIR_NAME)
-        .join(PLAYLISTS_FILE_NAME))
+    Ok(registry::get_app_dir()?.join(PLAYLISTS_FILE_NAME))
 }
 
 fn ensure_app_dir() -> CoreResult<()> {
-    let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
-    let app_dir = Path::new(&home).join(APP_DIR_NAME);
+    let app_dir = registry::get_app_dir()?;
     fs::create_dir_all(&app_dir)
         .map_err(|err| format!("Failed to create app directory: {}", err))?;
     Ok(())

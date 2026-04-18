@@ -1,4 +1,3 @@
-use std::env;
 use std::path::PathBuf;
 
 use super::{EMULATOR_ARTWORK_IMAGES_PATH, EMULATOR_ARTWORK_INDEX_PATH};
@@ -20,9 +19,7 @@ pub(super) fn emulator_artwork_index_cache_dir() -> Option<PathBuf> {
 }
 
 pub(super) fn steam_artwork_cache_dir() -> Option<PathBuf> {
-    let home = env::var("HOME").ok()?;
-    let cache_dir = PathBuf::from(home)
-        .join(".basalt")
+    let cache_dir = crate::platform::app_dir().ok()?
         .join("cache")
         .join("steam_artwork");
 
@@ -41,9 +38,7 @@ pub(super) fn current_unix_timestamp_seconds() -> u64 {
 }
 
 fn emulator_artwork_cache_root_dir() -> Option<PathBuf> {
-    let home = env::var("HOME").ok()?;
-    let cache_root = PathBuf::from(home)
-        .join(".basalt")
+    let cache_root = crate::platform::app_dir().ok()?
         .join("cache")
         .join("emulator_artwork");
 
