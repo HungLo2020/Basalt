@@ -9,14 +9,15 @@ const MATTMC_ENTRY_NAME: &str = "MattMC";
 
 pub fn discover_mattmc_entry() -> CoreResult<DiscoverResult> {
     let home = platform::home_dir()?;
-    let mattmc_script = home
-        .join("Games")
-        .join("MattMC")
-        .join(platform::mattmc_launch_script_name());
+    let mattmc_root = home.join("Games").join("MattMC");
+    let mattmc_script = platform::mattmc_launch_script_candidates()
+        .iter()
+        .map(|candidate| mattmc_root.join(candidate))
+        .find(|candidate| candidate.exists() && candidate.is_file());
 
-    if !mattmc_script.exists() || !mattmc_script.is_file() {
+    let Some(mattmc_script) = mattmc_script else {
         return Ok(DiscoverResult::NotFound);
-    }
+    };
 
     let mattmc_script_str = mattmc_script
         .to_str()

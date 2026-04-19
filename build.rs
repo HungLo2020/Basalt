@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)]
+
 use std::env;
 use std::fs::File;
 use std::io::BufWriter;

@@ -1,10 +1,11 @@
 use std::env;
 use std::fs;
+use std::io::copy;
 use std::path::Path;
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
+use zip::ZipArchive;
 
 use crate::core;
 use crate::platform;
@@ -71,27 +72,20 @@ pub fn run(args: &[String]) -> Result<(), String> {
 }
 
 fn fetch_latest_release_tag_and_client_zip_url() -> Result<(String, String), String> {
-    let output = Command::new("curl")
-        .args([
-            "-fsSL",
-            "-H",
-            "Accept: application/vnd.github+json",
-            "-H",
-            "User-Agent: Basalt-MattMC-Installer",
-            MATTMC_RELEASES_API_LATEST_URL,
-        ])
-        .output()
-        .map_err(|err| format!("Failed to run curl for latest MattMC release metadata: {}", err))?;
+    let response = ureq::get(MATTMC_RELEASES_API_LATEST_URL)
+        .set("Accept", "application/vnd.github+json")
+        .set("User-Agent", "Basalt-MattMC-Installer")
+        .call()
+        .map_err(|err| {
+            format!(
+                "Failed to fetch latest MattMC release metadata: {}",
+                err
+            )
+        })?;
 
-    if !output.status.success() {
-        return Err(format!(
-            "Failed to fetch latest MattMC release metadata: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-
-    let payload = String::from_utf8(output.stdout)
-        .map_err(|_| "Latest release metadata output was not valid UTF-8".to_string())?;
+    let payload = response
+        .into_string()
+        .map_err(|err| format!("Failed to read latest MattMC release metadata response: {}", err))?;
 
     let release_json: Value = serde_json::from_str(&payload)
         .map_err(|err| format!("Failed to parse latest MattMC release metadata JSON: {}", err))?;
@@ -152,19 +146,33 @@ fn is_mattmc_client_zip_asset(name_lower: &str, url_lower: &str) -> bool {
 }
 
 fn download_archive(archive_url: &str, destination_path: &Path) -> Result<(), String> {
-    let output = Command::new("curl")
-        .args(["-fsSL", "--retry", "3", "--output"])
-        .arg(destination_path)
-        .arg(archive_url)
-        .output()
-        .map_err(|err| format!("Failed to run curl for MattMC archive download: {}", err))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "Failed to download MattMC release archive: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
+    if let Some(parent_directory) = destination_path.parent() {
+        fs::create_dir_all(parent_directory)
+            .map_err(|err| format!("Failed to prepare archive destination directory: {}", err))?;
     }
+
+    let response = ureq::get(archive_url)
+        .set("User-Agent", "Basalt-MattMC-Installer")
+        .call()
+        .map_err(|err| format!("Failed to download MattMC release archive: {}", err))?;
+
+    let mut reader = response.into_reader();
+    let mut destination_file =
+        fs::File::create(destination_path).map_err(|err| {
+            format!(
+                "Failed to create MattMC archive destination file {}: {}",
+                destination_path.display(),
+                err
+            )
+        })?;
+
+    copy(&mut reader, &mut destination_file).map_err(|err| {
+        format!(
+            "Failed to write MattMC archive to {}: {}",
+            destination_path.display(),
+            err
+        )
+    })?;
 
     Ok(())
 }
@@ -182,20 +190,7 @@ fn extract_zip_into_target(archive_path: &Path, target_dir: &Path) -> Result<(),
     fs::create_dir_all(&extraction_root)
         .map_err(|err| format!("Failed to create temporary extraction directory: {}", err))?;
 
-    let output = Command::new("unzip")
-        .args(["-oq"])
-        .arg(archive_path)
-        .arg("-d")
-        .arg(&extraction_root)
-        .output()
-        .map_err(|err| format!("Failed to run unzip for MattMC extraction: {}", err))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "Failed to extract MattMC release ZIP: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
+    extract_zip_archive(archive_path, &extraction_root)?;
 
     let entries = fs::read_dir(&extraction_root)
         .map_err(|err| format!("Failed to inspect extracted MattMC ZIP directory: {}", err))?;
@@ -213,19 +208,7 @@ fn extract_zip_into_target(archive_path: &Path, target_dir: &Path) -> Result<(),
         extraction_root.clone()
     };
 
-    let copy_output = Command::new("cp")
-        .args(["-a"])
-        .arg(format!("{}/.", source_root.display()))
-        .arg(target_dir)
-        .output()
-        .map_err(|err| format!("Failed to copy extracted MattMC files into target directory: {}", err))?;
-
-    if !copy_output.status.success() {
-        return Err(format!(
-            "Failed to copy MattMC files into target directory: {}",
-            String::from_utf8_lossy(&copy_output.stderr).trim()
-        ));
-    }
+    copy_directory_contents(&source_root, target_dir)?;
 
     if let Err(error) = fs::remove_dir_all(&extraction_root) {
         eprintln!(
@@ -233,6 +216,117 @@ fn extract_zip_into_target(archive_path: &Path, target_dir: &Path) -> Result<(),
             extraction_root.display(),
             error
         );
+    }
+
+    Ok(())
+}
+
+fn extract_zip_archive(archive_path: &Path, extraction_root: &Path) -> Result<(), String> {
+    let zip_file = fs::File::open(archive_path)
+        .map_err(|err| format!("Failed to open ZIP archive {}: {}", archive_path.display(), err))?;
+
+    let mut zip_archive = ZipArchive::new(zip_file)
+        .map_err(|err| format!("Failed to read ZIP archive {}: {}", archive_path.display(), err))?;
+
+    for index in 0..zip_archive.len() {
+        let mut entry = zip_archive
+            .by_index(index)
+            .map_err(|err| format!("Failed to read ZIP entry {}: {}", index, err))?;
+
+        let Some(relative_path) = entry.enclosed_name().map(|value| value.to_path_buf()) else {
+            continue;
+        };
+
+        let destination_path = extraction_root.join(relative_path);
+
+        if entry.is_dir() {
+            fs::create_dir_all(&destination_path).map_err(|err| {
+                format!(
+                    "Failed to create extraction directory {}: {}",
+                    destination_path.display(),
+                    err
+                )
+            })?;
+            continue;
+        }
+
+        if let Some(parent_directory) = destination_path.parent() {
+            fs::create_dir_all(parent_directory).map_err(|err| {
+                format!(
+                    "Failed to create extraction parent directory {}: {}",
+                    parent_directory.display(),
+                    err
+                )
+            })?;
+        }
+
+        let mut destination_file = fs::File::create(&destination_path).map_err(|err| {
+            format!(
+                "Failed to create extracted file {}: {}",
+                destination_path.display(),
+                err
+            )
+        })?;
+
+        copy(&mut entry, &mut destination_file).map_err(|err| {
+            format!(
+                "Failed to write extracted file {}: {}",
+                destination_path.display(),
+                err
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+fn copy_directory_contents(source_root: &Path, target_root: &Path) -> Result<(), String> {
+    fs::create_dir_all(target_root).map_err(|err| {
+        format!(
+            "Failed to create target directory {}: {}",
+            target_root.display(),
+            err
+        )
+    })?;
+
+    let entries = fs::read_dir(source_root).map_err(|err| {
+        format!(
+            "Failed to read extracted source directory {}: {}",
+            source_root.display(),
+            err
+        )
+    })?;
+
+    for entry_result in entries {
+        let entry = entry_result
+            .map_err(|err| format!("Failed to read extracted source entry: {}", err))?;
+
+        let source_path = entry.path();
+        let destination_path = target_root.join(entry.file_name());
+
+        if source_path.is_dir() {
+            copy_directory_contents(&source_path, &destination_path)?;
+            continue;
+        }
+
+        if let Some(parent_directory) = destination_path.parent() {
+            fs::create_dir_all(parent_directory).map_err(|err| {
+                format!(
+                    "Failed to create destination parent directory {}: {}",
+                    parent_directory.display(),
+                    err
+                )
+            })?;
+        }
+
+        fs::copy(&source_path, &destination_path).map_err(|err| {
+            format!(
+                "Failed to copy {} to {}: {}",
+                source_path.display(),
+                destination_path.display(),
+                err
+            )
+        })?;
     }
 
     Ok(())

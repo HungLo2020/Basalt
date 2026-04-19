@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::process::Output;
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod linux_x86_64;
@@ -36,8 +37,8 @@ pub(super) fn steam_candidate_roots(home: &Path) -> Vec<PathBuf> {
     implementation::steam_candidate_roots(home)
 }
 
-pub(super) fn mattmc_launch_script_name() -> &'static str {
-    implementation::mattmc_launch_script_name()
+pub(super) fn mattmc_launch_script_candidates() -> &'static [&'static str] {
+    implementation::mattmc_launch_script_candidates()
 }
 
 pub(super) fn normalize_script_path(raw_script_path: &str) -> Result<String, String> {
@@ -50,4 +51,8 @@ pub(super) fn launch_script(script_path: &str) -> Result<(), String> {
 
 pub(super) fn launch_script_with_stdin(script_path: &str, stdin_content: &str) -> Result<(), String> {
     implementation::launch_script_with_stdin(script_path, stdin_content)
+}
+
+pub(super) fn run_command(command_name: &str, args: &[&str]) -> Result<Output, String> {
+    implementation::run_command(command_name, args)
 }

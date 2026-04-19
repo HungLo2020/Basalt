@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::fs;
 use std::io::{copy, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde_json::Value;
 use crate::platform;
@@ -212,25 +211,25 @@ pub fn launch_target(launch_target: &str) -> Result<(), String> {
         .to_str()
         .ok_or_else(|| "RetroArch append config path contains invalid UTF-8".to_string())?;
 
-    let mut command = match runtime_command {
-        RuntimeCommand::RetroArchBinary => Command::new("retroarch"),
+    let mut launch_args = vec![
+        "--fullscreen",
+        "-L",
+        core_path_string,
+        "--appendconfig",
+        append_config_string,
+        rom_path_string,
+    ];
+
+    let (command_name, args) = match runtime_command {
+        RuntimeCommand::RetroArchBinary => ("retroarch", launch_args),
         RuntimeCommand::RetroArchFlatpak => {
-            let mut flatpak_command = Command::new("flatpak");
-            flatpak_command.args(["run", RETROARCH_FLATPAK_APP_ID]);
-            flatpak_command
+            let mut flatpak_args = vec!["run", RETROARCH_FLATPAK_APP_ID];
+            flatpak_args.append(&mut launch_args);
+            ("flatpak", flatpak_args)
         }
     };
 
-    let output = command
-        .args([
-            "--fullscreen",
-            "-L",
-            core_path_string,
-            "--appendconfig",
-            append_config_string,
-            rom_path_string,
-        ])
-        .output()
+    let output = platform::run_command(command_name, &args)
         .map_err(|error| format!("Failed to launch emulator runtime: {}", error))?;
 
     if output.status.success() {
@@ -384,10 +383,7 @@ fn download_file(url: &str, destination: &Path) -> Result<(), String> {
 }
 
 fn run_command(command: &str, args: &[&str]) -> Result<(), String> {
-    let output = Command::new(command)
-        .args(args)
-        .output()
-        .map_err(|error| format!("Failed to execute {}: {}", command, error))?;
+    let output = platform::run_command(command, args)?;
 
     if output.status.success() {
         Ok(())
@@ -410,17 +406,13 @@ fn flatpak_app_is_installed() -> bool {
         return false;
     }
 
-    Command::new("flatpak")
-        .args(["info", RETROARCH_FLATPAK_APP_ID])
-        .output()
+    platform::run_command("flatpak", &["info", RETROARCH_FLATPAK_APP_ID])
         .map(|output| output.status.success())
         .unwrap_or(false)
 }
 
 fn is_root_user() -> bool {
-    Command::new("id")
-        .arg("-u")
-        .output()
+    platform::run_command("id", &["-u"])
         .ok()
         .and_then(|output| String::from_utf8(output.stdout).ok())
         .map(|value| value.trim() == "0")

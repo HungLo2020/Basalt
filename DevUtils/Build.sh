@@ -12,6 +12,26 @@ require_cmd() {
   fi
 }
 
+run_platform_boundary_clippy() {
+  local repo_root
+  repo_root="$1"
+
+  require_cmd cargo
+
+  log "Running platform-boundary clippy checks"
+  if ! (
+    cd "$repo_root"
+    cargo clippy --all-targets -- -D clippy::disallowed_methods -D clippy::disallowed_types
+  ); then
+    echo "[build-dispatch] ERROR: Platform-boundary lint check failed." >&2
+    echo "[build-dispatch] Build aborted to prevent non-platform OS-specific calls from shipping." >&2
+    echo "[build-dispatch] Re-run locally to inspect issues:" >&2
+    echo "[build-dispatch]   cargo clippy --all-targets -- -D clippy::disallowed_methods -D clippy::disallowed_types" >&2
+    echo "[build-dispatch] If clippy is missing, install it with: rustup component add clippy" >&2
+    exit 1
+  fi
+}
+
 detect_platform() {
   local os_name machine_arch
 
@@ -43,6 +63,8 @@ main() {
   build_meta="$builds_dir/latest-build.env"
 
   require_cmd uname
+  run_platform_boundary_clippy "$repo_root"
+
   platform="$(detect_platform || true)"
   if [[ -z "$platform" ]]; then
     echo "[build-dispatch] Unsupported platform: $(uname -s)/$(uname -m)" >&2

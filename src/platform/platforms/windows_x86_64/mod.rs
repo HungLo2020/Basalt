@@ -1,9 +1,15 @@
 use std::env;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 
 const APP_DIR_NAME: &str = ".basalt";
+const MATTMC_LAUNCH_SCRIPT_CANDIDATES: &[&str] = &[
+    "run-mattmc.bat",
+    "run-mattmc.cmd",
+    "run-mattmc.ps1",
+    "run-mattmc.sh",
+];
 
 pub fn home_dir() -> Result<PathBuf, String> {
     let user_profile = env::var("USERPROFILE")
@@ -64,8 +70,8 @@ pub fn steam_candidate_roots(home: &Path) -> Vec<PathBuf> {
     candidates
 }
 
-pub fn mattmc_launch_script_name() -> &'static str {
-    "run-mattmc.sh"
+pub fn mattmc_launch_script_candidates() -> &'static [&'static str] {
+    MATTMC_LAUNCH_SCRIPT_CANDIDATES
 }
 
 pub fn normalize_script_path(raw_script_path: &str) -> Result<String, String> {
@@ -230,3 +236,10 @@ fn command_extensions() -> Vec<String> {
         .map(|value| value.trim_start_matches('.').to_ascii_lowercase())
         .collect()
 }
+
+    pub fn run_command(command_name: &str, args: &[&str]) -> Result<Output, String> {
+        Command::new(command_name)
+        .args(args)
+        .output()
+        .map_err(|error| format!("Failed to execute {}: {}", command_name, error))
+    }

@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use crate::platform;
 
 pub fn detect_appid(raw_input: &str) -> Option<String> {
@@ -44,33 +42,28 @@ pub fn launch(appid: &str) -> Result<(), String> {
         return Err(format!("Invalid Steam appid: {}", appid));
     }
 
-    let status = if platform::command_exists("steam") {
-        Command::new("steam")
-            .arg("-applaunch")
-            .arg(appid)
-            .status()
+    let output = if platform::command_exists("steam") {
+        platform::run_command("steam", &["-applaunch", appid])
             .map_err(|err| format!("Failed to launch Steam app via steam command: {}", err))?
     } else if platform::command_exists("flatpak") && flatpak_has_steam()? {
-        Command::new("flatpak")
-            .arg("run")
-            .arg("com.valvesoftware.Steam")
-            .arg("-applaunch")
-            .arg(appid)
-            .status()
-            .map_err(|err| format!("Failed to launch Steam app via flatpak: {}", err))?
+        platform::run_command(
+            "flatpak",
+            &["run", "com.valvesoftware.Steam", "-applaunch", appid],
+        )
+        .map_err(|err| format!("Failed to launch Steam app via flatpak: {}", err))?
     } else if cfg!(target_os = "macos") && platform::command_exists("open") {
-        Command::new("open")
-            .arg(format!("steam://rungameid/{}", appid))
-            .status()
+        let steam_url = format!("steam://rungameid/{}", appid);
+        platform::run_command("open", &[&steam_url])
             .map_err(|err| format!("Failed to launch Steam app via open command: {}", err))?
     } else {
         return Err("Steam is not installed or not on PATH.".to_string());
     };
 
-    if !status.success() {
+    if !output.status.success() {
         return Err(format!(
             "Steam launch exited with non-zero status: {}",
-            status
+            output
+                .status
                 .code()
                 .map(|code| code.to_string())
                 .unwrap_or_else(|| "terminated by signal".to_string())
@@ -80,11 +73,8 @@ pub fn launch(appid: &str) -> Result<(), String> {
     Ok(())
 }
 fn flatpak_has_steam() -> Result<bool, String> {
-    let status = Command::new("flatpak")
-        .arg("info")
-        .arg("com.valvesoftware.Steam")
-        .status()
+    let output = platform::run_command("flatpak", &["info", "com.valvesoftware.Steam"])
         .map_err(|err| format!("Failed to check flatpak Steam installation: {}", err))?;
 
-    Ok(status.success())
+    Ok(output.status.success())
 }

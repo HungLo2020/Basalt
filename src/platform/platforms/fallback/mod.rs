@@ -1,9 +1,10 @@
 use std::env;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 
 const APP_DIR_NAME: &str = ".basalt";
+const MATTMC_LAUNCH_SCRIPT_CANDIDATES: &[&str] = &["run-mattmc.sh"];
 
 pub fn home_dir() -> Result<PathBuf, String> {
     let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
@@ -33,8 +34,8 @@ pub fn steam_candidate_roots(home: &Path) -> Vec<PathBuf> {
     ]
 }
 
-pub fn mattmc_launch_script_name() -> &'static str {
-    "run-mattmc.sh"
+pub fn mattmc_launch_script_candidates() -> &'static [&'static str] {
+    MATTMC_LAUNCH_SCRIPT_CANDIDATES
 }
 
 pub fn normalize_script_path(raw_script_path: &str) -> Result<String, String> {
@@ -128,4 +129,11 @@ pub fn launch_script_with_stdin(script_path: &str, stdin_content: &str) -> Resul
     }
 
     Ok(())
+}
+
+pub fn run_command(command_name: &str, args: &[&str]) -> Result<Output, String> {
+    Command::new(command_name)
+        .args(args)
+        .output()
+        .map_err(|error| format!("Failed to execute {}: {}", command_name, error))
 }

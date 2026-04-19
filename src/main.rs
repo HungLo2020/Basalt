@@ -1,3 +1,5 @@
+#![deny(clippy::disallowed_methods, clippy::disallowed_types)]
+
 mod cli;
 mod core;
 mod gui;

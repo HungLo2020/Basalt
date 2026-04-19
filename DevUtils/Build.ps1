@@ -13,6 +13,31 @@ function Require-Command {
     }
 }
 
+function Invoke-PlatformBoundaryClippy {
+    param([Parameter(Mandatory = $true)][string]$RepoRoot)
+
+    Require-Command -CommandName cargo
+    Write-Log 'Running platform-boundary clippy checks'
+
+    Push-Location $RepoRoot
+    try {
+        & cargo clippy --all-targets -- -D clippy::disallowed_methods -D clippy::disallowed_types
+        if ($LASTEXITCODE -ne 0) {
+            throw '[build-dispatch] ERROR: Platform-boundary lint check failed.'
+        }
+    }
+    catch {
+        Write-Host '[build-dispatch] Build aborted to prevent non-platform OS-specific calls from shipping.' -ForegroundColor Red
+        Write-Host '[build-dispatch] Re-run locally to inspect issues:' -ForegroundColor Red
+        Write-Host '[build-dispatch]   cargo clippy --all-targets -- -D clippy::disallowed_methods -D clippy::disallowed_types' -ForegroundColor Red
+        Write-Host '[build-dispatch] If clippy is missing, install it with: rustup component add clippy' -ForegroundColor Red
+        throw
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 function Get-BuildPlatform {
     $osName = $null
     if ([System.Runtime.InteropServices.RuntimeInformation].GetProperty('OSDescription')) {
@@ -143,6 +168,8 @@ function Main {
     $repoRoot = Resolve-Path (Join-Path $scriptDir '..')
     $buildsDir = Join-Path $repoRoot 'builds'
     $buildMeta = Join-Path $buildsDir 'latest-build.env'
+
+    Invoke-PlatformBoundaryClippy -RepoRoot $repoRoot
 
     $platform = Get-BuildPlatform
     if ([string]::IsNullOrWhiteSpace($platform)) {

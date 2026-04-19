@@ -1,0 +1,9 @@
+disallowed-methods = [
+  { path = "std::process::Command::new", reason = "Use crate::platform APIs for process launching." },
+  { path = "std::env::var", reason = "Use crate::platform APIs for environment access." },
+  { path = "std::env::var_os", reason = "Use crate::platform APIs for environment access." }
+]
+
+disallowed-types = [
+  { path = "std::process::Command", reason = "Use crate::platform APIs for process launching." }
+]
