@@ -83,7 +83,7 @@ pub fn full_usage() -> String {
         "  basalt help                   Show this help message",
         "  basalt -h | --help           Show this help message",
         "  basalt add <name> <target>",
-        "                               Add a game via bash script (.sh), Steam appid/URL, or emulator launch target",
+        "                               Add a game via script file, Steam appid/URL, or emulator launch target",
         "  basalt remove <name>",
         "                               Remove a saved game by name",
         "  basalt add-to-playlist <playlist> <name>",

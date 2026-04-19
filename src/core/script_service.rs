@@ -2,8 +2,8 @@ use std::path::Path;
 
 use super::error::{CoreError, CoreResult};
 use super::registry;
-use super::runners;
 use super::runners::RunnerKind;
+use crate::platform;
 
 const MATTMC_GAME_NAME: &str = "MattMC";
 const MATTMC_SYNC_SCRIPT: &str = "SyncGameData.sh";
@@ -22,7 +22,7 @@ pub fn sync_mattmc_down() -> CoreResult<()> {
 
 pub fn run_game_sibling_script(game_name: &str, sibling_script_name: &str) -> CoreResult<()> {
     let sibling_script_path = resolve_game_sibling_script_path(game_name, sibling_script_name)?;
-    runners::bashrunner::launch(&sibling_script_path)?;
+    platform::launch_script(&sibling_script_path)?;
     Ok(())
 }
 
@@ -36,7 +36,7 @@ pub fn run_game_sibling_script_with_input(
     }
 
     let sibling_script_path = resolve_game_sibling_script_path(game_name, sibling_script_name)?;
-    runners::bashrunner::launch_with_stdin(&sibling_script_path, stdin_content)?;
+    platform::launch_script_with_stdin(&sibling_script_path, stdin_content)?;
     Ok(())
 }
 
@@ -60,7 +60,7 @@ fn resolve_game_sibling_script_path(
 
     if entry.runner_kind != RunnerKind::Bash {
         return Err(CoreError::new(format!(
-            "Game '{}' does not use the bash runner, so sibling scripts are not supported",
+            "Game '{}' does not use the script runner, so sibling scripts are not supported",
             game_name
         )));
     }

@@ -1,9 +1,49 @@
-use std::fs;
+use std::env;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-pub fn normalize_bash_script_path(raw_script_path: &str) -> Result<String, String> {
+const APP_DIR_NAME: &str = ".basalt";
+
+pub fn home_dir() -> Result<PathBuf, String> {
+    let home = env::var("HOME").map_err(|_| "HOME environment variable is not set".to_string())?;
+    Ok(PathBuf::from(home))
+}
+
+pub fn app_dir() -> Result<PathBuf, String> {
+    Ok(home_dir()?.join(APP_DIR_NAME))
+}
+
+pub fn command_exists(command_name: &str) -> bool {
+    let Some(path_value) = env::var_os("PATH") else {
+        return false;
+    };
+
+    env::split_paths(&path_value).any(|directory| {
+        let candidate = directory.join(command_name);
+        candidate.exists() && candidate.is_file()
+    })
+}
+
+pub fn steam_candidate_roots(home: &Path) -> Vec<PathBuf> {
+    vec![
+        home.join(".local").join("share").join("Steam"),
+        home.join(".steam").join("steam"),
+        home.join("Library").join("Application Support").join("Steam"),
+        home.join(".var")
+            .join("app")
+            .join("com.valvesoftware.Steam")
+            .join(".local")
+            .join("share")
+            .join("Steam"),
+    ]
+}
+
+pub fn mattmc_launch_script_name() -> &'static str {
+    "run-mattmc.sh"
+}
+
+pub fn normalize_script_path(raw_script_path: &str) -> Result<String, String> {
     let script_path = Path::new(raw_script_path);
     if !script_path.exists() || !script_path.is_file() {
         return Err(format!(
@@ -22,7 +62,7 @@ pub fn normalize_bash_script_path(raw_script_path: &str) -> Result<String, Strin
         return Err("Only bash scripts are supported right now (expected .sh file)".to_string());
     }
 
-    let canonical_script_path = fs::canonicalize(script_path)
+    let canonical_script_path = std::fs::canonicalize(script_path)
         .map_err(|err| format!("Failed to resolve script path: {}", err))?;
 
     canonical_script_path
@@ -31,7 +71,7 @@ pub fn normalize_bash_script_path(raw_script_path: &str) -> Result<String, Strin
         .map(|value| value.to_string())
 }
 
-pub fn launch(script_path: &str) -> Result<(), String> {
+pub fn launch_script(script_path: &str) -> Result<(), String> {
     let path = Path::new(script_path);
     if !path.exists() || !path.is_file() {
         return Err(format!(
@@ -58,7 +98,7 @@ pub fn launch(script_path: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn launch_with_stdin(script_path: &str, stdin_content: &str) -> Result<(), String> {
+pub fn launch_script_with_stdin(script_path: &str, stdin_content: &str) -> Result<(), String> {
     let path = Path::new(script_path);
     if !path.exists() || !path.is_file() {
         return Err(format!(

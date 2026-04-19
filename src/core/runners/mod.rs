@@ -1,6 +1,7 @@
-pub mod bashrunner;
 pub mod emulatorrunner;
 pub mod steamrunner;
+
+use crate::platform;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RunnerKind {
@@ -41,7 +42,7 @@ pub fn resolve_add_target(raw_input: &str) -> Result<ResolvedTarget, String> {
         });
     }
 
-    let canonical_script_path = bashrunner::normalize_bash_script_path(raw_input)?;
+    let canonical_script_path = platform::normalize_script_path(raw_input)?;
     Ok(ResolvedTarget {
         runner_kind: RunnerKind::Bash,
         launch_target: canonical_script_path,
@@ -50,7 +51,7 @@ pub fn resolve_add_target(raw_input: &str) -> Result<ResolvedTarget, String> {
 
 pub fn launch(runner_kind: RunnerKind, launch_target: &str) -> Result<(), String> {
     match runner_kind {
-        RunnerKind::Bash => bashrunner::launch(launch_target),
+        RunnerKind::Bash => platform::launch_script(launch_target),
         RunnerKind::Steam => steamrunner::launch(launch_target),
         RunnerKind::Emulator => emulatorrunner::launch(launch_target),
     }
