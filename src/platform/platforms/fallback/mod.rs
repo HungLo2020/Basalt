@@ -38,6 +38,10 @@ pub fn mattmc_launch_script_candidates() -> &'static [&'static str] {
     MATTMC_LAUNCH_SCRIPT_CANDIDATES
 }
 
+pub fn mattmc_release_zip_suffix() -> &'static str {
+    "linux-x64"
+}
+
 pub fn normalize_script_path(raw_script_path: &str) -> Result<String, String> {
     let script_path = Path::new(raw_script_path);
     if !script_path.exists() || !script_path.is_file() {

@@ -72,6 +72,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
 }
 
 fn fetch_latest_release_tag_and_client_zip_url() -> Result<(String, String), String> {
+    let platform_suffix = platform::mattmc_release_zip_suffix();
     let response = ureq::get(MATTMC_RELEASES_API_LATEST_URL)
         .set("Accept", "application/vnd.github+json")
         .set("User-Agent", "Basalt-MattMC-Installer")
@@ -118,7 +119,7 @@ fn fetch_latest_release_tag_and_client_zip_url() -> Result<(String, String), Str
             zip_asset_names.push(name.to_string());
         }
 
-        if is_mattmc_client_zip_asset(&name_lower, &url_lower) {
+        if is_mattmc_client_zip_asset(&name_lower, &url_lower, platform_suffix) {
             selected_client_url = Some(browser_download_url.to_string());
             break;
         }
@@ -139,10 +140,11 @@ fn fetch_latest_release_tag_and_client_zip_url() -> Result<(String, String), Str
     Ok((latest_tag, archive_url))
 }
 
-fn is_mattmc_client_zip_asset(name_lower: &str, url_lower: &str) -> bool {
+fn is_mattmc_client_zip_asset(name_lower: &str, url_lower: &str, platform_suffix: &str) -> bool {
     name_lower.ends_with(".zip")
         && url_lower.ends_with(".zip")
         && (name_lower.starts_with("mattmc-client") || name_lower.contains("mattmc-client"))
+        && name_lower.contains(platform_suffix)
 }
 
 fn download_archive(archive_url: &str, destination_path: &Path) -> Result<(), String> {

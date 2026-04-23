@@ -10,6 +10,7 @@ pub use api::{
     launch_script,
     launch_script_with_stdin,
     mattmc_launch_script_candidates,
+    mattmc_release_zip_suffix,
     normalize_script_path,
     run_command,
     steam_candidate_roots,

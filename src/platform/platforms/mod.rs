@@ -41,6 +41,10 @@ pub(super) fn mattmc_launch_script_candidates() -> &'static [&'static str] {
     implementation::mattmc_launch_script_candidates()
 }
 
+pub(super) fn mattmc_release_zip_suffix() -> &'static str {
+    implementation::mattmc_release_zip_suffix()
+}
+
 pub(super) fn normalize_script_path(raw_script_path: &str) -> Result<String, String> {
     implementation::normalize_script_path(raw_script_path)
 }
