@@ -1,0 +1,53 @@
+name: Release Latest
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create or overwrite latest release
+        run: |
+          commit_sha=$(git rev-parse --short HEAD)
+          timestamp=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          if gh release view latest >/dev/null 2>&1; then
+            gh release delete latest --yes --cleanup-tag
+          fi
+
+          gh release create latest \
+            --title "Basalt Latest Build ($commit_sha)" \
+            --notes "Automated Basalt build. Commit: $commit_sha. Built: $timestamp"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-linux:
+    needs: create-release
+    uses: ./.github/workflows/release-linux-deb.yml
+    with:
+      release_tag: latest
+    permissions:
+      contents: write
+
+  build-macos:
+    needs: create-release
+    uses: ./.github/workflows/release-macos-dmg.yml
+    with:
+      release_tag: latest
+    permissions:
+      contents: write
+
+  build-windows:
+    needs: create-release
+    uses: ./.github/workflows/release-windows-installer.yml
+    with:
+      release_tag: latest
+    permissions:
+      contents: write
