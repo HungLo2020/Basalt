@@ -12,7 +12,7 @@ function main {
         exit 1
     }
 
-    $authStatus = gh auth status 2>&1
+    gh auth status *> $null
     if ($LASTEXITCODE -ne 0) {
         Write-Error "[run-release] GitHub CLI is not authenticated. Run: gh auth login"
         exit 1
@@ -25,9 +25,10 @@ function main {
         exit 1
     }
 
-    Write-Log "Done — workflow dispatched. Monitor progress at:"
+    Write-Log "Done - workflow dispatched. Monitor progress at:"
     $repoName = gh repo view --json nameWithOwner -q .nameWithOwner
-    Write-Host "  https://github.com/$repoName/actions"
+    $actionsUrl = "https://github.com/$repoName/actions"
+    Write-Host "  $actionsUrl"
 }
 
 main
