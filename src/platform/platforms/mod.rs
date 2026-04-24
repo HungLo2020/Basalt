@@ -41,6 +41,10 @@ pub(super) fn mattmc_launch_script_candidates() -> &'static [&'static str] {
     implementation::mattmc_launch_script_candidates()
 }
 
+pub(super) fn mattmc_sync_script_name() -> &'static str {
+    implementation::mattmc_sync_script_name()
+}
+
 pub(super) fn mattmc_release_zip_suffix() -> &'static str {
     implementation::mattmc_release_zip_suffix()
 }

@@ -74,6 +74,10 @@ pub fn mattmc_launch_script_candidates() -> &'static [&'static str] {
     MATTMC_LAUNCH_SCRIPT_CANDIDATES
 }
 
+pub fn mattmc_sync_script_name() -> &'static str {
+    "SyncGameData.ps1"
+}
+
 pub fn mattmc_release_zip_suffix() -> &'static str {
     "windows-x64"
 }

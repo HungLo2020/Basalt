@@ -6,18 +6,25 @@ use super::runners::RunnerKind;
 use crate::platform;
 
 const MATTMC_GAME_NAME: &str = "MattMC";
-const MATTMC_SYNC_SCRIPT: &str = "SyncGameData.sh";
 
 pub fn sync_mattmc() -> CoreResult<()> {
-    run_game_sibling_script(MATTMC_GAME_NAME, MATTMC_SYNC_SCRIPT)
+    run_game_sibling_script(MATTMC_GAME_NAME, platform::mattmc_sync_script_name())
 }
 
 pub fn sync_mattmc_up() -> CoreResult<()> {
-    run_game_sibling_script_with_input(MATTMC_GAME_NAME, MATTMC_SYNC_SCRIPT, "up\n")
+    run_game_sibling_script_with_input(
+        MATTMC_GAME_NAME,
+        platform::mattmc_sync_script_name(),
+        "up\n",
+    )
 }
 
 pub fn sync_mattmc_down() -> CoreResult<()> {
-    run_game_sibling_script_with_input(MATTMC_GAME_NAME, MATTMC_SYNC_SCRIPT, "down\n")
+    run_game_sibling_script_with_input(
+        MATTMC_GAME_NAME,
+        platform::mattmc_sync_script_name(),
+        "down\n",
+    )
 }
 
 pub fn run_game_sibling_script(game_name: &str, sibling_script_name: &str) -> CoreResult<()> {
