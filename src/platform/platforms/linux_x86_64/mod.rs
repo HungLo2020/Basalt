@@ -1,4 +1,5 @@
 use std::env;
+use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -30,7 +31,9 @@ pub fn steam_candidate_roots(home: &Path) -> Vec<PathBuf> {
     vec![
         home.join(".local").join("share").join("Steam"),
         home.join(".steam").join("steam"),
-        home.join("Library").join("Application Support").join("Steam"),
+        home.join("Library")
+            .join("Application Support")
+            .join("Steam"),
         home.join(".var")
             .join("app")
             .join("com.valvesoftware.Steam")
@@ -150,4 +153,128 @@ pub fn run_command(command_name: &str, args: &[&str]) -> Result<Output, String> 
         .args(args)
         .output()
         .map_err(|error| format!("Failed to execute {}: {}", command_name, error))
+}
+
+pub fn basalt_update_asset_suffix() -> &'static str {
+    ".deb"
+}
+
+pub fn basalt_update_asset_marker() -> &'static str {
+    "amd64"
+}
+
+pub fn install_basalt_update_and_restart(installer_path: &Path) -> Result<(), String> {
+    if !installer_path.exists() || !installer_path.is_file() {
+        return Err(format!(
+            "Basalt update package was not found: {}",
+            installer_path.display()
+        ));
+    }
+
+    let current_exe = env::current_exe()
+        .map_err(|error| format!("Failed to resolve current Basalt executable: {}", error))?;
+    let helper_path = env::temp_dir().join(format!(
+        "basalt-update-helper-{}-{}.sh",
+        std::process::id(),
+        update_helper_timestamp()
+    ));
+    let install_command = if command_exists("pkexec") {
+        format!(
+            "pkexec dpkg -i {}",
+            shell_single_quoted_path(installer_path)
+        )
+    } else if command_exists("sudo") {
+        let sudo_check = Command::new("sudo")
+            .arg("-n")
+            .arg("true")
+            .status()
+            .map_err(|error| format!("Failed to check sudo availability: {}", error))?;
+        if !sudo_check.success() {
+            return Err(
+                "Basalt updates require pkexec or an active non-interactive sudo session."
+                    .to_string(),
+            );
+        }
+
+        format!("sudo -n dpkg -i {}", shell_single_quoted_path(installer_path))
+    } else {
+        return Err(
+            "Basalt updates require pkexec or sudo to install the .deb package.".to_string(),
+        );
+    };
+
+    let script = format!(
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+installer_path={installer_path}
+basalt_exe={current_exe}
+parent_pid={parent_pid}
+
+while kill -0 "$parent_pid" >/dev/null 2>&1; do
+  sleep 0.2
+done
+
+{install_command}
+rm -f "$installer_path"
+nohup "$basalt_exe" >/dev/null 2>&1 &
+rm -f "$0"
+"#,
+        installer_path = shell_single_quoted_path(installer_path),
+        current_exe = shell_single_quoted_path(&current_exe),
+        parent_pid = std::process::id(),
+        install_command = install_command,
+    );
+
+    fs::write(&helper_path, script).map_err(|error| {
+        format!(
+            "Failed to write Basalt update helper {}: {}",
+            helper_path.display(),
+            error
+        )
+    })?;
+
+    Command::new("chmod")
+        .arg("+x")
+        .arg(&helper_path)
+        .status()
+        .map_err(|error| format!("Failed to mark update helper executable: {}", error))
+        .and_then(|status| {
+            if status.success() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Failed to mark update helper executable: chmod exited with {}",
+                    status
+                ))
+            }
+        })?;
+
+    Command::new("bash")
+        .arg(&helper_path)
+        .spawn()
+        .map_err(|error| {
+            format!(
+                "Failed to start Basalt update helper {}: {}",
+                helper_path.display(),
+                error
+            )
+        })?;
+
+    std::process::exit(0);
+}
+
+pub fn can_install_basalt_updates() -> bool {
+    true
+}
+
+fn shell_single_quoted_path(path: &Path) -> String {
+    let escaped = path.to_string_lossy().replace('\'', "'\\''");
+    format!("'{}'", escaped)
+}
+
+fn update_helper_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
 }

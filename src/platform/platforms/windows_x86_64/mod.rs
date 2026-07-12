@@ -1,4 +1,5 @@
 use std::env;
+use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -245,9 +246,105 @@ fn command_extensions() -> Vec<String> {
         .collect()
 }
 
-    pub fn run_command(command_name: &str, args: &[&str]) -> Result<Output, String> {
-        Command::new(command_name)
+pub fn run_command(command_name: &str, args: &[&str]) -> Result<Output, String> {
+    Command::new(command_name)
         .args(args)
         .output()
         .map_err(|error| format!("Failed to execute {}: {}", command_name, error))
+}
+
+pub fn basalt_update_asset_suffix() -> &'static str {
+    ".exe"
+}
+
+pub fn basalt_update_asset_marker() -> &'static str {
+    "windows-amd64"
+}
+
+pub fn install_basalt_update_and_restart(installer_path: &Path) -> Result<(), String> {
+    if !installer_path.exists() || !installer_path.is_file() {
+        return Err(format!(
+            "Basalt update installer was not found: {}",
+            installer_path.display()
+        ));
     }
+
+    let current_exe = env::current_exe()
+        .map_err(|error| format!("Failed to resolve current Basalt executable: {}", error))?;
+    let powershell = resolve_powershell_command()?;
+    let helper_path = env::temp_dir().join(format!(
+        "basalt-update-helper-{}-{}.ps1",
+        std::process::id(),
+        update_helper_timestamp()
+    ));
+
+    let script = format!(
+        r#"$ErrorActionPreference = 'Stop'
+$installerPath = {installer_path}
+$basaltExe = {current_exe}
+$parentPid = {parent_pid}
+try {{
+    Wait-Process -Id $parentPid -ErrorAction SilentlyContinue
+    $process = Start-Process -FilePath $installerPath -ArgumentList @('/SP-', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru
+    if ($process.ExitCode -ne 0) {{
+        exit $process.ExitCode
+    }}
+    Start-Process -FilePath $basaltExe | Out-Null
+}} finally {{
+    Remove-Item -LiteralPath $installerPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+}}
+"#,
+        installer_path = powershell_single_quoted_path(installer_path),
+        current_exe = powershell_single_quoted_path(&current_exe),
+        parent_pid = std::process::id()
+    );
+
+    fs::write(&helper_path, script).map_err(|error| {
+        format!(
+            "Failed to write Basalt update helper {}: {}",
+            helper_path.display(),
+            error
+        )
+    })?;
+
+    let mut command = Command::new(powershell);
+    command
+        .arg("-NoProfile")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
+        .arg("-File")
+        .arg(&helper_path);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+
+    command.spawn().map_err(|error| {
+        format!(
+            "Failed to start Basalt update helper {}: {}",
+            helper_path.display(),
+            error
+        )
+    })?;
+
+    std::process::exit(0);
+}
+
+pub fn can_install_basalt_updates() -> bool {
+    true
+}
+
+fn powershell_single_quoted_path(path: &Path) -> String {
+    let escaped = path.to_string_lossy().replace('\'', "''");
+    format!("'{}'", escaped)
+}
+
+fn update_helper_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}

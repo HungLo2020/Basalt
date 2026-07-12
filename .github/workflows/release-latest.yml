@@ -17,6 +17,8 @@ jobs:
         run: |
           commit_sha=$(git rev-parse --short HEAD)
           timestamp=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          timestamp_unix=$(date -u +"%s")
+          version=$(sed -nE '/^\[package\]/,/^\[/ s/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' Cargo.toml | head -n1)
 
           if gh release view latest >/dev/null 2>&1; then
             gh release delete latest --yes --cleanup-tag
@@ -25,6 +27,17 @@ jobs:
           gh release create latest \
             --title "Basalt Latest Build ($commit_sha)" \
             --notes "Automated Basalt build. Commit: $commit_sha. Built: $timestamp"
+
+          mkdir -p builds
+          cat > builds/basalt-build-info.json <<EOF
+          {
+            "version": "$version",
+            "commit": "$commit_sha",
+            "built_at": "$timestamp",
+            "built_at_unix": "$timestamp_unix"
+          }
+          EOF
+          gh release upload latest builds/basalt-build-info.json --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

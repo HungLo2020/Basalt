@@ -25,8 +25,12 @@ pub(super) struct BasaltApp {
     pub(super) status_message: String,
     pub(super) install_status_message: String,
     pub(super) settings_status_message: String,
+    pub(super) update_status_message: String,
+    pub(super) latest_update: Option<core::UpdateCheckResult>,
     pub(super) artwork_store: ArtworkStore,
     pub(super) startup_games_rx: Option<Receiver<core::CoreResult<Vec<GameEntry>>>>,
+    pub(super) update_check_rx: Option<Receiver<Result<core::UpdateCheckResult, String>>>,
+    pub(super) update_install_rx: Option<Receiver<Result<(), String>>>,
     pub(super) controller: Option<Gilrs>,
     pub(super) controller_stick_x_held: bool,
     pub(super) controller_stick_y_held: bool,
@@ -36,48 +40,48 @@ pub(super) struct BasaltApp {
 
 impl Default for BasaltApp {
     fn default() -> Self {
-        let (startup_games_tx, startup_games_rx) = mpsc::channel::<core::CoreResult<Vec<GameEntry>>>();
+        let (startup_games_tx, startup_games_rx) =
+            mpsc::channel::<core::CoreResult<Vec<GameEntry>>>();
         thread::spawn(move || {
             let _ = startup_games_tx.send(core::list_games());
         });
 
-        let (settings_remote_roms_root_input, settings_remote_saves_root_input, settings_status_message) =
-            match core::load_emulation_remote_paths() {
-                Ok(paths) => (
-                    paths.roms_root_dir,
-                    paths.saves_root_dir,
-                    String::new(),
-                ),
-                Err(error) => {
-                    let defaults = core::default_emulation_remote_paths();
-                    (
-                        defaults.roms_root_dir,
-                        defaults.saves_root_dir,
-                        format!("Settings load warning: {}", error),
-                    )
-                }
-            };
+        let (
+            settings_remote_roms_root_input,
+            settings_remote_saves_root_input,
+            settings_status_message,
+        ) = match core::load_emulation_remote_paths() {
+            Ok(paths) => (paths.roms_root_dir, paths.saves_root_dir, String::new()),
+            Err(error) => {
+                let defaults = core::default_emulation_remote_paths();
+                (
+                    defaults.roms_root_dir,
+                    defaults.saves_root_dir,
+                    format!("Settings load warning: {}", error),
+                )
+            }
+        };
 
         let (
             settings_launcher_fullscreen_enabled,
             settings_launcher_maximized_enabled,
             settings_status_message,
         ) = match core::load_launcher_display_settings() {
-                Ok(display_settings) => (
-                    display_settings.fullscreen_enabled,
-                    display_settings.maximized_enabled,
-                    settings_status_message,
-                ),
-                Err(error) => {
-                    let warning = format!("Display setting load warning: {}", error);
-                    let merged_message = if settings_status_message.trim().is_empty() {
-                        warning
-                    } else {
-                        format!("{} | {}", settings_status_message, warning)
-                    };
-                    (false, false, merged_message)
-                }
-            };
+            Ok(display_settings) => (
+                display_settings.fullscreen_enabled,
+                display_settings.maximized_enabled,
+                settings_status_message,
+            ),
+            Err(error) => {
+                let warning = format!("Display setting load warning: {}", error);
+                let merged_message = if settings_status_message.trim().is_empty() {
+                    warning
+                } else {
+                    format!("{} | {}", settings_status_message, warning)
+                };
+                (false, false, merged_message)
+            }
+        };
 
         let mut app = Self {
             active_tab: TopBarTab::Library,
@@ -99,8 +103,12 @@ impl Default for BasaltApp {
             status_message: "Loading games...".to_string(),
             install_status_message: String::new(),
             settings_status_message,
+            update_status_message: String::new(),
+            latest_update: None,
             artwork_store: ArtworkStore::new(),
             startup_games_rx: Some(startup_games_rx),
+            update_check_rx: None,
+            update_install_rx: None,
             controller: Gilrs::new().ok(),
             controller_stick_x_held: false,
             controller_stick_y_held: false,
@@ -108,6 +116,7 @@ impl Default for BasaltApp {
             pending_initial_window_mode_apply: true,
         };
         app.artwork_store.prepare_for_games(&app.games);
+        app.start_update_check();
         app
     }
 }
@@ -134,10 +143,11 @@ impl BasaltApp {
 }
 
 pub fn run() -> Result<(), String> {
-    let display_settings = core::load_launcher_display_settings().unwrap_or(core::LauncherDisplaySettings {
-        fullscreen_enabled: false,
-        maximized_enabled: false,
-    });
+    let display_settings =
+        core::load_launcher_display_settings().unwrap_or(core::LauncherDisplaySettings {
+            fullscreen_enabled: false,
+            maximized_enabled: false,
+        });
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_fullscreen(display_settings.fullscreen_enabled)
@@ -156,8 +166,12 @@ pub fn run() -> Result<(), String> {
 impl eframe::App for BasaltApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         self.poll_startup_games_load();
+        self.poll_update_tasks();
         self.artwork_store.poll_download_results(ctx);
         self.apply_persisted_window_mode_if_needed(ctx);
+        if self.update_check_rx.is_some() || self.update_install_rx.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(250));
+        }
 
         let main_region_gray = eframe::egui::Color32::from_rgb(49, 56, 69);
         let top_region_gray = eframe::egui::Color32::from_rgb(44, 51, 64);

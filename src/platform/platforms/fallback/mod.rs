@@ -30,7 +30,9 @@ pub fn steam_candidate_roots(home: &Path) -> Vec<PathBuf> {
     vec![
         home.join(".local").join("share").join("Steam"),
         home.join(".steam").join("steam"),
-        home.join("Library").join("Application Support").join("Steam"),
+        home.join("Library")
+            .join("Application Support")
+            .join("Steam"),
     ]
 }
 
@@ -144,4 +146,20 @@ pub fn run_command(command_name: &str, args: &[&str]) -> Result<Output, String> 
         .args(args)
         .output()
         .map_err(|error| format!("Failed to execute {}: {}", command_name, error))
+}
+
+pub fn basalt_update_asset_suffix() -> &'static str {
+    ".dmg"
+}
+
+pub fn basalt_update_asset_marker() -> &'static str {
+    "macos-arm64"
+}
+
+pub fn install_basalt_update_and_restart(_installer_path: &Path) -> Result<(), String> {
+    Err("Automatic Basalt updates are not supported on this platform yet.".to_string())
+}
+
+pub fn can_install_basalt_updates() -> bool {
+    false
 }

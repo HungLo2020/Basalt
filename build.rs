@@ -4,6 +4,8 @@ use std::env;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
+use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use ico::{IconDir, IconDirEntry, IconImage, ResourceType};
 use resvg::tiny_skia::{Pixmap, Transform};
@@ -11,6 +13,19 @@ use resvg::usvg::{Options, Tree};
 
 fn main() {
     println!("cargo:rerun-if-changed=resources/assets/icons/basalt.svg");
+    println!("cargo:rerun-if-changed=.git/HEAD");
+
+    println!(
+        "cargo:rustc-env=BASALT_BUILD_COMMIT={}",
+        git_output(&["rev-parse", "--short", "HEAD"]).unwrap_or_else(|| "unknown".to_string())
+    );
+    println!(
+        "cargo:rustc-env=BASALT_BUILD_TIME={}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs().to_string())
+            .unwrap_or_else(|_| "unknown".to_string())
+    );
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os != "windows" {
@@ -19,6 +34,21 @@ fn main() {
 
     if let Err(error) = compile_windows_icon() {
         panic!("Failed to compile Windows icon resources: {error}");
+    }
+}
+
+fn git_output(args: &[&str]) -> Option<String> {
+    let output = Command::new("git").args(args).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let value = String::from_utf8(output.stdout).ok()?;
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
 

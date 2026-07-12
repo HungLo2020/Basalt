@@ -49,6 +49,15 @@ impl BasaltApp {
 
                 ui.add_space(10.0);
                 ui.separator();
+                ui.label(RichText::new("Basalt Updates"));
+                if self.update_status_message.trim().is_empty() {
+                    ui.label(RichText::new("Update status unavailable").size(14.0));
+                } else {
+                    ui.label(RichText::new(&self.update_status_message).size(14.0));
+                }
+
+                ui.add_space(10.0);
+                ui.separator();
                 ui.label(RichText::new("Status"));
                 if self.settings_status_message.trim().is_empty() {
                     ui.label(RichText::new("Ready").size(14.0));
@@ -98,10 +107,7 @@ impl BasaltApp {
                 let previous_fullscreen_value = self.settings_launcher_fullscreen_enabled;
                 let previous_maximized_value = self.settings_launcher_maximized_enabled;
                 if ui
-                    .checkbox(
-                        &mut self.settings_launcher_fullscreen_enabled,
-                        "Fullscreen",
-                    )
+                    .checkbox(&mut self.settings_launcher_fullscreen_enabled, "Fullscreen")
                     .changed()
                 {
                     self.save_launcher_display_settings_from_gui(
@@ -125,6 +131,21 @@ impl BasaltApp {
                         previous_fullscreen_value,
                         previous_maximized_value,
                     );
+                }
+
+                ui.add_space(16.0);
+                ui.separator();
+                ui.label("Basalt Updates");
+                ui.label("Checks GitHub releases without installing anything automatically.");
+                ui.add_space(8.0);
+                if ui
+                    .add_enabled(
+                        self.can_use_update_button(),
+                        egui::Button::new(self.update_button_text()),
+                    )
+                    .clicked()
+                {
+                    self.handle_update_button_click();
                 }
             });
     }

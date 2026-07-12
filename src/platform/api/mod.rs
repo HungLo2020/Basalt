@@ -46,3 +46,19 @@ pub fn launch_script_with_stdin(script_path: &str, stdin_content: &str) -> Resul
 pub fn run_command(command_name: &str, args: &[&str]) -> Result<Output, String> {
     platforms::run_command(command_name, args)
 }
+
+pub fn basalt_update_asset_suffix() -> &'static str {
+    platforms::basalt_update_asset_suffix()
+}
+
+pub fn basalt_update_asset_marker() -> &'static str {
+    platforms::basalt_update_asset_marker()
+}
+
+pub fn install_basalt_update_and_restart(installer_path: &Path) -> Result<(), String> {
+    platforms::install_basalt_update_and_restart(installer_path)
+}
+
+pub fn can_install_basalt_updates() -> bool {
+    platforms::can_install_basalt_updates()
+}

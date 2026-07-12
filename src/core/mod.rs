@@ -12,47 +12,41 @@ mod runners;
 mod script_service;
 mod settings;
 mod types;
+mod update_service;
 
-pub use discovery_service::{discover_games, discover_with_runners};
 pub use artwork_cache::clear_artwork_cache;
+pub use discovery_service::{discover_games, discover_with_runners};
 pub use emulation::{
     install_core_for_system as install_emulation_core_for_system,
     install_runtime_and_cores as install_emulation_runtime,
     is_core_installed_for_system as is_emulation_core_installed_for_system,
     is_save_sync_supported_for_system as is_emulation_save_sync_supported_for_system,
-    RomSyncReport as EmulationRomSyncReport,
+    sync_roms_up_for_system as sync_emulation_roms_up_for_system,
     sync_saves_down_for_system as sync_emulation_saves_down_for_system,
     sync_saves_up_for_system as sync_emulation_saves_up_for_system,
-    sync_roms_up_for_system as sync_emulation_roms_up_for_system,
+    RomSyncReport as EmulationRomSyncReport,
 };
 pub use emulation_target::EmulationLaunchTarget;
-pub use emulator_systems::{
-    emulation_install_tiles,
-    emulator_artwork_catalog_path,
-};
+pub use emulator_systems::{emulation_install_tiles, emulator_artwork_catalog_path};
 pub use error::CoreResult;
 pub use game_service::{
     add_game, add_game_to_playlist, launch_game, list_games, list_playlists, remove_all_games,
     remove_game, remove_game_from_playlist,
 };
 pub use playlist_service::FAVORITES_PLAYLIST_NAME;
-pub use script_service::{
-    run_game_sibling_script,
-    sync_mattmc,
-    sync_mattmc_down,
-    sync_mattmc_up,
-};
+pub use script_service::{run_game_sibling_script, sync_mattmc, sync_mattmc_down, sync_mattmc_up};
 pub use settings::{
-    default_emulation_remote_paths,
-    LauncherDisplaySettings,
-    load_launcher_display_settings,
-    load_emulation_remote_paths,
-    save_launcher_display_settings,
-    save_emulation_remote_paths,
+    default_emulation_remote_paths, load_emulation_remote_paths, load_launcher_display_settings,
+    save_emulation_remote_paths, save_launcher_display_settings, LauncherDisplaySettings,
 };
 pub use types::{
     DiscoverReport, DiscoverResult, DiscoverRunner, EmulatorDiscoverReport, GameEntry, Playlist,
     SteamDiscoverReport, ALL_DISCOVER_RUNNERS,
+};
+pub use update_service::{
+    can_install_updates as can_install_basalt_updates,
+    check_for_updates as check_for_basalt_updates, download_update as download_basalt_update,
+    install_update_and_restart as install_basalt_update_and_restart, UpdateCheckResult,
 };
 #[allow(dead_code)]
 pub type CoreError = error::CoreError;
