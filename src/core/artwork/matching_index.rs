@@ -4,12 +4,8 @@ use std::sync::{Mutex, OnceLock};
 
 use super::cache;
 use super::{
-    encode_url_path_segment,
-    normalize_matching_title,
-    stable_hash_hex,
-    strip_bracketed_segments,
-    EMULATOR_ARTWORK_INDEX_TTL_SECONDS,
-    EMULATOR_ARTWORK_USER_AGENT,
+    encode_url_path_segment, normalize_matching_title, stable_hash_hex, strip_bracketed_segments,
+    EMULATOR_ARTWORK_INDEX_TTL_SECONDS, EMULATOR_ARTWORK_USER_AGENT,
 };
 
 pub(super) fn build_emulator_boxart_title_candidates(rom_stem: &str) -> (Vec<String>, Vec<String>) {
@@ -52,11 +48,17 @@ pub(super) fn build_emulator_boxart_title_candidates(rom_stem: &str) -> (Vec<Str
         }
 
         if without_the.contains(" and ") {
-            push_unique_candidate(&mut primary_candidates, &without_the.replace(" and ", " & "));
+            push_unique_candidate(
+                &mut primary_candidates,
+                &without_the.replace(" and ", " & "),
+            );
         }
 
         if without_the.contains(" & ") {
-            push_unique_candidate(&mut primary_candidates, &without_the.replace(" & ", " and "));
+            push_unique_candidate(
+                &mut primary_candidates,
+                &without_the.replace(" & ", " and "),
+            );
         }
     }
 
@@ -128,7 +130,10 @@ pub(super) fn find_best_fuzzy_listing_match_filename(
     let mut best_filename: Option<String> = None;
 
     for file_name in listing {
-        let Some(stem) = Path::new(&file_name).file_stem().and_then(|value| value.to_str()) else {
+        let Some(stem) = Path::new(&file_name)
+            .file_stem()
+            .and_then(|value| value.to_str())
+        else {
             continue;
         };
 
@@ -163,7 +168,12 @@ fn move_trailing_article_to_leading(value: &str) -> Option<String> {
         if let Some(base) = value.strip_suffix(article) {
             let article_word = article.trim_start_matches(',').trim();
             let candidate = format!("{} {}", article_word, base.trim());
-            return Some(candidate.split_whitespace().collect::<Vec<&str>>().join(" "));
+            return Some(
+                candidate
+                    .split_whitespace()
+                    .collect::<Vec<&str>>()
+                    .join(" "),
+            );
         }
     }
 
@@ -175,7 +185,12 @@ fn move_leading_article_to_trailing(value: &str) -> Option<String> {
         if let Some(base) = value.strip_prefix(article) {
             let article_word = article.trim();
             let candidate = format!("{}, {}", base.trim(), article_word);
-            return Some(candidate.split_whitespace().collect::<Vec<&str>>().join(" "));
+            return Some(
+                candidate
+                    .split_whitespace()
+                    .collect::<Vec<&str>>()
+                    .join(" "),
+            );
         }
     }
 
@@ -183,12 +198,18 @@ fn move_leading_article_to_trailing(value: &str) -> Option<String> {
 }
 
 fn push_unique_candidate(candidates: &mut Vec<String>, candidate: &str) {
-    let normalized = candidate.split_whitespace().collect::<Vec<&str>>().join(" ");
+    let normalized = candidate
+        .split_whitespace()
+        .collect::<Vec<&str>>()
+        .join(" ");
     if normalized.is_empty() {
         return;
     }
 
-    if candidates.iter().any(|existing| existing.eq_ignore_ascii_case(&normalized)) {
+    if candidates
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(&normalized))
+    {
         return;
     }
 
@@ -247,7 +268,9 @@ fn load_thumbnail_listing(system_catalog: &str, artwork_set: &str) -> Option<Vec
         }
     }
 
-    let listing = if let Some(cached_listing) = read_thumbnail_listing_from_disk(system_catalog, artwork_set) {
+    let listing = if let Some(cached_listing) =
+        read_thumbnail_listing_from_disk(system_catalog, artwork_set)
+    {
         cached_listing
     } else {
         let fetched_listing = fetch_thumbnail_listing_from_remote(system_catalog, artwork_set)?;
@@ -267,7 +290,10 @@ fn thumbnail_listing_memory_cache() -> &'static Mutex<HashMap<String, Vec<String
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn read_thumbnail_listing_from_disk(system_catalog: &str, artwork_set: &str) -> Option<Vec<String>> {
+fn read_thumbnail_listing_from_disk(
+    system_catalog: &str,
+    artwork_set: &str,
+) -> Option<Vec<String>> {
     let file_path = thumbnail_listing_cache_file_path(system_catalog, artwork_set)?;
     let contents = std::fs::read_to_string(file_path).ok()?;
 
@@ -321,14 +347,20 @@ fn write_thumbnail_listing_to_disk(
         .map_err(|error| format!("Failed to write thumbnail listing cache: {}", error))
 }
 
-fn thumbnail_listing_cache_file_path(system_catalog: &str, artwork_set: &str) -> Option<std::path::PathBuf> {
+fn thumbnail_listing_cache_file_path(
+    system_catalog: &str,
+    artwork_set: &str,
+) -> Option<std::path::PathBuf> {
     let cache_dir = cache::emulator_artwork_index_cache_dir()?;
     let cache_key = format!("{}|{}", system_catalog, artwork_set);
     let file_name = format!("{}.tsv", stable_hash_hex(&cache_key));
     Some(cache_dir.join(file_name))
 }
 
-fn fetch_thumbnail_listing_from_remote(system_catalog: &str, artwork_set: &str) -> Option<Vec<String>> {
+fn fetch_thumbnail_listing_from_remote(
+    system_catalog: &str,
+    artwork_set: &str,
+) -> Option<Vec<String>> {
     let directory_url = format!(
         "https://thumbnails.libretro.com/{}/{}/",
         encode_url_path_segment(system_catalog),
@@ -363,11 +395,7 @@ fn fetch_thumbnail_listing_from_remote(system_catalog: &str, artwork_set: &str) 
         }
 
         let decoded = decode_url_component(&href_value.replace("&amp;", "&"));
-        let file_name = decoded
-            .split('/')
-            .next_back()
-            .unwrap_or_default()
-            .trim();
+        let file_name = decoded.split('/').next_back().unwrap_or_default().trim();
 
         if file_name.is_empty() {
             continue;

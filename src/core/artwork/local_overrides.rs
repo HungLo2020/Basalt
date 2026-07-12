@@ -1,13 +1,8 @@
 use std::path::PathBuf;
 
 use super::{
-    extract_steam_appid,
-    normalize_matching_title,
-    parse_emulator_launch_target,
-    ArtworkRequest,
-    ArtworkRunnerKind,
-    LOCAL_ARTWORK_EXTENSIONS,
-    LOCAL_GAME_ARTWORK_DIR,
+    extract_steam_appid, normalize_matching_title, parse_emulator_launch_target, ArtworkRequest,
+    ArtworkRunnerKind, LOCAL_ARTWORK_EXTENSIONS, LOCAL_GAME_ARTWORK_DIR,
 };
 
 pub(super) fn find_local_game_artwork_path(request: &ArtworkRequest) -> Option<PathBuf> {
@@ -52,7 +47,10 @@ pub(super) fn find_local_game_artwork_path(request: &ArtworkRequest) -> Option<P
             continue;
         }
 
-        if candidate_bases.iter().any(|candidate| candidate == &file_stem) {
+        if candidate_bases
+            .iter()
+            .any(|candidate| candidate == &file_stem)
+        {
             return Some(path);
         }
     }
@@ -113,15 +111,16 @@ fn normalize_local_artwork_basename(raw_value: &str) -> String {
         if lowered.is_ascii_alphanumeric() {
             normalized.push(lowered);
             previous_was_space = false;
-        } else if matches!(lowered, ' ' | '-' | '_') {
-            if !previous_was_space {
-                normalized.push(' ');
-                previous_was_space = true;
-            }
+        } else if matches!(lowered, ' ' | '-' | '_') && !previous_was_space {
+            normalized.push(' ');
+            previous_was_space = true;
         }
     }
 
-    normalized.split_whitespace().collect::<Vec<&str>>().join(" ")
+    normalized
+        .split_whitespace()
+        .collect::<Vec<&str>>()
+        .join(" ")
 }
 
 fn is_supported_local_artwork_extension(extension: &str) -> bool {

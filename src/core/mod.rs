@@ -1,3 +1,4 @@
+mod artwork;
 mod artwork_cache;
 mod discovery;
 mod discovery_service;
@@ -14,6 +15,7 @@ mod settings;
 mod types;
 mod update_service;
 
+pub use artwork::{ArtworkDownloadResult, ArtworkManager, ArtworkRequestResult, PreparedArtwork};
 pub use artwork_cache::clear_artwork_cache;
 pub use discovery_service::{discover_games, discover_with_runners};
 pub use emulation::{
