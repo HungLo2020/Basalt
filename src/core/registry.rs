@@ -3,8 +3,8 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
-use super::GameEntry;
 use super::runners::RunnerKind;
+use super::GameEntry;
 
 const REGISTRY_FILE_NAME: &str = "games.tsv";
 const BLACKLIST_FILE_NAME: &str = "blacklist.txt";
@@ -46,7 +46,7 @@ fn ensure_blacklist_file() -> Result<(), String> {
             .as_deref()
             .unwrap_or(DEFAULT_BLACKLIST_TEMPLATE),
     )
-        .map_err(|err| format!("Failed to create blacklist file: {}", err))?;
+    .map_err(|err| format!("Failed to create blacklist file: {}", err))?;
 
     Ok(())
 }
@@ -75,8 +75,8 @@ pub(super) fn load_blacklisted_names() -> Result<HashSet<String>, String> {
 }
 
 fn read_blacklisted_names_from_file(path: &Path) -> Result<HashSet<String>, String> {
-    let file = fs::File::open(path)
-        .map_err(|err| format!("Failed to open blacklist file: {}", err))?;
+    let file =
+        fs::File::open(path).map_err(|err| format!("Failed to open blacklist file: {}", err))?;
 
     let reader = BufReader::new(file);
     let mut names = HashSet::new();
@@ -120,7 +120,27 @@ pub(super) fn load_entries() -> Result<Vec<GameEntry>, String> {
     let file = fs::File::open(&registry_path)
         .map_err(|err| format!("Failed to open registry file: {}", err))?;
 
-    let reader = BufReader::new(file);
+    parse_entries_from_reader(BufReader::new(file))
+}
+
+pub(super) fn save_entries(entries: &[GameEntry]) -> Result<(), String> {
+    ensure_registry_dir()?;
+    let registry_path = get_registry_path()?;
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&registry_path)
+        .map_err(|err| format!("Failed to open registry file for writing: {}", err))?;
+
+    file.write_all(serialize_entries(entries).as_bytes())
+        .map_err(|err| format!("Failed to write registry file: {}", err))?;
+
+    Ok(())
+}
+
+fn parse_entries_from_reader<R: BufRead>(reader: R) -> Result<Vec<GameEntry>, String> {
     let mut entries = Vec::new();
 
     for line_result in reader.lines() {
@@ -156,27 +176,60 @@ pub(super) fn load_entries() -> Result<Vec<GameEntry>, String> {
     Ok(entries)
 }
 
-pub(super) fn save_entries(entries: &[GameEntry]) -> Result<(), String> {
-    ensure_registry_dir()?;
-    let registry_path = get_registry_path()?;
-
-    let mut file = OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(&registry_path)
-        .map_err(|err| format!("Failed to open registry file for writing: {}", err))?;
-
+fn serialize_entries(entries: &[GameEntry]) -> String {
+    let mut serialized = String::new();
     for entry in entries {
-        let line = format!(
+        serialized.push_str(&format!(
             "{}\t{}\t{}\n",
             entry.name,
             entry.runner_kind.as_str(),
             entry.launch_target
+        ));
+    }
+    serialized
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use super::*;
+
+    #[test]
+    fn registry_parser_supports_current_and_legacy_rows() {
+        let contents = "\
+MattMC\tbash\t/home/me/Games/MattMC/run-mattmc.sh
+Legacy Bash\t/home/me/game.sh
+Steam Game\tsteam\t12345
+Bad Runner\tmissing\tignored
+\tsteam\tno-name
+
+";
+
+        let entries = parse_entries_from_reader(Cursor::new(contents)).unwrap();
+
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].name, "MattMC");
+        assert_eq!(entries[0].runner_kind, RunnerKind::Bash);
+        assert_eq!(
+            entries[0].launch_target,
+            "/home/me/Games/MattMC/run-mattmc.sh"
         );
-        file.write_all(line.as_bytes())
-            .map_err(|err| format!("Failed to write registry file: {}", err))?;
+        assert_eq!(entries[1].name, "Legacy Bash");
+        assert_eq!(entries[1].runner_kind, RunnerKind::Bash);
+        assert_eq!(entries[1].launch_target, "/home/me/game.sh");
+        assert_eq!(entries[2].runner_kind, RunnerKind::Steam);
+        assert_eq!(entries[2].launch_target, "12345");
     }
 
-    Ok(())
+    #[test]
+    fn registry_serializer_writes_runner_kind_column() {
+        let entries = vec![GameEntry {
+            name: "Steam Game".to_string(),
+            runner_kind: RunnerKind::Steam,
+            launch_target: "12345".to_string(),
+        }];
+
+        assert_eq!(serialize_entries(&entries), "Steam Game\tsteam\t12345\n");
+    }
 }

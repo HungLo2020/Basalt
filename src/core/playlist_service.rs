@@ -32,18 +32,20 @@ pub fn list_playlists() -> CoreResult<Vec<Playlist>> {
         .into_iter()
         .collect();
 
-    let mut playlists = vec![Playlist {
-        name: FAVORITES_PLAYLIST_NAME.to_string(),
-        game_names: favorite_games,
-    },
-    Playlist {
-        name: STEAM_PLAYLIST_NAME.to_string(),
-        game_names: steam_games,
-    },
-    Playlist {
-        name: EMULATION_PLAYLIST_NAME.to_string(),
-        game_names: emulation_games,
-    }];
+    let mut playlists = vec![
+        Playlist {
+            name: FAVORITES_PLAYLIST_NAME.to_string(),
+            game_names: favorite_games,
+        },
+        Playlist {
+            name: STEAM_PLAYLIST_NAME.to_string(),
+            game_names: steam_games,
+        },
+        Playlist {
+            name: EMULATION_PLAYLIST_NAME.to_string(),
+            game_names: emulation_games,
+        },
+    ];
 
     for (playlist_name, game_names) in memberships {
         playlists.push(Playlist {
@@ -194,10 +196,55 @@ fn load_playlist_memberships() -> CoreResult<BTreeMap<String, BTreeSet<String>>>
         return Ok(BTreeMap::new());
     }
 
-    let file = fs::File::open(&path)
-        .map_err(|err| format!("Failed to open playlists file: {}", err))?;
-    let reader = BufReader::new(file);
+    let file =
+        fs::File::open(&path).map_err(|err| format!("Failed to open playlists file: {}", err))?;
+    parse_playlist_memberships_from_reader(BufReader::new(file))
+}
 
+fn save_playlist_memberships(memberships: &BTreeMap<String, BTreeSet<String>>) -> CoreResult<()> {
+    ensure_app_dir()?;
+    let path = playlists_file_path()?;
+
+    let mut file = fs::File::create(&path)
+        .map_err(|err| format!("Failed to open playlists file for writing: {}", err))?;
+
+    file.write_all(serialize_playlist_memberships(memberships).as_bytes())
+        .map_err(|err| format!("Failed to write playlists file: {}", err))?;
+
+    Ok(())
+}
+
+fn resolve_playlist_name(
+    playlist_name: &str,
+    memberships: &BTreeMap<String, BTreeSet<String>>,
+) -> CoreResult<String> {
+    let trimmed = playlist_name.trim();
+
+    if trimmed.eq_ignore_ascii_case(FAVORITES_PLAYLIST_NAME) {
+        return Ok(FAVORITES_PLAYLIST_NAME.to_string());
+    }
+    if trimmed.eq_ignore_ascii_case(STEAM_PLAYLIST_NAME) {
+        return Ok(STEAM_PLAYLIST_NAME.to_string());
+    }
+    if trimmed.eq_ignore_ascii_case(EMULATION_PLAYLIST_NAME) {
+        return Ok(EMULATION_PLAYLIST_NAME.to_string());
+    }
+
+    for existing_name in memberships.keys() {
+        if existing_name.eq_ignore_ascii_case(trimmed) {
+            return Ok(existing_name.clone());
+        }
+    }
+
+    Err(CoreError::new(format!(
+        "Playlist '{}' does not exist",
+        trimmed
+    )))
+}
+
+fn parse_playlist_memberships_from_reader<R: BufRead>(
+    reader: R,
+) -> CoreResult<BTreeMap<String, BTreeSet<String>>> {
     let mut memberships: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
 
     for line_result in reader.lines() {
@@ -232,48 +279,75 @@ fn load_playlist_memberships() -> CoreResult<BTreeMap<String, BTreeSet<String>>>
     Ok(memberships)
 }
 
-fn save_playlist_memberships(memberships: &BTreeMap<String, BTreeSet<String>>) -> CoreResult<()> {
-    ensure_app_dir()?;
-    let path = playlists_file_path()?;
-
-    let mut file = fs::File::create(&path)
-        .map_err(|err| format!("Failed to open playlists file for writing: {}", err))?;
-
+fn serialize_playlist_memberships(memberships: &BTreeMap<String, BTreeSet<String>>) -> String {
+    let mut serialized = String::new();
     for (playlist_name, game_names) in memberships {
         for game_name in game_names {
-            let line = format!("{}\t{}\n", playlist_name, game_name);
-            file.write_all(line.as_bytes())
-                .map_err(|err| format!("Failed to write playlists file: {}", err))?;
+            serialized.push_str(&format!("{}\t{}\n", playlist_name, game_name));
         }
     }
-
-    Ok(())
+    serialized
 }
 
-fn resolve_playlist_name(
-    playlist_name: &str,
-    memberships: &BTreeMap<String, BTreeSet<String>>,
-) -> CoreResult<String> {
-    let trimmed = playlist_name.trim();
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
 
-    if trimmed.eq_ignore_ascii_case(FAVORITES_PLAYLIST_NAME) {
-        return Ok(FAVORITES_PLAYLIST_NAME.to_string());
-    }
-    if trimmed.eq_ignore_ascii_case(STEAM_PLAYLIST_NAME) {
-        return Ok(STEAM_PLAYLIST_NAME.to_string());
-    }
-    if trimmed.eq_ignore_ascii_case(EMULATION_PLAYLIST_NAME) {
-        return Ok(EMULATION_PLAYLIST_NAME.to_string());
+    use super::*;
+
+    #[test]
+    fn playlist_parser_ignores_comments_blanks_and_malformed_rows() {
+        let contents = "\
+# comment
+Favorites\tMattMC
+Favorites\tMattMC
+Favorites\tSteam Game
+MissingGameOnly
+\tNo Playlist
+No Game\t
+
+";
+
+        let memberships = parse_playlist_memberships_from_reader(Cursor::new(contents)).unwrap();
+        let favorites = memberships.get(FAVORITES_PLAYLIST_NAME).unwrap();
+
+        assert_eq!(memberships.len(), 1);
+        assert_eq!(favorites.len(), 2);
+        assert!(favorites.contains("MattMC"));
+        assert!(favorites.contains("Steam Game"));
     }
 
-    for existing_name in memberships.keys() {
-        if existing_name.eq_ignore_ascii_case(trimmed) {
-            return Ok(existing_name.clone());
-        }
+    #[test]
+    fn playlist_serializer_is_stable_and_sorted() {
+        let mut memberships = BTreeMap::new();
+        memberships.insert(
+            "Custom".to_string(),
+            BTreeSet::from(["Zelda".to_string(), "Astro".to_string()]),
+        );
+        memberships.insert(
+            FAVORITES_PLAYLIST_NAME.to_string(),
+            BTreeSet::from(["MattMC".to_string()]),
+        );
+
+        assert_eq!(
+            serialize_playlist_memberships(&memberships),
+            "Custom\tAstro\nCustom\tZelda\nFavorites\tMattMC\n"
+        );
     }
 
-    Err(CoreError::new(format!(
-        "Playlist '{}' does not exist",
-        trimmed
-    )))
+    #[test]
+    fn playlist_name_resolution_preserves_builtin_casing_and_existing_custom_names() {
+        let mut memberships = BTreeMap::new();
+        memberships.insert("Cozy Games".to_string(), BTreeSet::new());
+
+        assert_eq!(
+            resolve_playlist_name("favorites", &memberships).unwrap(),
+            FAVORITES_PLAYLIST_NAME
+        );
+        assert_eq!(
+            resolve_playlist_name("cozy games", &memberships).unwrap(),
+            "Cozy Games"
+        );
+        assert!(resolve_playlist_name("Missing", &memberships).is_err());
+    }
 }

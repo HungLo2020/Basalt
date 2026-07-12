@@ -3,7 +3,7 @@ pub mod steamrunner;
 
 use crate::platform;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunnerKind {
     Bash,
     Steam,

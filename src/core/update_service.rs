@@ -405,3 +405,81 @@ struct ReleaseAsset {
     name: String,
     url: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_comparison_handles_prefixes_lengths_and_suffixes() {
+        assert_eq!(compare_versions("v1.2.0", "1.2"), Some(Ordering::Equal));
+        assert_eq!(compare_versions("1.2.1", "1.2.0"), Some(Ordering::Greater));
+        assert_eq!(compare_versions("1.2", "1.2.1"), Some(Ordering::Less));
+        assert_eq!(compare_versions("1.10.0", "1.9.9"), Some(Ordering::Greater));
+        assert_eq!(
+            compare_versions("1.2.3-beta", "1.2.3"),
+            Some(Ordering::Equal)
+        );
+        assert_eq!(compare_versions("latest", "1.2.3"), None);
+    }
+
+    #[test]
+    fn newer_build_uses_numeric_build_time_before_commit_difference() {
+        let current = BasaltBuildInfo {
+            version: "0.1.0".to_string(),
+            commit: "abc1234".to_string(),
+            build_time: "100".to_string(),
+        };
+        let latest_same_commit = BasaltBuildInfo {
+            version: "0.1.0".to_string(),
+            commit: "abc1234".to_string(),
+            build_time: "100".to_string(),
+        };
+        let latest_new_commit_same_time = BasaltBuildInfo {
+            version: "0.1.0".to_string(),
+            commit: "def5678".to_string(),
+            build_time: "100".to_string(),
+        };
+        let latest_newer_build_time = BasaltBuildInfo {
+            version: "0.1.0".to_string(),
+            commit: "abc1234".to_string(),
+            build_time: "200".to_string(),
+        };
+
+        assert!(!is_newer_build(&current, &latest_same_commit));
+        assert!(!is_newer_build(&current, &latest_new_commit_same_time));
+        assert!(is_newer_build(&current, &latest_newer_build_time));
+    }
+
+    #[test]
+    fn newer_build_uses_commit_difference_when_build_times_are_not_numeric() {
+        let current = BasaltBuildInfo {
+            version: "0.1.0".to_string(),
+            commit: "abc1234".to_string(),
+            build_time: "older".to_string(),
+        };
+        let latest = BasaltBuildInfo {
+            version: "0.1.0".to_string(),
+            commit: "def5678".to_string(),
+            build_time: "newer".to_string(),
+        };
+
+        assert!(is_newer_build(&current, &latest));
+    }
+
+    #[test]
+    fn newer_build_uses_semver_when_commit_data_is_missing() {
+        let current = BasaltBuildInfo {
+            version: "0.1.0".to_string(),
+            commit: String::new(),
+            build_time: "100".to_string(),
+        };
+        let latest = BasaltBuildInfo {
+            version: "0.2.0".to_string(),
+            commit: String::new(),
+            build_time: "100".to_string(),
+        };
+
+        assert!(is_newer_build(&current, &latest));
+    }
+}

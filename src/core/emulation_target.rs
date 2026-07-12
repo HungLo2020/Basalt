@@ -28,7 +28,11 @@ pub struct EmulationLaunchTarget {
 }
 
 impl EmulationLaunchTarget {
-    pub fn new(backend: EmulationBackend, system_key: impl Into<String>, rom_path: PathBuf) -> Result<Self, String> {
+    pub fn new(
+        backend: EmulationBackend,
+        system_key: impl Into<String>,
+        rom_path: PathBuf,
+    ) -> Result<Self, String> {
         let system_key = normalize_system_key(system_key.into())
             .ok_or_else(|| "System key cannot be empty".to_string())?;
 
@@ -99,5 +103,37 @@ fn normalize_system_key(system: impl AsRef<str>) -> Option<String> {
         None
     } else {
         Some(normalized)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn launch_target_round_trips_retroarch_system_and_path() {
+        let target = EmulationLaunchTarget::new_retroarch(
+            "GBA",
+            PathBuf::from(r"C:\Games\Pokemon Radical Red.gba"),
+        )
+        .unwrap();
+
+        let encoded = target.encode().unwrap();
+        let decoded = EmulationLaunchTarget::decode(&encoded).unwrap();
+
+        assert_eq!(decoded.system_key(), "gba");
+        assert_eq!(
+            decoded.rom_path(),
+            Path::new(r"C:\Games\Pokemon Radical Red.gba")
+        );
+        assert_eq!(decoded.encode().unwrap(), encoded);
+    }
+
+    #[test]
+    fn launch_target_rejects_missing_parts() {
+        assert!(EmulationLaunchTarget::decode("retroarch||game.gba").is_err());
+        assert!(EmulationLaunchTarget::decode("retroarch|gba|").is_err());
+        assert!(EmulationLaunchTarget::decode("unknown|gba|game.gba").is_err());
+        assert!(EmulationLaunchTarget::new_retroarch("gba", PathBuf::new()).is_err());
     }
 }
