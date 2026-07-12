@@ -10,8 +10,9 @@ on:
   workflow_call:
     inputs:
       release_tag:
-        required: true
+        required: false
         type: string
+        default: ""
 
 permissions:
   contents: write
@@ -23,9 +24,14 @@ jobs:
       RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
       - name: Checkout release tag
+        if: env.RELEASE_TAG != ''
         uses: actions/checkout@v4
         with:
           ref: refs/tags/${{ env.RELEASE_TAG }}
+
+      - name: Checkout current ref
+        if: env.RELEASE_TAG == ''
+        uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -42,9 +48,17 @@ jobs:
           echo "artifact_path=$BUILD_ARTIFACT_PATH" >> "$GITHUB_OUTPUT"
 
       - name: Upload macOS DMG to GitHub release
+        if: env.RELEASE_TAG != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           files: ${{ steps.metadata.outputs.artifact_path }}
           overwrite_files: true
           fail_on_unmatched_files: true
+
+      - name: Upload macOS DMG workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: basalt-macos-arm64-dmg
+          path: ${{ steps.metadata.outputs.artifact_path }}
+          if-no-files-found: error

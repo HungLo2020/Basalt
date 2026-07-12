@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use crate::core::{self, DiscoverResult, GameEntry};
 
 use super::app::BasaltApp;
+use super::background_jobs::{GuiBackgroundJobResult, GuiBackgroundStatusTarget};
 use super::search;
 use super::top_bar::{PlaylistSelection, TopBarActions, TopBarTab};
 
@@ -51,8 +52,8 @@ impl BasaltApp {
 
     pub(super) fn refresh_metadata_from_gui(&mut self) {
         self.artwork_store.refresh_metadata_for_games(&self.games);
-        self.status_message = "Metadata refresh started: caches cleared, artwork requeued"
-            .to_string();
+        self.status_message =
+            "Metadata refresh started: caches cleared, artwork requeued".to_string();
     }
 
     pub(super) fn refresh_games(&mut self) {
@@ -115,10 +116,8 @@ impl BasaltApp {
     }
 
     pub(super) fn filtered_library_indices(&self) -> Vec<usize> {
-        let selected_playlist_games: Option<HashSet<&str>> = self
-            .selected_playlist
-            .as_ref()
-            .and_then(|playlist_name| {
+        let selected_playlist_games: Option<HashSet<&str>> =
+            self.selected_playlist.as_ref().and_then(|playlist_name| {
                 self.playlists
                     .iter()
                     .find(|playlist| playlist.name == *playlist_name)
@@ -142,8 +141,11 @@ impl BasaltApp {
 
                 in_selected_playlist
                     && (search::matches_query(&game.name, &self.library_search_query)
-                    || search::matches_query(game.runner_kind.as_str(), &self.library_search_query)
-                    || search::matches_query(&game.launch_target, &self.library_search_query))
+                        || search::matches_query(
+                            game.runner_kind.as_str(),
+                            &self.library_search_query,
+                        )
+                        || search::matches_query(&game.launch_target, &self.library_search_query))
             })
             .map(|(index, _)| index)
             .collect()
@@ -223,139 +225,92 @@ impl BasaltApp {
     }
 
     pub(super) fn install_mattmc_from_gui(&mut self) {
-        match crate::cli::run_install_mattmc_command() {
-            Ok(_) => {
-                self.install_status_message = "MattMC install completed".to_string();
-                self.refresh_games();
-            }
-            Err(err) => {
-                self.install_status_message = format!("Install failed: {}", err);
-            }
-        }
+        self.start_background_job(
+            GuiBackgroundStatusTarget::Install,
+            "MattMC install started".to_string(),
+            || GuiBackgroundJobResult::InstallMattmc(crate::cli::run_install_mattmc_command()),
+        );
     }
 
     pub(super) fn install_emulator_core_from_gui(&mut self, system: &str) {
-        match core::install_emulation_core_for_system(system) {
-            Ok(_) => {
-                self.install_status_message =
-                    format!("Installed {} emulator core", system.to_uppercase());
-            }
-            Err(err) => {
-                self.install_status_message =
-                    format!("{} core install failed: {}", system.to_uppercase(), err);
-            }
-        }
+        let system = system.to_string();
+        self.start_background_job(
+            GuiBackgroundStatusTarget::Install,
+            format!("Installing {} emulator core...", system.to_uppercase()),
+            move || {
+                let result = core::install_emulation_core_for_system(&system);
+                GuiBackgroundJobResult::InstallEmulatorCore { system, result }
+            },
+        );
     }
 
     pub(super) fn sync_emulator_roms_up_from_gui(&mut self, system: &str) {
-        match core::sync_emulation_roms_up_for_system(system) {
-            Ok(report) => {
-                self.install_status_message = format!(
-                    "Sync Roms Up ({}) completed: copied {}, unchanged {}, deleted {}",
-                    system.to_uppercase(),
-                    report.copied,
-                    report.unchanged,
-                    report.deleted
-                );
-            }
-            Err(err) => {
-                self.install_status_message = format!(
-                    "Sync Roms Up ({}) failed: {}",
-                    system.to_uppercase(),
-                    err
-                );
-            }
-        }
+        let system = system.to_string();
+        self.start_background_job(
+            GuiBackgroundStatusTarget::Install,
+            format!("Sync Roms Up ({}) started", system.to_uppercase()),
+            move || {
+                let result = core::sync_emulation_roms_up_for_system(&system);
+                GuiBackgroundJobResult::SyncEmulatorRomsUp { system, result }
+            },
+        );
     }
 
     pub(super) fn sync_emulator_roms_down_from_gui(&mut self, system: &str) {
-        match core::sync_emulation_roms_down_and_discover_for_system(system) {
-            Ok((sync_report, emulator_report)) => {
-                self.refresh_games();
-                self.install_status_message = format!(
-                    "Sync Roms Down ({}) completed: copied {}, unchanged {}, deleted {} | Emulator discover: found {}, added {}, updated {}, existing {}",
-                    system.to_uppercase(),
-                    sync_report.copied,
-                    sync_report.unchanged,
-                    sync_report.deleted,
-                    emulator_report.found,
-                    emulator_report.added,
-                    emulator_report.updated,
-                    emulator_report.already_exists
-                );
-            }
-            Err(err) => {
-                self.install_status_message = format!(
-                    "Sync Roms Down ({}) failed: {}",
-                    system.to_uppercase(),
-                    err
-                );
-            }
-        }
+        let system = system.to_string();
+        self.start_background_job(
+            GuiBackgroundStatusTarget::Install,
+            format!("Sync Roms Down ({}) started", system.to_uppercase()),
+            move || {
+                let result = core::sync_emulation_roms_down_and_discover_for_system(&system)
+                    .map_err(String::from);
+                GuiBackgroundJobResult::SyncEmulatorRomsDown { system, result }
+            },
+        );
     }
 
     pub(super) fn sync_emulator_saves_up_from_gui(&mut self, system: &str) {
-        match core::sync_emulation_saves_up_for_system(system) {
-            Ok(report) => {
-                self.install_status_message = format!(
-                    "Sync Saves Up ({}) completed: copied {}, unchanged {}, deleted {}",
-                    system.to_uppercase(),
-                    report.copied,
-                    report.unchanged,
-                    report.deleted
-                );
-            }
-            Err(err) => {
-                self.install_status_message = format!(
-                    "Sync Saves Up ({}) failed: {}",
-                    system.to_uppercase(),
-                    err
-                );
-            }
-        }
+        let system = system.to_string();
+        self.start_background_job(
+            GuiBackgroundStatusTarget::Install,
+            format!("Sync Saves Up ({}) started", system.to_uppercase()),
+            move || {
+                let result = core::sync_emulation_saves_up_for_system(&system);
+                GuiBackgroundJobResult::SyncEmulatorSavesUp { system, result }
+            },
+        );
     }
 
     pub(super) fn sync_emulator_saves_down_from_gui(&mut self, system: &str) {
-        match core::sync_emulation_saves_down_for_system(system) {
-            Ok(report) => {
-                self.install_status_message = format!(
-                    "Sync Saves Down ({}) completed: copied {}, unchanged {}, deleted {}",
-                    system.to_uppercase(),
-                    report.copied,
-                    report.unchanged,
-                    report.deleted
-                );
-            }
-            Err(err) => {
-                self.install_status_message = format!(
-                    "Sync Saves Down ({}) failed: {}",
-                    system.to_uppercase(),
-                    err
-                );
-            }
-        }
+        let system = system.to_string();
+        self.start_background_job(
+            GuiBackgroundStatusTarget::Install,
+            format!("Sync Saves Down ({}) started", system.to_uppercase()),
+            move || {
+                let result = core::sync_emulation_saves_down_for_system(&system);
+                GuiBackgroundJobResult::SyncEmulatorSavesDown { system, result }
+            },
+        );
     }
 
     pub(super) fn sync_mattmc_up_from_gui(&mut self) {
-        match core::sync_mattmc_up() {
-            Ok(_) => {
-                self.status_message = "SyncUp completed for MattMC".to_string();
-            }
-            Err(err) => {
-                self.status_message = format!("SyncUp failed: {}", err);
-            }
-        }
+        self.start_background_job(
+            GuiBackgroundStatusTarget::Library,
+            "SyncUp started for MattMC".to_string(),
+            || GuiBackgroundJobResult::SyncMattmcUp(core::sync_mattmc_up().map_err(String::from)),
+        );
     }
 
     pub(super) fn sync_mattmc_down_from_gui(&mut self) {
-        match core::sync_mattmc_down() {
-            Ok(_) => {
-                self.status_message = "SyncDown completed for MattMC".to_string();
-            }
-            Err(err) => {
-                self.status_message = format!("SyncDown failed: {}", err);
-            }
-        }
+        self.start_background_job(
+            GuiBackgroundStatusTarget::Library,
+            "SyncDown started for MattMC".to_string(),
+            || {
+                GuiBackgroundJobResult::SyncMattmcDown(
+                    core::sync_mattmc_down().map_err(String::from),
+                )
+            },
+        );
     }
 
     pub(super) fn save_emulation_remote_paths_from_gui(&mut self) {
@@ -366,8 +321,7 @@ impl BasaltApp {
             Ok(saved) => {
                 self.settings_remote_roms_root_input = saved.roms_root_dir;
                 self.settings_remote_saves_root_input = saved.saves_root_dir;
-                self.settings_status_message =
-                    "Saved remote ROM/Saves default paths".to_string();
+                self.settings_status_message = "Saved remote ROM/Saves default paths".to_string();
             }
             Err(err) => {
                 self.settings_status_message = format!("Save failed: {}", err);

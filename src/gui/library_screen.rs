@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use eframe::egui::{
-    self, vec2, Align, CentralPanel, Color32, FontId, Frame, Layout, Margin, RichText,
-    ScrollArea, Sense, SidePanel,
+    self, vec2, Align, CentralPanel, Color32, FontId, Frame, Layout, Margin, RichText, ScrollArea,
+    Sense, SidePanel,
 };
 use gilrs::{Axis, Button, EventType};
 
@@ -19,6 +19,7 @@ impl BasaltApp {
         right_region_gray: Color32,
         right_panel_width: f32,
     ) {
+        let can_start_background_job = !self.has_background_job();
         SidePanel::right("right_panel")
             .frame(
                 Frame::new()
@@ -38,7 +39,9 @@ impl BasaltApp {
                     ui.separator();
 
                     if let Some(selected) = self.selected_game().cloned() {
-                        ui.label(RichText::new(format!("Name: {}", selected.name)).size(body_text_size));
+                        ui.label(
+                            RichText::new(format!("Name: {}", selected.name)).size(body_text_size),
+                        );
                         ui.label(
                             RichText::new(format!("Runner: {}", selected.runner_kind.as_str()))
                                 .size(body_text_size),
@@ -68,7 +71,11 @@ impl BasaltApp {
                         }
 
                         let is_favorited = self.is_game_favorited(&selected.name);
-                        let favorite_label = if is_favorited { "Unfavorite" } else { "Favorite" };
+                        let favorite_label = if is_favorited {
+                            "Unfavorite"
+                        } else {
+                            "Favorite"
+                        };
 
                         if ui
                             .button(RichText::new(favorite_label).size(body_text_size))
@@ -88,14 +95,24 @@ impl BasaltApp {
                             ui.add_space(8.0);
                             ui.horizontal(|ui| {
                                 if ui
-                                    .button(RichText::new("SyncUp").size(body_text_size))
+                                    .add_enabled(
+                                        can_start_background_job,
+                                        egui::Button::new(
+                                            RichText::new("SyncUp").size(body_text_size),
+                                        ),
+                                    )
                                     .clicked()
                                 {
                                     self.sync_mattmc_up_from_gui();
                                 }
 
                                 if ui
-                                    .button(RichText::new("SyncDown").size(body_text_size))
+                                    .add_enabled(
+                                        can_start_background_job,
+                                        egui::Button::new(
+                                            RichText::new("SyncDown").size(body_text_size),
+                                        ),
+                                    )
                                     .clicked()
                                 {
                                     self.sync_mattmc_down_from_gui();
@@ -171,7 +188,8 @@ impl BasaltApp {
 
         let usable_width =
             (ui.available_width() - (WALL_PADDING * 2.0) - SCROLLBAR_GUTTER).max(TILE_WIDTH);
-        let columns = ((usable_width + TILE_SPACING) / (TILE_WIDTH + TILE_SPACING)).floor() as usize;
+        let columns =
+            ((usable_width + TILE_SPACING) / (TILE_WIDTH + TILE_SPACING)).floor() as usize;
         let columns = columns.max(1);
 
         ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -422,7 +440,8 @@ impl BasaltApp {
     ) -> bool {
         let text_strip_height = (tile_height - tile_width).max(24.0);
 
-        let (tile_rect, response) = ui.allocate_exact_size(vec2(tile_width, tile_height), Sense::click());
+        let (tile_rect, response) =
+            ui.allocate_exact_size(vec2(tile_width, tile_height), Sense::click());
 
         let title_max_width = (tile_rect.width() - 8.0).max(8.0);
         let title_size = self.fit_title_font_size(ui, &game.name, title_max_width);

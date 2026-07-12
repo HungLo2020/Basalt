@@ -6,6 +6,7 @@ use crate::core::{self, GameEntry, Playlist};
 use gilrs::Gilrs;
 
 use super::artwork::ArtworkStore;
+use super::background_jobs::GuiBackgroundJobResult;
 use super::top_bar::TopBarTab;
 
 pub(super) struct BasaltApp {
@@ -29,6 +30,7 @@ pub(super) struct BasaltApp {
     pub(super) latest_update: Option<core::UpdateCheckResult>,
     pub(super) artwork_store: ArtworkStore,
     pub(super) startup_games_rx: Option<Receiver<core::CoreResult<Vec<GameEntry>>>>,
+    pub(super) background_job_rx: Option<Receiver<GuiBackgroundJobResult>>,
     pub(super) update_check_rx: Option<Receiver<Result<core::UpdateCheckResult, String>>>,
     pub(super) update_install_rx: Option<Receiver<Result<(), String>>>,
     pub(super) controller: Option<Gilrs>,
@@ -107,6 +109,7 @@ impl Default for BasaltApp {
             latest_update: None,
             artwork_store: ArtworkStore::new(),
             startup_games_rx: Some(startup_games_rx),
+            background_job_rx: None,
             update_check_rx: None,
             update_install_rx: None,
             controller: Gilrs::new().ok(),
@@ -166,10 +169,14 @@ pub fn run() -> Result<(), String> {
 impl eframe::App for BasaltApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         self.poll_startup_games_load();
+        self.poll_background_job();
         self.poll_update_tasks();
         self.artwork_store.poll_download_results(ctx);
         self.apply_persisted_window_mode_if_needed(ctx);
-        if self.update_check_rx.is_some() || self.update_install_rx.is_some() {
+        if self.background_job_rx.is_some()
+            || self.update_check_rx.is_some()
+            || self.update_install_rx.is_some()
+        {
             ctx.request_repaint_after(Duration::from_millis(250));
         }
 

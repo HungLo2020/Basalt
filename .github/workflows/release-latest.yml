@@ -11,29 +11,40 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
-  create-release:
+  validate:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create or overwrite latest release
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libudev-dev \
+            libasound2-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check
+        run: cargo check --locked
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Prepare release metadata
+        id: metadata
         run: |
           commit_sha=$(git rev-parse --short HEAD)
           timestamp=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
           timestamp_unix=$(date -u +"%s")
           version=$(sed -nE '/^\[package\]/,/^\[/ s/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' Cargo.toml | head -n1)
-
-          if gh release view latest >/dev/null 2>&1; then
-            gh release delete latest --yes --cleanup-tag
-          fi
-
-          gh release create latest \
-            --title "Basalt Latest Build ($commit_sha)" \
-            --notes "Automated Basalt build. Commit: $commit_sha. Built: $timestamp"
 
           mkdir -p builds
           cat > builds/basalt-build-info.json <<EOF
@@ -44,30 +55,61 @@ jobs:
             "built_at_unix": "$timestamp_unix"
           }
           EOF
-          gh release upload latest builds/basalt-build-info.json --clobber
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release metadata artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: basalt-build-info
+          path: builds/basalt-build-info.json
+          if-no-files-found: error
 
   build-linux:
-    needs: create-release
+    needs: validate
     uses: ./.github/workflows/release-linux-deb.yml
-    with:
-      release_tag: latest
     permissions:
       contents: write
 
   build-macos:
-    needs: create-release
+    needs: validate
     uses: ./.github/workflows/release-macos-dmg.yml
-    with:
-      release_tag: latest
     permissions:
       contents: write
 
   build-windows:
-    needs: create-release
+    needs: validate
     uses: ./.github/workflows/release-windows-installer.yml
-    with:
-      release_tag: latest
     permissions:
       contents: write
+
+  publish:
+    needs:
+      - validate
+      - build-linux
+      - build-macos
+      - build-windows
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Create or overwrite latest release
+        run: |
+          commit_sha=$(git rev-parse --short HEAD)
+          timestamp=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          if gh release view latest >/dev/null 2>&1; then
+            gh release delete latest --yes --cleanup-tag
+          fi
+
+          gh release create latest \
+            --title "Basalt Latest Build ($commit_sha)" \
+            --notes "Automated Basalt build. Commit: $commit_sha. Built: $timestamp"
+
+          find release-artifacts -type f -print0 | xargs -0 -I{} gh release upload latest "{}" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
