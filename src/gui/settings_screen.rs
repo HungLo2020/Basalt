@@ -34,7 +34,7 @@ impl BasaltApp {
                 ui.label(
                     RichText::new(format!(
                         "ROMs root:\n{}",
-                        self.settings_remote_roms_root_input
+                        self.settings.remote_roms_root_input
                     ))
                     .size(14.0),
                 );
@@ -42,7 +42,7 @@ impl BasaltApp {
                 ui.label(
                     RichText::new(format!(
                         "Saves root:\n{}",
-                        self.settings_remote_saves_root_input
+                        self.settings.remote_saves_root_input
                     ))
                     .size(14.0),
                 );
@@ -50,19 +50,19 @@ impl BasaltApp {
                 ui.add_space(10.0);
                 ui.separator();
                 ui.label(RichText::new("Basalt Updates"));
-                if self.update_status_message.trim().is_empty() {
+                if self.update.status_message.trim().is_empty() {
                     ui.label(RichText::new("Update status unavailable").size(14.0));
                 } else {
-                    ui.label(RichText::new(&self.update_status_message).size(14.0));
+                    ui.label(RichText::new(&self.update.status_message).size(14.0));
                 }
 
                 ui.add_space(10.0);
                 ui.separator();
                 ui.label(RichText::new("Status"));
-                if self.settings_status_message.trim().is_empty() {
+                if self.settings.status_message.trim().is_empty() {
                     ui.label(RichText::new("Ready").size(14.0));
                 } else {
-                    ui.label(RichText::new(&self.settings_status_message).size(14.0));
+                    ui.label(RichText::new(&self.settings.status_message).size(14.0));
                 }
             });
 
@@ -83,14 +83,14 @@ impl BasaltApp {
 
                 ui.label("Default remote ROMs root path");
                 ui.add(
-                    egui::TextEdit::singleline(&mut self.settings_remote_roms_root_input)
+                    egui::TextEdit::singleline(&mut self.settings.remote_roms_root_input)
                         .desired_width(f32::INFINITY),
                 );
 
                 ui.add_space(8.0);
                 ui.label("Default remote Saves root path");
                 ui.add(
-                    egui::TextEdit::singleline(&mut self.settings_remote_saves_root_input)
+                    egui::TextEdit::singleline(&mut self.settings.remote_saves_root_input)
                         .desired_width(f32::INFINITY),
                 );
 
@@ -104,10 +104,10 @@ impl BasaltApp {
                 ui.label("Launcher Display");
                 ui.label("Applies immediately and persists across launcher restarts.");
 
-                let previous_fullscreen_value = self.settings_launcher_fullscreen_enabled;
-                let previous_maximized_value = self.settings_launcher_maximized_enabled;
+                let previous_fullscreen_value = self.settings.launcher_fullscreen_enabled;
+                let previous_maximized_value = self.settings.launcher_maximized_enabled;
                 if ui
-                    .checkbox(&mut self.settings_launcher_fullscreen_enabled, "Fullscreen")
+                    .checkbox(&mut self.settings.launcher_fullscreen_enabled, "Fullscreen")
                     .changed()
                 {
                     self.save_launcher_display_settings_from_gui(
@@ -117,11 +117,11 @@ impl BasaltApp {
                     );
                 }
 
-                let previous_fullscreen_value = self.settings_launcher_fullscreen_enabled;
-                let previous_maximized_value = self.settings_launcher_maximized_enabled;
+                let previous_fullscreen_value = self.settings.launcher_fullscreen_enabled;
+                let previous_maximized_value = self.settings.launcher_maximized_enabled;
                 if ui
                     .checkbox(
-                        &mut self.settings_launcher_maximized_enabled,
+                        &mut self.settings.launcher_maximized_enabled,
                         "Maximized (windowed)",
                     )
                     .changed()

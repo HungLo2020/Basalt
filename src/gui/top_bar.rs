@@ -1,6 +1,4 @@
-use eframe::egui::{
-    self, vec2, Button, Color32, Frame, Layout, Margin, RichText, TopBottomPanel,
-};
+use eframe::egui::{self, vec2, Button, Color32, Frame, Layout, Margin, RichText, TopBottomPanel};
 
 use super::app::BasaltApp;
 use super::search;
@@ -71,7 +69,7 @@ impl BasaltApp {
                     panel_rect.min,
                     egui::pos2(panel_rect.max.x, panel_rect.min.y + top_row_height),
                 );
-                let in_settings = self.active_tab == TopBarTab::Settings;
+                let in_settings = self.navigation.active_tab == TopBarTab::Settings;
 
                 let horizontal_gap = 10.0;
                 let mut action_region_width = 430.0;
@@ -81,7 +79,8 @@ impl BasaltApp {
                 let min_search_region_width = 120.0;
                 let min_center_region_width = 120.0;
 
-                let available_inner_width = (top_row_rect.width() - (horizontal_gap * 2.0)).max(0.0);
+                let available_inner_width =
+                    (top_row_rect.width() - (horizontal_gap * 2.0)).max(0.0);
                 let mut center_region_width =
                     available_inner_width - action_region_width - search_region_width;
 
@@ -93,8 +92,7 @@ impl BasaltApp {
                     search_region_width -= shrink_search;
                     remaining_needed -= shrink_search;
 
-                    let action_reducible =
-                        (action_region_width - action_region_min_width).max(0.0);
+                    let action_reducible = (action_region_width - action_region_min_width).max(0.0);
                     let shrink_action = remaining_needed.min(action_reducible);
                     action_region_width -= shrink_action;
 
@@ -126,7 +124,7 @@ impl BasaltApp {
                         .layout(Layout::left_to_right(egui::Align::Min)),
                 );
 
-                if !in_settings && self.active_tab == TopBarTab::Library {
+                if !in_settings && self.navigation.active_tab == TopBarTab::Library {
                     if action_ui.button("Discover").clicked() {
                         actions.trigger_discover = true;
                     }
@@ -159,7 +157,7 @@ impl BasaltApp {
 
                     let library_button = Button::new(RichText::new("Library").size(18.0))
                         .min_size(vec2(tab_button_width, tab_button_height))
-                        .fill(if self.active_tab == TopBarTab::Library {
+                        .fill(if self.navigation.active_tab == TopBarTab::Library {
                             Color32::from_rgb(86, 98, 116)
                         } else {
                             Color32::from_rgb(63, 73, 88)
@@ -171,7 +169,7 @@ impl BasaltApp {
 
                     let install_button = Button::new(RichText::new("Install").size(18.0))
                         .min_size(vec2(tab_button_width, tab_button_height))
-                        .fill(if self.active_tab == TopBarTab::Install {
+                        .fill(if self.navigation.active_tab == TopBarTab::Install {
                             Color32::from_rgb(86, 98, 116)
                         } else {
                             Color32::from_rgb(63, 73, 88)
@@ -187,14 +185,12 @@ impl BasaltApp {
                             .layout(Layout::left_to_right(egui::Align::Min)),
                     );
 
-                    let (active_query, hint_text) = match self.active_tab {
+                    let (active_query, hint_text) = match self.navigation.active_tab {
                         TopBarTab::Library => (
-                            &mut self.library_search_query,
+                            &mut self.library.search_query,
                             "Search library (name/runner/target)",
                         ),
-                        TopBarTab::Install => {
-                            (&mut self.install_search_query, "Search installs")
-                        }
+                        TopBarTab::Install => (&mut self.install.search_query, "Search installs"),
                         TopBarTab::Settings => unreachable!(),
                     };
 
@@ -210,8 +206,14 @@ impl BasaltApp {
                     second_row_rect.max,
                 );
                 let second_row_right_inner = egui::Rect::from_min_max(
-                    egui::pos2(second_row_right_rect.min.x + 2.0, second_row_right_rect.min.y - 3.0),
-                    egui::pos2(second_row_right_rect.max.x - 2.0, second_row_right_rect.max.y - 5.0),
+                    egui::pos2(
+                        second_row_right_rect.min.x + 2.0,
+                        second_row_right_rect.min.y - 3.0,
+                    ),
+                    egui::pos2(
+                        second_row_right_rect.max.x - 2.0,
+                        second_row_right_rect.max.y - 5.0,
+                    ),
                 );
                 let settings_button_height = second_row_right_inner.height().min(24.0).max(20.0);
                 let mut second_row_right_ui = ui.new_child(
@@ -241,15 +243,15 @@ impl BasaltApp {
                             .min_size(vec2(132.0, settings_button_height)),
                     );
                     let update_clicked = update_response.clicked();
-                    if !self.update_status_message.trim().is_empty() {
-                        update_response.on_hover_text(&self.update_status_message);
+                    if !self.update.status_message.trim().is_empty() {
+                        update_response.on_hover_text(&self.update.status_message);
                     }
                     if update_clicked {
                         actions.trigger_update = true;
                     }
                 }
 
-                if !in_settings && self.active_tab == TopBarTab::Library {
+                if !in_settings && self.navigation.active_tab == TopBarTab::Library {
                     let playlist_rect = egui::Rect::from_min_max(
                         second_row_rect.min,
                         egui::pos2(center_rect.min.x - horizontal_gap, second_row_rect.max.y),
@@ -266,6 +268,7 @@ impl BasaltApp {
 
                     playlist_ui.horizontal(|ui| {
                         let selected_playlist_text = self
+                            .library
                             .selected_playlist
                             .as_deref()
                             .unwrap_or("All Games");
@@ -274,22 +277,23 @@ impl BasaltApp {
                             .selected_text(selected_playlist_text)
                             .width(180.0)
                             .show_ui(ui, |ui| {
-                                let all_games_selected = self.selected_playlist.is_none();
-                                if ui.selectable_label(all_games_selected, "All Games").clicked() {
+                                let all_games_selected = self.library.selected_playlist.is_none();
+                                if ui
+                                    .selectable_label(all_games_selected, "All Games")
+                                    .clicked()
+                                {
                                     actions.select_playlist = Some(PlaylistSelection::AllGames);
                                 }
 
-                                for playlist in &self.playlists {
+                                for playlist in &self.library.playlists {
                                     let is_selected = self
+                                        .library
                                         .selected_playlist
                                         .as_ref()
                                         .map(|selected| selected == &playlist.name)
                                         .unwrap_or(false);
 
-                                    if ui
-                                        .selectable_label(is_selected, &playlist.name)
-                                        .clicked()
-                                    {
+                                    if ui.selectable_label(is_selected, &playlist.name).clicked() {
                                         actions.select_playlist =
                                             Some(PlaylistSelection::Named(playlist.name.clone()));
                                     }

@@ -10,27 +10,29 @@ use super::top_bar::{PlaylistSelection, TopBarActions, TopBarTab};
 impl BasaltApp {
     pub(super) fn apply_top_bar_actions(&mut self, actions: TopBarActions) {
         if actions.open_settings {
-            if self.active_tab == TopBarTab::Library || self.active_tab == TopBarTab::Install {
-                self.settings_return_tab = self.active_tab;
+            if self.navigation.active_tab == TopBarTab::Library
+                || self.navigation.active_tab == TopBarTab::Install
+            {
+                self.navigation.settings_return_tab = self.navigation.active_tab;
             }
-            self.active_tab = TopBarTab::Settings;
+            self.navigation.active_tab = TopBarTab::Settings;
         }
 
-        if actions.go_back_from_settings && self.active_tab == TopBarTab::Settings {
-            self.active_tab = self.settings_return_tab;
+        if actions.go_back_from_settings && self.navigation.active_tab == TopBarTab::Settings {
+            self.navigation.active_tab = self.navigation.settings_return_tab;
         }
 
         if let Some(tab) = actions.switch_to_tab {
-            self.active_tab = tab;
+            self.navigation.active_tab = tab;
         }
 
         if let Some(selection) = actions.select_playlist {
             match selection {
                 PlaylistSelection::AllGames => {
-                    self.selected_playlist = None;
+                    self.library.selected_playlist = None;
                 }
                 PlaylistSelection::Named(name) => {
-                    self.selected_playlist = Some(name);
+                    self.library.selected_playlist = Some(name);
                 }
             }
         }
@@ -40,7 +42,7 @@ impl BasaltApp {
         }
         if actions.trigger_refresh {
             self.refresh_games();
-            self.status_message = "Game list refreshed".to_string();
+            self.library.status_message = "Game list refreshed".to_string();
         }
         if actions.trigger_refresh_metadata {
             self.refresh_metadata_from_gui();
@@ -51,8 +53,9 @@ impl BasaltApp {
     }
 
     pub(super) fn refresh_metadata_from_gui(&mut self) {
-        self.artwork_store.refresh_metadata_for_games(&self.games);
-        self.status_message =
+        self.artwork_store
+            .refresh_metadata_for_games(&self.library.games);
+        self.library.status_message =
             "Metadata refresh started: caches cleared, artwork requeued".to_string();
     }
 
@@ -62,9 +65,9 @@ impl BasaltApp {
                 self.apply_loaded_games(games);
             }
             Err(err) => {
-                self.games.clear();
-                self.selected_index = None;
-                self.status_message = format!("Failed to load games: {}", err);
+                self.library.games.clear();
+                self.library.selected_index = None;
+                self.library.status_message = format!("Failed to load games: {}", err);
             }
         }
     }
@@ -100,25 +103,31 @@ impl BasaltApp {
                     None => "Emulators skipped".to_string(),
                 };
 
-                self.status_message = format!(
+                self.library.status_message = format!(
                     "Discover complete | {} | {} | {}",
                     mattmc_message, steam_message, emulator_message
                 );
             }
             Err(err) => {
-                self.status_message = format!("Discover failed: {}", err);
+                self.library.status_message = format!("Discover failed: {}", err);
             }
         }
     }
 
     pub(super) fn selected_game(&self) -> Option<&GameEntry> {
-        self.selected_index.and_then(|index| self.games.get(index))
+        self.library
+            .selected_index
+            .and_then(|index| self.library.games.get(index))
     }
 
     pub(super) fn filtered_library_indices(&self) -> Vec<usize> {
-        let selected_playlist_games: Option<HashSet<&str>> =
-            self.selected_playlist.as_ref().and_then(|playlist_name| {
-                self.playlists
+        let selected_playlist_games: Option<HashSet<&str>> = self
+            .library
+            .selected_playlist
+            .as_ref()
+            .and_then(|playlist_name| {
+                self.library
+                    .playlists
                     .iter()
                     .find(|playlist| playlist.name == *playlist_name)
                     .map(|playlist| {
@@ -130,7 +139,8 @@ impl BasaltApp {
                     })
             });
 
-        self.games
+        self.library
+            .games
             .iter()
             .enumerate()
             .filter(|(_, game)| {
@@ -140,12 +150,12 @@ impl BasaltApp {
                     .unwrap_or(true);
 
                 in_selected_playlist
-                    && (search::matches_query(&game.name, &self.library_search_query)
+                    && (search::matches_query(&game.name, &self.library.search_query)
                         || search::matches_query(
                             game.runner_kind.as_str(),
-                            &self.library_search_query,
+                            &self.library.search_query,
                         )
-                        || search::matches_query(&game.launch_target, &self.library_search_query))
+                        || search::matches_query(&game.launch_target, &self.library.search_query))
             })
             .map(|(index, _)| index)
             .collect()
@@ -154,31 +164,33 @@ impl BasaltApp {
     pub(super) fn refresh_playlists(&mut self) {
         match core::list_playlists() {
             Ok(playlists) => {
-                self.playlists = playlists;
+                self.library.playlists = playlists;
 
-                if let Some(selected_playlist) = self.selected_playlist.as_ref() {
+                if let Some(selected_playlist) = self.library.selected_playlist.as_ref() {
                     let exists = self
+                        .library
                         .playlists
                         .iter()
                         .any(|playlist| playlist.name == *selected_playlist);
                     if !exists {
-                        self.selected_playlist = None;
+                        self.library.selected_playlist = None;
                     }
                 }
             }
             Err(err) => {
-                self.status_message = format!("Failed to load playlists: {}", err);
-                self.playlists = vec![core::Playlist {
+                self.library.status_message = format!("Failed to load playlists: {}", err);
+                self.library.playlists = vec![core::Playlist {
                     name: core::FAVORITES_PLAYLIST_NAME.to_string(),
                     game_names: Vec::new(),
                 }];
-                self.selected_playlist = None;
+                self.library.selected_playlist = None;
             }
         }
     }
 
     pub(super) fn is_game_favorited(&self, game_name: &str) -> bool {
-        self.playlists
+        self.library
+            .playlists
             .iter()
             .find(|playlist| playlist.name == core::FAVORITES_PLAYLIST_NAME)
             .map(|playlist| playlist.game_names.iter().any(|name| name == game_name))
@@ -195,14 +207,14 @@ impl BasaltApp {
         match result {
             Ok(_) => {
                 self.refresh_playlists();
-                self.status_message = if favorited {
+                self.library.status_message = if favorited {
                     format!("Added {} to Favorites", game_name)
                 } else {
                     format!("Removed {} from Favorites", game_name)
                 };
             }
             Err(err) => {
-                self.status_message = if favorited {
+                self.library.status_message = if favorited {
                     format!("Favorite failed: {}", err)
                 } else {
                     format!("Unfavorite failed: {}", err)
@@ -214,12 +226,12 @@ impl BasaltApp {
     pub(super) fn remove_game_from_gui(&mut self, game_name: &str) {
         match core::remove_game(game_name) {
             Ok(_) => {
-                self.selected_index = None;
+                self.library.selected_index = None;
                 self.refresh_games();
-                self.status_message = format!("Removed {}", game_name);
+                self.library.status_message = format!("Removed {}", game_name);
             }
             Err(err) => {
-                self.status_message = format!("Remove failed: {}", err);
+                self.library.status_message = format!("Remove failed: {}", err);
             }
         }
     }
@@ -228,7 +240,7 @@ impl BasaltApp {
         self.start_background_job(
             GuiBackgroundStatusTarget::Install,
             "MattMC install started".to_string(),
-            || GuiBackgroundJobResult::InstallMattmc(crate::cli::run_install_mattmc_command()),
+            || GuiBackgroundJobResult::InstallMattmc(core::install_mattmc()),
         );
     }
 
@@ -315,16 +327,16 @@ impl BasaltApp {
 
     pub(super) fn save_emulation_remote_paths_from_gui(&mut self) {
         match core::save_emulation_remote_paths(
-            &self.settings_remote_roms_root_input,
-            &self.settings_remote_saves_root_input,
+            &self.settings.remote_roms_root_input,
+            &self.settings.remote_saves_root_input,
         ) {
             Ok(saved) => {
-                self.settings_remote_roms_root_input = saved.roms_root_dir;
-                self.settings_remote_saves_root_input = saved.saves_root_dir;
-                self.settings_status_message = "Saved remote ROM/Saves default paths".to_string();
+                self.settings.remote_roms_root_input = saved.roms_root_dir;
+                self.settings.remote_saves_root_input = saved.saves_root_dir;
+                self.settings.status_message = "Saved remote ROM/Saves default paths".to_string();
             }
             Err(err) => {
-                self.settings_status_message = format!("Save failed: {}", err);
+                self.settings.status_message = format!("Save failed: {}", err);
             }
         }
     }
@@ -335,8 +347,8 @@ impl BasaltApp {
         previous_fullscreen_value: bool,
         previous_maximized_value: bool,
     ) {
-        let mut desired_fullscreen = self.settings_launcher_fullscreen_enabled;
-        let mut desired_maximized = self.settings_launcher_maximized_enabled;
+        let mut desired_fullscreen = self.settings.launcher_fullscreen_enabled;
+        let mut desired_maximized = self.settings.launcher_maximized_enabled;
 
         if desired_fullscreen {
             desired_maximized = false;
@@ -346,13 +358,13 @@ impl BasaltApp {
             desired_fullscreen = false;
         }
 
-        self.settings_launcher_fullscreen_enabled = desired_fullscreen;
-        self.settings_launcher_maximized_enabled = desired_maximized;
+        self.settings.launcher_fullscreen_enabled = desired_fullscreen;
+        self.settings.launcher_maximized_enabled = desired_maximized;
 
         match core::save_launcher_display_settings(desired_fullscreen, desired_maximized) {
             Ok(saved) => {
-                self.settings_launcher_fullscreen_enabled = saved.fullscreen_enabled;
-                self.settings_launcher_maximized_enabled = saved.maximized_enabled;
+                self.settings.launcher_fullscreen_enabled = saved.fullscreen_enabled;
+                self.settings.launcher_maximized_enabled = saved.maximized_enabled;
 
                 if saved.fullscreen_enabled {
                     ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Maximized(false));
@@ -365,7 +377,7 @@ impl BasaltApp {
                     ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Maximized(false));
                 }
 
-                self.settings_status_message = if saved.fullscreen_enabled {
+                self.settings.status_message = if saved.fullscreen_enabled {
                     "Enabled launcher fullscreen".to_string()
                 } else if saved.maximized_enabled {
                     "Enabled launcher maximized window mode".to_string()
@@ -374,9 +386,9 @@ impl BasaltApp {
                 };
             }
             Err(err) => {
-                self.settings_launcher_fullscreen_enabled = previous_fullscreen_value;
-                self.settings_launcher_maximized_enabled = previous_maximized_value;
-                self.settings_status_message = format!("Save failed: {}", err);
+                self.settings.launcher_fullscreen_enabled = previous_fullscreen_value;
+                self.settings.launcher_maximized_enabled = previous_maximized_value;
+                self.settings.status_message = format!("Save failed: {}", err);
             }
         }
     }

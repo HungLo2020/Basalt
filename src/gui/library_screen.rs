@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use eframe::egui::{
-    self, vec2, Align, CentralPanel, Color32, FontId, Frame, Layout, Margin, RichText, ScrollArea,
-    Sense, SidePanel,
+    self, vec2, Align, CentralPanel, Color32, FontId, Frame, Layout, Margin, RichText, Sense,
+    SidePanel,
 };
 use gilrs::{Axis, Button, EventType};
 
@@ -10,6 +10,7 @@ use crate::core::{self, EmulationLaunchTarget, GameEntry};
 
 use super::app::BasaltApp;
 use super::game_tile::paint_game_tile;
+use super::tile_grid;
 
 impl BasaltApp {
     pub(super) fn render_library_screen(
@@ -62,10 +63,11 @@ impl BasaltApp {
                         {
                             match core::launch_game(&selected.name) {
                                 Ok(_) => {
-                                    self.status_message = format!("Launched {}", selected.name);
+                                    self.library.status_message =
+                                        format!("Launched {}", selected.name);
                                 }
                                 Err(err) => {
-                                    self.status_message = format!("Launch failed: {}", err);
+                                    self.library.status_message = format!("Launch failed: {}", err);
                                 }
                             }
                         }
@@ -129,10 +131,12 @@ impl BasaltApp {
                     ui.add_space(12.0);
                     ui.separator();
                     ui.label(RichText::new("Status").size(body_text_size));
-                    if self.status_message.is_empty() {
+                    if self.library.status_message.is_empty() {
                         ui.label(RichText::new("Ready").size(secondary_text_size));
                     } else {
-                        ui.label(RichText::new(&self.status_message).size(secondary_text_size));
+                        ui.label(
+                            RichText::new(&self.library.status_message).size(secondary_text_size),
+                        );
                     }
                 });
             });
@@ -146,9 +150,9 @@ impl BasaltApp {
             )
             .show(ctx, |ui| {
                 let filtered_indices = self.filtered_library_indices();
-                if let Some(selected_index) = self.selected_index {
+                if let Some(selected_index) = self.library.selected_index {
                     if !filtered_indices.contains(&selected_index) {
-                        self.selected_index = None;
+                        self.library.selected_index = None;
                     }
                 }
 
@@ -179,69 +183,26 @@ impl BasaltApp {
     }
 
     fn render_game_grid(&mut self, ui: &mut egui::Ui, filtered_indices: &[usize]) {
-        const TILE_WIDTH: f32 = 150.0;
-        const TEXT_STRIP_HEIGHT: f32 = 40.0;
-        const TILE_HEIGHT: f32 = TILE_WIDTH + TEXT_STRIP_HEIGHT;
-        const TILE_SPACING: f32 = 24.0;
-        const WALL_PADDING: f32 = 24.0;
-        const SCROLLBAR_GUTTER: f32 = 18.0;
+        let categorized_indices = self.categorize_filtered_indices(filtered_indices);
+        let columns = tile_grid::column_count(ui);
+        self.process_library_controller_input(&categorized_indices, columns);
+        let has_empty_search = self.library.search_query.trim().is_empty();
 
-        let usable_width =
-            (ui.available_width() - (WALL_PADDING * 2.0) - SCROLLBAR_GUTTER).max(TILE_WIDTH);
-        let columns =
-            ((usable_width + TILE_SPACING) / (TILE_WIDTH + TILE_SPACING)).floor() as usize;
-        let columns = columns.max(1);
-
-        ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            ui.set_min_width(ui.available_width());
-            ui.add_space(WALL_PADDING);
-
-            if filtered_indices.is_empty() {
-                ui.horizontal(|ui| {
-                    ui.add_space(WALL_PADDING);
-                    if self.library_search_query.trim().is_empty() {
-                        ui.label("No games found. Use Add, Discover, or CLI commands to add entries.");
-                    } else {
-                        ui.label("No games match your search.");
-                    }
-                    ui.add_space(WALL_PADDING + SCROLLBAR_GUTTER);
-                });
-                ui.add_space(WALL_PADDING);
-                return;
-            }
-
-            let categorized_indices = self.categorize_filtered_indices(filtered_indices);
-            self.process_library_controller_input(&categorized_indices, columns);
-
-            for (category_position, (category_name, category_indices))
-                in categorized_indices.iter().enumerate()
-            {
-                let header_text = format!("{} ({})", category_name, category_indices.len());
-                let collapsing = egui::CollapsingHeader::new(header_text)
-                    .id_salt(format!("library_category_{}", category_name))
-                    .default_open(true);
-
-                collapsing.show(ui, |ui| {
-                    ui.add_space(8.0);
-                    self.render_category_tile_rows(
-                        ui,
-                        category_indices,
-                        columns,
-                        TILE_WIDTH,
-                        TILE_HEIGHT,
-                        TILE_SPACING,
-                        WALL_PADDING,
-                        SCROLLBAR_GUTTER,
-                    );
-                });
-
-                if category_position + 1 < categorized_indices.len() {
-                    ui.add_space(12.0);
+        tile_grid::show_categorized_grid(
+            ui,
+            "library",
+            &categorized_indices,
+            |ui| {
+                if has_empty_search {
+                    ui.label("No games found. Use Add, Discover, or CLI commands to add entries.");
+                } else {
+                    ui.label("No games match your search.");
                 }
-            }
-
-            ui.add_space(WALL_PADDING);
-        });
+            },
+            |ui, category_indices, columns| {
+                self.render_category_tile_rows(ui, category_indices, columns);
+            },
+        );
     }
 
     fn process_library_controller_input(
@@ -249,7 +210,7 @@ impl BasaltApp {
         categorized_indices: &[(String, Vec<usize>)],
         columns: usize,
     ) {
-        let Some(controller) = self.controller.as_mut() else {
+        let Some(controller) = self.controller.gilrs.as_mut() else {
             return;
         };
 
@@ -265,25 +226,25 @@ impl BasaltApp {
                 EventType::ButtonPressed(Button::DPadDown, _) => move_y += 1,
                 EventType::ButtonPressed(Button::South, _) => launch_selected = true,
                 EventType::AxisChanged(Axis::LeftStickX, value, _) => {
-                    if value <= -0.6 && !self.controller_stick_x_held {
+                    if value <= -0.6 && !self.controller.stick_x_held {
                         move_x -= 1;
-                        self.controller_stick_x_held = true;
-                    } else if value >= 0.6 && !self.controller_stick_x_held {
+                        self.controller.stick_x_held = true;
+                    } else if value >= 0.6 && !self.controller.stick_x_held {
                         move_x += 1;
-                        self.controller_stick_x_held = true;
+                        self.controller.stick_x_held = true;
                     } else if value.abs() < 0.3 {
-                        self.controller_stick_x_held = false;
+                        self.controller.stick_x_held = false;
                     }
                 }
                 EventType::AxisChanged(Axis::LeftStickY, value, _) => {
-                    if value <= -0.6 && !self.controller_stick_y_held {
+                    if value <= -0.6 && !self.controller.stick_y_held {
                         move_y += 1;
-                        self.controller_stick_y_held = true;
-                    } else if value >= 0.6 && !self.controller_stick_y_held {
+                        self.controller.stick_y_held = true;
+                    } else if value >= 0.6 && !self.controller.stick_y_held {
                         move_y -= 1;
-                        self.controller_stick_y_held = true;
+                        self.controller.stick_y_held = true;
                     } else if value.abs() < 0.3 {
-                        self.controller_stick_y_held = false;
+                        self.controller.stick_y_held = false;
                     }
                 }
                 _ => {}
@@ -296,19 +257,20 @@ impl BasaltApp {
         }
 
         if ordered_indices.is_empty() {
-            self.selected_index = None;
+            self.library.selected_index = None;
             return;
         }
 
         let has_navigation_input = move_x != 0 || move_y != 0;
-        if (has_navigation_input || launch_selected) && self.selected_index.is_none() {
-            self.selected_index = Some(ordered_indices[0]);
-            self.pending_scroll_to_selected = true;
+        if (has_navigation_input || launch_selected) && self.library.selected_index.is_none() {
+            self.library.selected_index = Some(ordered_indices[0]);
+            self.library.pending_scroll_to_selected = true;
         }
 
         if has_navigation_input {
             let max_index = ordered_indices.len().saturating_sub(1);
             let mut selected_position = self
+                .library
                 .selected_index
                 .and_then(|selected| ordered_indices.iter().position(|&index| index == selected))
                 .unwrap_or(0);
@@ -328,9 +290,9 @@ impl BasaltApp {
             }
 
             let next_selection = ordered_indices[selected_position];
-            if self.selected_index != Some(next_selection) {
-                self.selected_index = Some(next_selection);
-                self.pending_scroll_to_selected = true;
+            if self.library.selected_index != Some(next_selection) {
+                self.library.selected_index = Some(next_selection);
+                self.library.pending_scroll_to_selected = true;
             }
         }
 
@@ -338,10 +300,10 @@ impl BasaltApp {
             if let Some(selected_game) = self.selected_game().cloned() {
                 match core::launch_game(&selected_game.name) {
                     Ok(_) => {
-                        self.status_message = format!("Launched {}", selected_game.name);
+                        self.library.status_message = format!("Launched {}", selected_game.name);
                     }
                     Err(err) => {
-                        self.status_message = format!("Launch failed: {}", err);
+                        self.library.status_message = format!("Launch failed: {}", err);
                     }
                 }
             }
@@ -353,43 +315,20 @@ impl BasaltApp {
         ui: &mut egui::Ui,
         category_indices: &[usize],
         columns: usize,
-        tile_width: f32,
-        tile_height: f32,
-        tile_spacing: f32,
-        wall_padding: f32,
-        scrollbar_gutter: f32,
     ) {
-        let mut visible_index = 0usize;
-        while visible_index < category_indices.len() {
-            ui.horizontal(|ui| {
-                ui.add_space(wall_padding);
-
-                for col in 0..columns {
-                    if visible_index >= category_indices.len() {
-                        break;
-                    }
-
-                    let game_index = category_indices[visible_index];
-                    let game = self.games[game_index].clone();
-                    let is_selected = self.selected_index == Some(game_index);
-                    if self.render_tile(ui, tile_width, tile_height, &game, is_selected) {
-                        self.selected_index = Some(game_index);
-                    }
-
-                    if col + 1 < columns && visible_index + 1 < category_indices.len() {
-                        ui.add_space(tile_spacing);
-                    }
-
-                    visible_index += 1;
-                }
-
-                ui.add_space(wall_padding + scrollbar_gutter);
-            });
-
-            if visible_index < category_indices.len() {
-                ui.add_space(tile_spacing);
+        tile_grid::show_tile_rows(ui, category_indices, columns, |ui, game_index| {
+            let game = self.library.games[*game_index].clone();
+            let is_selected = self.library.selected_index == Some(*game_index);
+            if self.render_tile(
+                ui,
+                tile_grid::TILE_WIDTH,
+                tile_grid::TILE_HEIGHT,
+                &game,
+                is_selected,
+            ) {
+                self.library.selected_index = Some(*game_index);
             }
-        }
+        });
     }
 
     fn categorize_filtered_indices(&self, filtered_indices: &[usize]) -> Vec<(String, Vec<usize>)> {
@@ -398,7 +337,7 @@ impl BasaltApp {
         let mut emulator_sections: BTreeMap<String, Vec<usize>> = BTreeMap::new();
 
         for &game_index in filtered_indices {
-            let game = &self.games[game_index];
+            let game = &self.library.games[game_index];
             match game.runner_kind.as_str() {
                 "steam" => steam_indices.push(game_index),
                 "bash" => my_games_indices.push(game_index),
@@ -456,9 +395,9 @@ impl BasaltApp {
             selected,
         );
 
-        if selected && self.pending_scroll_to_selected {
+        if selected && self.library.pending_scroll_to_selected {
             response.scroll_to_me(Some(Align::Center));
-            self.pending_scroll_to_selected = false;
+            self.library.pending_scroll_to_selected = false;
         }
 
         response.clicked()

@@ -12,11 +12,12 @@ impl BasaltApp {
     }
 
     pub(super) fn update_button_text(&self) -> &'static str {
-        if self.update_install_rx.is_some() {
+        if self.update.install_rx.is_some() {
             "Updating..."
-        } else if self.update_check_rx.is_some() {
+        } else if self.update.check_rx.is_some() {
             "Checking..."
         } else if self
+            .update
             .latest_update
             .as_ref()
             .map(|update| update.update_available)
@@ -33,9 +34,10 @@ impl BasaltApp {
     }
 
     pub(super) fn can_use_update_button(&self) -> bool {
-        self.update_check_rx.is_none()
-            && self.update_install_rx.is_none()
+        self.update.check_rx.is_none()
+            && self.update.install_rx.is_none()
             && (!self
+                .update
                 .latest_update
                 .as_ref()
                 .map(|update| update.update_available)
@@ -49,6 +51,7 @@ impl BasaltApp {
         }
 
         if let Some(update) = self
+            .update
             .latest_update
             .clone()
             .filter(|update| update.update_available)
@@ -60,13 +63,13 @@ impl BasaltApp {
     }
 
     pub(super) fn start_update_check(&mut self) {
-        if self.update_check_rx.is_some() || self.update_install_rx.is_some() {
+        if self.update.check_rx.is_some() || self.update.install_rx.is_some() {
             return;
         }
 
         let (tx, rx) = mpsc::channel::<Result<core::UpdateCheckResult, String>>();
-        self.update_check_rx = Some(rx);
-        self.update_status_message = "Checking for Basalt updates...".to_string();
+        self.update.check_rx = Some(rx);
+        self.update.status_message = "Checking for Basalt updates...".to_string();
 
         thread::spawn(move || {
             let result = core::check_for_basalt_updates();
@@ -76,8 +79,8 @@ impl BasaltApp {
 
     fn start_update_install(&mut self, update: core::UpdateCheckResult) {
         let (tx, rx) = mpsc::channel::<Result<(), String>>();
-        self.update_install_rx = Some(rx);
-        self.update_status_message = format!("Downloading {}...", update.asset_name);
+        self.update.install_rx = Some(rx);
+        self.update.status_message = format!("Downloading {}...", update.asset_name);
 
         thread::spawn(move || {
             let result = core::download_basalt_update(&update)
@@ -88,7 +91,8 @@ impl BasaltApp {
 
     fn poll_update_check(&mut self) {
         let poll_result = self
-            .update_check_rx
+            .update
+            .check_rx
             .as_ref()
             .map(|receiver| receiver.try_recv());
 
@@ -98,35 +102,35 @@ impl BasaltApp {
 
         match received {
             Ok(Ok(update)) => {
-                self.update_check_rx = None;
+                self.update.check_rx = None;
                 if update.update_available {
                     if core::can_install_basalt_updates() {
-                        self.update_status_message = format!(
+                        self.update.status_message = format!(
                             "Basalt update available: {} ({}) - {}",
                             update.release_name, update.latest.version, update.release_page_url
                         );
                     } else {
-                        self.update_status_message = format!(
+                        self.update.status_message = format!(
                             "Basalt update available: {} ({}), but automatic updates are not supported on this platform.",
                             update.release_name, update.latest.version
                         );
                     }
                 } else {
-                    self.update_status_message = format!(
+                    self.update.status_message = format!(
                         "Basalt is up to date: {} ({})",
                         update.current.version, update.current.commit
                     );
                 }
-                self.latest_update = Some(update);
+                self.update.latest_update = Some(update);
             }
             Ok(Err(error)) => {
-                self.update_check_rx = None;
-                self.latest_update = None;
-                self.update_status_message = error;
+                self.update.check_rx = None;
+                self.update.latest_update = None;
+                self.update.status_message = error;
             }
             Err(TryRecvError::Disconnected) => {
-                self.update_check_rx = None;
-                self.update_status_message =
+                self.update.check_rx = None;
+                self.update.status_message =
                     "Update check failed: background task disconnected".to_string();
             }
             Err(TryRecvError::Empty) => {}
@@ -135,7 +139,8 @@ impl BasaltApp {
 
     fn poll_update_install(&mut self) {
         let poll_result = self
-            .update_install_rx
+            .update
+            .install_rx
             .as_ref()
             .map(|receiver| receiver.try_recv());
 
@@ -145,16 +150,16 @@ impl BasaltApp {
 
         match received {
             Ok(Ok(())) => {
-                self.update_install_rx = None;
-                self.update_status_message = "Basalt update completed".to_string();
+                self.update.install_rx = None;
+                self.update.status_message = "Basalt update completed".to_string();
             }
             Ok(Err(error)) => {
-                self.update_install_rx = None;
-                self.update_status_message = format!("Basalt update failed: {}", error);
+                self.update.install_rx = None;
+                self.update.status_message = format!("Basalt update failed: {}", error);
             }
             Err(TryRecvError::Disconnected) => {
-                self.update_install_rx = None;
-                self.update_status_message =
+                self.update.install_rx = None;
+                self.update.status_message =
                     "Basalt update failed: background task disconnected".to_string();
             }
             Err(TryRecvError::Empty) => {}

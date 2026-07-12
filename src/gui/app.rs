@@ -1,43 +1,26 @@
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use crate::core::{self, GameEntry, Playlist};
-use gilrs::Gilrs;
+use crate::core::{self, GameEntry};
 
+use super::app_state::{
+    BackgroundJobState, ControllerState, InstallState, LibraryState, NavigationState,
+    SettingsState, StartupLoadState, UpdateState,
+};
 use super::artwork::ArtworkStore;
-use super::background_jobs::GuiBackgroundJobResult;
 use super::top_bar::TopBarTab;
 
 pub(super) struct BasaltApp {
-    pub(super) active_tab: TopBarTab,
-    pub(super) settings_return_tab: TopBarTab,
-    pub(super) games: Vec<GameEntry>,
-    pub(super) playlists: Vec<Playlist>,
-    pub(super) selected_playlist: Option<String>,
-    pub(super) selected_index: Option<usize>,
-    pub(super) selected_install_tile_key: Option<String>,
-    pub(super) library_search_query: String,
-    pub(super) install_search_query: String,
-    pub(super) settings_remote_roms_root_input: String,
-    pub(super) settings_remote_saves_root_input: String,
-    pub(super) settings_launcher_fullscreen_enabled: bool,
-    pub(super) settings_launcher_maximized_enabled: bool,
-    pub(super) status_message: String,
-    pub(super) install_status_message: String,
-    pub(super) settings_status_message: String,
-    pub(super) update_status_message: String,
-    pub(super) latest_update: Option<core::UpdateCheckResult>,
+    pub(super) navigation: NavigationState,
+    pub(super) library: LibraryState,
+    pub(super) install: InstallState,
+    pub(super) settings: SettingsState,
+    pub(super) update: UpdateState,
+    pub(super) startup_load: StartupLoadState,
+    pub(super) background_job: BackgroundJobState,
+    pub(super) controller: ControllerState,
     pub(super) artwork_store: ArtworkStore,
-    pub(super) startup_games_rx: Option<Receiver<core::CoreResult<Vec<GameEntry>>>>,
-    pub(super) background_job_rx: Option<Receiver<GuiBackgroundJobResult>>,
-    pub(super) update_check_rx: Option<Receiver<Result<core::UpdateCheckResult, String>>>,
-    pub(super) update_install_rx: Option<Receiver<Result<(), String>>>,
-    pub(super) controller: Option<Gilrs>,
-    pub(super) controller_stick_x_held: bool,
-    pub(super) controller_stick_y_held: bool,
-    pub(super) pending_scroll_to_selected: bool,
-    pub(super) pending_initial_window_mode_apply: bool,
 }
 
 impl Default for BasaltApp {
@@ -48,77 +31,20 @@ impl Default for BasaltApp {
             let _ = startup_games_tx.send(core::list_games());
         });
 
-        let (
-            settings_remote_roms_root_input,
-            settings_remote_saves_root_input,
-            settings_status_message,
-        ) = match core::load_emulation_remote_paths() {
-            Ok(paths) => (paths.roms_root_dir, paths.saves_root_dir, String::new()),
-            Err(error) => {
-                let defaults = core::default_emulation_remote_paths();
-                (
-                    defaults.roms_root_dir,
-                    defaults.saves_root_dir,
-                    format!("Settings load warning: {}", error),
-                )
-            }
-        };
-
-        let (
-            settings_launcher_fullscreen_enabled,
-            settings_launcher_maximized_enabled,
-            settings_status_message,
-        ) = match core::load_launcher_display_settings() {
-            Ok(display_settings) => (
-                display_settings.fullscreen_enabled,
-                display_settings.maximized_enabled,
-                settings_status_message,
-            ),
-            Err(error) => {
-                let warning = format!("Display setting load warning: {}", error);
-                let merged_message = if settings_status_message.trim().is_empty() {
-                    warning
-                } else {
-                    format!("{} | {}", settings_status_message, warning)
-                };
-                (false, false, merged_message)
-            }
-        };
-
         let mut app = Self {
-            active_tab: TopBarTab::Library,
-            settings_return_tab: TopBarTab::Library,
-            games: Vec::new(),
-            playlists: vec![Playlist {
-                name: "Favorites".to_string(),
-                game_names: Vec::new(),
-            }],
-            selected_playlist: None,
-            selected_index: None,
-            selected_install_tile_key: None,
-            library_search_query: String::new(),
-            install_search_query: String::new(),
-            settings_remote_roms_root_input,
-            settings_remote_saves_root_input,
-            settings_launcher_fullscreen_enabled,
-            settings_launcher_maximized_enabled,
-            status_message: "Loading games...".to_string(),
-            install_status_message: String::new(),
-            settings_status_message,
-            update_status_message: String::new(),
-            latest_update: None,
+            navigation: NavigationState::default(),
+            library: LibraryState::default(),
+            install: InstallState::default(),
+            settings: SettingsState::load(),
+            update: UpdateState::default(),
+            startup_load: StartupLoadState {
+                games_rx: Some(startup_games_rx),
+            },
+            background_job: BackgroundJobState::default(),
+            controller: ControllerState::default(),
             artwork_store: ArtworkStore::new(),
-            startup_games_rx: Some(startup_games_rx),
-            background_job_rx: None,
-            update_check_rx: None,
-            update_install_rx: None,
-            controller: Gilrs::new().ok(),
-            controller_stick_x_held: false,
-            controller_stick_y_held: false,
-            pending_scroll_to_selected: false,
-            pending_initial_window_mode_apply: true,
         };
-        app.artwork_store.prepare_for_games(&app.games);
+        app.artwork_store.prepare_for_games(&app.library.games);
         app.start_update_check();
         app
     }
@@ -126,14 +52,14 @@ impl Default for BasaltApp {
 
 impl BasaltApp {
     fn apply_persisted_window_mode_if_needed(&mut self, ctx: &eframe::egui::Context) {
-        if !self.pending_initial_window_mode_apply {
+        if !self.settings.pending_initial_window_mode_apply {
             return;
         }
 
-        if self.settings_launcher_fullscreen_enabled {
+        if self.settings.launcher_fullscreen_enabled {
             ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Maximized(false));
             ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Fullscreen(true));
-        } else if self.settings_launcher_maximized_enabled {
+        } else if self.settings.launcher_maximized_enabled {
             ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Fullscreen(false));
             ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Maximized(true));
         } else {
@@ -141,7 +67,7 @@ impl BasaltApp {
             ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Maximized(false));
         }
 
-        self.pending_initial_window_mode_apply = false;
+        self.settings.pending_initial_window_mode_apply = false;
     }
 }
 
@@ -173,9 +99,9 @@ impl eframe::App for BasaltApp {
         self.poll_update_tasks();
         self.artwork_store.poll_download_results(ctx);
         self.apply_persisted_window_mode_if_needed(ctx);
-        if self.background_job_rx.is_some()
-            || self.update_check_rx.is_some()
-            || self.update_install_rx.is_some()
+        if self.background_job.rx.is_some()
+            || self.update.check_rx.is_some()
+            || self.update.install_rx.is_some()
         {
             ctx.request_repaint_after(Duration::from_millis(250));
         }
@@ -188,7 +114,7 @@ impl eframe::App for BasaltApp {
         let actions = self.render_top_bar(ctx, top_region_gray);
         self.apply_top_bar_actions(actions);
 
-        match self.active_tab {
+        match self.navigation.active_tab {
             TopBarTab::Library => {
                 self.render_library_screen(
                     ctx,
@@ -196,7 +122,7 @@ impl eframe::App for BasaltApp {
                     right_region_gray,
                     right_panel_width,
                 );
-                if self.controller.is_some() {
+                if self.controller.gilrs.is_some() {
                     ctx.request_repaint_after(Duration::from_millis(100));
                 }
             }

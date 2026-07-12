@@ -1,6 +1,5 @@
 use eframe::egui::{
-    self, vec2, CentralPanel, Color32, Frame, Layout, Margin, RichText, ScrollArea, Sense,
-    SidePanel,
+    self, vec2, CentralPanel, Color32, Frame, Layout, Margin, RichText, Sense, SidePanel,
 };
 
 use crate::core;
@@ -8,6 +7,7 @@ use crate::core;
 use super::app::BasaltApp;
 use super::game_tile::paint_game_tile;
 use super::search;
+use super::tile_grid;
 
 #[derive(Clone, Copy)]
 enum InstallTileKind {
@@ -33,17 +33,18 @@ impl BasaltApp {
     ) {
         let filtered_tiles = self.filtered_install_tiles();
         let can_start_background_job = !self.has_background_job();
-        if let Some(selected_key) = self.selected_install_tile_key.as_ref() {
+        if let Some(selected_key) = self.install.selected_tile_key.as_ref() {
             let selected_visible = filtered_tiles
                 .iter()
                 .any(|tile| tile.key == selected_key.as_str());
             if !selected_visible {
-                self.selected_install_tile_key = None;
+                self.install.selected_tile_key = None;
             }
         }
 
         let selected_tile = self
-            .selected_install_tile_key
+            .install
+            .selected_tile_key
             .as_ref()
             .and_then(|selected_key| {
                 filtered_tiles
@@ -198,12 +199,12 @@ impl BasaltApp {
                             }
                         }
 
-                        if !self.install_status_message.is_empty() {
+                        if !self.install.status_message.is_empty() {
                             ui.add_space(12.0);
                             ui.separator();
                             ui.label(RichText::new("Status").size(body_text_size));
                             ui.label(
-                                RichText::new(&self.install_status_message)
+                                RichText::new(&self.install.status_message)
                                     .size(secondary_text_size),
                             );
                         }
@@ -253,77 +254,30 @@ impl BasaltApp {
         self.all_install_tiles()
             .into_iter()
             .filter(|tile| {
-                search::matches_query(tile.title, &self.install_search_query)
-                    || search::matches_query(tile.description, &self.install_search_query)
+                search::matches_query(tile.title, &self.install.search_query)
+                    || search::matches_query(tile.description, &self.install.search_query)
             })
             .collect()
     }
 
     fn render_install_tile_grid(&mut self, ui: &mut egui::Ui, tiles: &[InstallTile]) {
-        const TILE_WIDTH: f32 = 150.0;
-        const TEXT_STRIP_HEIGHT: f32 = 40.0;
-        const TILE_HEIGHT: f32 = TILE_WIDTH + TEXT_STRIP_HEIGHT;
-        const TILE_SPACING: f32 = 24.0;
-        const WALL_PADDING: f32 = 24.0;
-        const SCROLLBAR_GUTTER: f32 = 18.0;
-
-        let usable_width =
-            (ui.available_width() - (WALL_PADDING * 2.0) - SCROLLBAR_GUTTER).max(TILE_WIDTH);
-        let columns =
-            ((usable_width + TILE_SPACING) / (TILE_WIDTH + TILE_SPACING)).floor() as usize;
-        let columns = columns.max(1);
-
-        ScrollArea::vertical()
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                ui.set_min_width(ui.available_width());
-                ui.add_space(WALL_PADDING);
-
-                if tiles.is_empty() {
-                    ui.horizontal(|ui| {
-                        ui.add_space(WALL_PADDING);
-                        if self.install_search_query.trim().is_empty() {
-                            ui.label("No installable items available.");
-                        } else {
-                            ui.label("No install items match your search.");
-                        }
-                        ui.add_space(WALL_PADDING + SCROLLBAR_GUTTER);
-                    });
-                    ui.add_space(WALL_PADDING);
-                    return;
+        let categorized_tiles = self.categorized_install_tiles(tiles);
+        let has_empty_search = self.install.search_query.trim().is_empty();
+        tile_grid::show_categorized_grid(
+            ui,
+            "install",
+            &categorized_tiles,
+            |ui| {
+                if has_empty_search {
+                    ui.label("No installable items available.");
+                } else {
+                    ui.label("No install items match your search.");
                 }
-
-                let categorized_tiles = self.categorized_install_tiles(tiles);
-
-                for (category_position, (category_name, category_tiles)) in
-                    categorized_tiles.iter().enumerate()
-                {
-                    let header_text = format!("{} ({})", category_name, category_tiles.len());
-                    let collapsing = egui::CollapsingHeader::new(header_text)
-                        .id_salt(format!("install_category_{}", category_name))
-                        .default_open(true);
-
-                    collapsing.show(ui, |ui| {
-                        ui.add_space(8.0);
-                        self.render_install_tile_rows(
-                            ui,
-                            category_tiles,
-                            columns,
-                            TILE_WIDTH,
-                            TILE_HEIGHT,
-                            TILE_SPACING,
-                            WALL_PADDING,
-                            SCROLLBAR_GUTTER,
-                        );
-                    });
-
-                    if category_position + 1 < categorized_tiles.len() {
-                        ui.add_space(12.0);
-                    }
-                }
-
-                ui.add_space(WALL_PADDING);
-            });
+            },
+            |ui, category_tiles, columns| {
+                self.render_install_tile_rows(ui, category_tiles, columns);
+            },
+        );
     }
 
     fn categorized_install_tiles(
@@ -357,41 +311,12 @@ impl BasaltApp {
         ui: &mut egui::Ui,
         tiles: &[InstallTile],
         columns: usize,
-        tile_width: f32,
-        tile_height: f32,
-        tile_spacing: f32,
-        wall_padding: f32,
-        scrollbar_gutter: f32,
     ) {
-        let mut visible_index = 0usize;
-        while visible_index < tiles.len() {
-            ui.horizontal(|ui| {
-                ui.add_space(wall_padding);
-
-                for col in 0..columns {
-                    if visible_index >= tiles.len() {
-                        break;
-                    }
-
-                    let tile = tiles[visible_index];
-                    if self.render_install_tile(ui, tile_width, tile_height, tile) {
-                        self.selected_install_tile_key = Some(tile.key.to_string());
-                    }
-
-                    if col + 1 < columns && visible_index + 1 < tiles.len() {
-                        ui.add_space(tile_spacing);
-                    }
-
-                    visible_index += 1;
-                }
-
-                ui.add_space(wall_padding + scrollbar_gutter);
-            });
-
-            if visible_index < tiles.len() {
-                ui.add_space(tile_spacing);
+        tile_grid::show_tile_rows(ui, tiles, columns, |ui, tile| {
+            if self.render_install_tile(ui, tile_grid::TILE_WIDTH, tile_grid::TILE_HEIGHT, *tile) {
+                self.install.selected_tile_key = Some(tile.key.to_string());
             }
-        }
+        });
     }
 
     fn render_install_tile(
@@ -406,7 +331,8 @@ impl BasaltApp {
             ui.allocate_exact_size(vec2(tile_width, tile_height), Sense::click());
 
         let selected = self
-            .selected_install_tile_key
+            .install
+            .selected_tile_key
             .as_ref()
             .map(|selected_key| selected_key == tile.key)
             .unwrap_or(false);

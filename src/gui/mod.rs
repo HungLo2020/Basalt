@@ -1,6 +1,7 @@
 mod app;
 mod app_actions;
 mod app_startup;
+mod app_state;
 mod artwork;
 mod background_jobs;
 mod game_tile;
@@ -8,6 +9,7 @@ mod install_screen;
 mod library_screen;
 mod search;
 mod settings_screen;
+mod tile_grid;
 mod top_bar;
 mod update_actions;
 

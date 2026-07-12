@@ -13,6 +13,7 @@ pub struct Playlist {
     pub game_names: Vec<String>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DiscoverResult {
     Added,
     AlreadyExists,

@@ -7,6 +7,7 @@ mod emulation_target;
 mod emulator_systems;
 mod error;
 mod game_service;
+mod mattmc_install;
 mod playlist_service;
 mod registry;
 mod runners;
@@ -35,6 +36,7 @@ pub use game_service::{
     add_game, add_game_to_playlist, launch_game, list_games, list_playlists, remove_all_games,
     remove_game, remove_game_from_playlist,
 };
+pub use mattmc_install::{install_mattmc, MattmcInstallReport};
 pub use playlist_service::FAVORITES_PLAYLIST_NAME;
 pub use script_service::{run_game_sibling_script, sync_mattmc, sync_mattmc_down, sync_mattmc_up};
 pub use settings::{
