@@ -132,21 +132,6 @@ impl BasaltApp {
                         previous_maximized_value,
                     );
                 }
-
-                ui.add_space(16.0);
-                ui.separator();
-                ui.label("Basalt Updates");
-                ui.label("Checks GitHub releases without installing anything automatically.");
-                ui.add_space(8.0);
-                if ui
-                    .add_enabled(
-                        self.can_use_update_button(),
-                        egui::Button::new(self.update_button_text()),
-                    )
-                    .clicked()
-                {
-                    self.handle_update_button_click();
-                }
             });
     }
 }

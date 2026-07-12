@@ -26,6 +26,7 @@ pub(super) struct TopBarActions {
     pub(super) trigger_discover: bool,
     pub(super) trigger_refresh: bool,
     pub(super) trigger_refresh_metadata: bool,
+    pub(super) trigger_update: bool,
 }
 
 impl TopBarActions {
@@ -38,6 +39,7 @@ impl TopBarActions {
             trigger_discover: false,
             trigger_refresh: false,
             trigger_refresh_metadata: false,
+            trigger_update: false,
         }
     }
 }
@@ -204,7 +206,7 @@ impl BasaltApp {
                     egui::pos2(panel_rect.max.x, panel_rect.max.y - 2.0),
                 );
                 let second_row_right_rect = egui::Rect::from_min_max(
-                    egui::pos2(search_rect.min.x, second_row_rect.min.y),
+                    egui::pos2(center_rect.min.x, second_row_rect.min.y),
                     second_row_rect.max,
                 );
                 let second_row_right_inner = egui::Rect::from_min_max(
@@ -225,17 +227,32 @@ impl BasaltApp {
                     {
                         actions.go_back_from_settings = true;
                     }
-                } else if second_row_right_ui
-                    .add_sized([96.0, settings_button_height], Button::new("Settings"))
-                    .clicked()
-                {
-                    actions.open_settings = true;
+                } else {
+                    if second_row_right_ui
+                        .add_sized([96.0, settings_button_height], Button::new("Settings"))
+                        .clicked()
+                    {
+                        actions.open_settings = true;
+                    }
+
+                    let update_response = second_row_right_ui.add_enabled(
+                        self.can_use_update_button(),
+                        Button::new(self.update_button_text())
+                            .min_size(vec2(132.0, settings_button_height)),
+                    );
+                    let update_clicked = update_response.clicked();
+                    if !self.update_status_message.trim().is_empty() {
+                        update_response.on_hover_text(&self.update_status_message);
+                    }
+                    if update_clicked {
+                        actions.trigger_update = true;
+                    }
                 }
 
                 if !in_settings && self.active_tab == TopBarTab::Library {
                     let playlist_rect = egui::Rect::from_min_max(
                         second_row_rect.min,
-                        egui::pos2(search_rect.min.x - horizontal_gap, second_row_rect.max.y),
+                        egui::pos2(center_rect.min.x - horizontal_gap, second_row_rect.max.y),
                     );
                     let playlist_inner_rect = egui::Rect::from_min_max(
                         egui::pos2(playlist_rect.min.x + 2.0, playlist_rect.min.y - 4.0),

@@ -44,6 +44,9 @@ impl BasaltApp {
         if actions.trigger_refresh_metadata {
             self.refresh_metadata_from_gui();
         }
+        if actions.trigger_update {
+            self.handle_update_button_click();
+        }
     }
 
     pub(super) fn refresh_metadata_from_gui(&mut self) {
