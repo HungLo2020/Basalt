@@ -61,8 +61,56 @@ install_deb_package() {
   fi
 }
 
+read_build_metadata_value() {
+  local metadata_path="$1"
+  local metadata_key="$2"
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" == "$metadata_key="* ]] || continue
+
+    printf '%s\n' "${line#*=}"
+    return 0
+  done < "$metadata_path"
+
+  return 1
+}
+
 install_from_local_deb() {
-  local deb_path="$1"
+  local build_script build_meta deb_path artifact_type
+
+  build_script="$repo_root/DevUtils/Build.sh"
+  build_meta="$repo_root/builds/latest-build.env"
+
+  if [[ ! -f "$build_script" ]]; then
+    echo "[deb-install] Local build script not found: $build_script" >&2
+    exit 1
+  fi
+
+  log "Building local Debian package"
+  bash "$build_script"
+
+  if [[ ! -f "$build_meta" ]]; then
+    echo "[deb-install] Local build metadata not found: $build_meta" >&2
+    exit 1
+  fi
+
+  deb_path="$(read_build_metadata_value "$build_meta" "BUILD_ARTIFACT_PATH" || true)"
+  artifact_type="$(read_build_metadata_value "$build_meta" "BUILD_ARTIFACT_TYPE" || true)"
+
+  if [[ -z "$deb_path" || ! -f "$deb_path" ]]; then
+    echo "[deb-install] Local build metadata is missing a valid BUILD_ARTIFACT_PATH." >&2
+    exit 1
+  fi
+
+  if [[ "$artifact_type" != "deb" || "$deb_path" != *.deb ]]; then
+    echo "[deb-install] Local build produced an unsupported artifact for this installer: $deb_path" >&2
+    exit 1
+  fi
+
   install_deb_package "$deb_path"
 }
 
@@ -96,24 +144,30 @@ install_from_github_release() {
 }
 
 main() {
-  local script_dir repo_root builds_dir deb_path choice
+  local script_dir repo_root builds_dir deb_path choice local_build_script
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   repo_root="$script_dir"
   builds_dir="$repo_root/builds"
   deb_path="$(ls -1t "$builds_dir"/*.deb 2>/dev/null | head -n1 || true)"
+  local_build_script="$repo_root/DevUtils/Build.sh"
 
-  if [[ -n "$deb_path" && -f "$deb_path" ]]; then
-    echo "A local Debian package was found at: $deb_path"
+  if [[ -f "$local_build_script" ]]; then
+    if [[ -n "$deb_path" && -f "$deb_path" ]]; then
+      echo "A previous local Debian package was found at: $deb_path"
+      echo "Choosing local install will rebuild it before installing."
+    else
+      echo "Local build support was found for this checkout."
+    fi
     echo "Choose an option:"
-    echo "  [1] Install local package"
+    echo "  [1] Build and install local package"
     echo "  [2] Fetch and install latest GitHub release"
 
     while true; do
       read -r -p "Enter choice [1/2]: " choice
       case "$choice" in
         1)
-          install_from_local_deb "$deb_path"
+          install_from_local_deb
           return
           ;;
         2)
@@ -125,9 +179,13 @@ main() {
           ;;
       esac
     done
-  else
-    install_from_github_release
   fi
+
+  if [[ -n "$deb_path" && -f "$deb_path" ]]; then
+    echo "[deb-install] Local build script was not found, so the existing local package will not be used: $deb_path" >&2
+  fi
+
+  install_from_github_release
 }
 
 main "$@"

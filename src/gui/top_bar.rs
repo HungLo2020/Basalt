@@ -215,7 +215,7 @@ impl BasaltApp {
                         second_row_right_rect.max.y - 5.0,
                     ),
                 );
-                let settings_button_height = second_row_right_inner.height().min(24.0).max(20.0);
+                let settings_button_height = second_row_right_inner.height().clamp(20.0, 24.0);
                 let mut second_row_right_ui = ui.new_child(
                     egui::UiBuilder::new()
                         .max_rect(second_row_right_inner)

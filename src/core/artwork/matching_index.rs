@@ -299,12 +299,9 @@ fn read_thumbnail_listing_from_disk(
 
     let mut lines = contents.lines();
     let header = lines.next().unwrap_or_default();
-    let Some(timestamp) = header
+    let timestamp = header
         .strip_prefix("#ts=")
-        .and_then(|value| value.parse::<u64>().ok())
-    else {
-        return None;
-    };
+        .and_then(|value| value.parse::<u64>().ok())?;
 
     let now = cache::current_unix_timestamp_seconds();
     if now.saturating_sub(timestamp) > EMULATOR_ARTWORK_INDEX_TTL_SECONDS {

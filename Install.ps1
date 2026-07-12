@@ -54,6 +54,66 @@ function Get-LatestLocalInstaller {
     return $null
 }
 
+function Read-BuildMetadata {
+    param([Parameter(Mandatory = $true)][string]$FilePath)
+
+    $metadata = @{}
+    foreach ($line in Get-Content -Path $FilePath) {
+        $trimmed = $line.Trim()
+        if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith('#')) {
+            continue
+        }
+
+        $separatorIndex = $trimmed.IndexOf('=')
+        if ($separatorIndex -lt 0) {
+            continue
+        }
+
+        $key = $trimmed.Substring(0, $separatorIndex)
+        $value = $trimmed.Substring($separatorIndex + 1)
+        $metadata[$key] = $value
+    }
+
+    return $metadata
+}
+
+function Invoke-LocalBuildPipeline {
+    $buildScript = Join-Path $script:RepoRoot 'DevUtils\Build.ps1'
+    if (-not (Test-Path $buildScript)) {
+        throw "[exe-install] Local build script not found: $buildScript"
+    }
+
+    Write-Log 'Building local Windows installer'
+    $buildProcess = Start-Process `
+        -FilePath powershell `
+        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $buildScript) `
+        -Wait `
+        -PassThru `
+        -NoNewWindow
+    if ($buildProcess.ExitCode -ne 0) {
+        throw "[exe-install] Local build pipeline failed with exit code $($buildProcess.ExitCode)."
+    }
+
+    $buildMeta = Join-Path (Join-Path $script:RepoRoot 'builds') 'latest-build.env'
+    if (-not (Test-Path $buildMeta)) {
+        throw "[exe-install] Local build metadata not found: $buildMeta"
+    }
+
+    $metadata = Read-BuildMetadata -FilePath $buildMeta
+    $artifactPath = if ($metadata.ContainsKey('BUILD_ARTIFACT_PATH')) { $metadata['BUILD_ARTIFACT_PATH'] } else { '' }
+    $artifactType = if ($metadata.ContainsKey('BUILD_ARTIFACT_TYPE')) { $metadata['BUILD_ARTIFACT_TYPE'] } else { '' }
+
+    if ([string]::IsNullOrWhiteSpace($artifactPath) -or -not (Test-Path $artifactPath)) {
+        throw '[exe-install] Local build metadata is missing a valid BUILD_ARTIFACT_PATH.'
+    }
+
+    if ($artifactType -ne 'exe-installer' -or -not $artifactPath.ToLowerInvariant().EndsWith('.exe')) {
+        throw "[exe-install] Local build produced an unsupported artifact for this installer: $artifactPath"
+    }
+
+    return $artifactPath
+}
+
 function Get-ReleaseInstallerUrl {
     param([Parameter(Mandatory = $true)][string]$RepoSlug)
 
@@ -129,7 +189,7 @@ function Install-FromInstaller {
 }
 
 function Install-FromLocalInstaller {
-    param([Parameter(Mandatory = $true)][string]$InstallerPath)
+    $InstallerPath = Invoke-LocalBuildPipeline
     Install-FromInstaller -InstallerPath $InstallerPath
 }
 
@@ -168,18 +228,25 @@ function Main {
     $script:RepoRoot = $scriptDir
     $buildsDir = Join-Path $script:RepoRoot 'builds'
     $localInstaller = Get-LatestLocalInstaller -BuildsDir $buildsDir
+    $localBuildScript = Join-Path $script:RepoRoot 'DevUtils\Build.ps1'
 
-    if (-not [string]::IsNullOrWhiteSpace($localInstaller) -and (Test-Path $localInstaller)) {
-        Write-Host "A local Windows installer was found at: $localInstaller"
+    if (Test-Path $localBuildScript) {
+        if (-not [string]::IsNullOrWhiteSpace($localInstaller) -and (Test-Path $localInstaller)) {
+            Write-Host "A previous local Windows installer was found at: $localInstaller"
+            Write-Host 'Choosing local install will rebuild it before installing.'
+        }
+        else {
+            Write-Host 'Local build support was found for this checkout.'
+        }
         Write-Host 'Choose an option:'
-        Write-Host '  [1] Install local installer'
+        Write-Host '  [1] Build and install local installer'
         Write-Host '  [2] Fetch and install latest GitHub release'
 
         while ($true) {
             $choice = Read-Host 'Enter choice [1/2]'
             switch ($choice) {
                 '1' {
-                    Install-FromLocalInstaller -InstallerPath $localInstaller
+                    Install-FromLocalInstaller
                     return
                 }
                 '2' {
@@ -191,6 +258,10 @@ function Main {
                 }
             }
         }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($localInstaller) -and (Test-Path $localInstaller)) {
+        Write-Warning "[exe-install] Local build script was not found, so the existing local installer will not be used: $localInstaller"
     }
 
     Install-FromGithubRelease

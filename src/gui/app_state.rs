@@ -21,6 +21,7 @@ pub(super) struct LibraryState {
     pub(super) pending_scroll_to_selected: bool,
 }
 
+#[derive(Default)]
 pub(super) struct InstallState {
     pub(super) selected_tile_key: Option<String>,
     pub(super) search_query: String,
@@ -36,6 +37,7 @@ pub(super) struct SettingsState {
     pub(super) pending_initial_window_mode_apply: bool,
 }
 
+#[derive(Default)]
 pub(super) struct UpdateState {
     pub(super) status_message: String,
     pub(super) latest_update: Option<core::UpdateCheckResult>,
@@ -43,6 +45,7 @@ pub(super) struct UpdateState {
     pub(super) install_rx: Option<Receiver<Result<(), String>>>,
 }
 
+#[derive(Default)]
 pub(super) struct StartupLoadState {
     pub(super) games_rx: Option<Receiver<core::CoreResult<Vec<GameEntry>>>>,
 }
@@ -53,6 +56,7 @@ pub(super) struct ControllerState {
     pub(super) stick_y_held: bool,
 }
 
+#[derive(Default)]
 pub(super) struct BackgroundJobState {
     pub(super) rx: Option<Receiver<GuiBackgroundJobResult>>,
 }
@@ -79,16 +83,6 @@ impl Default for LibraryState {
             search_query: String::new(),
             status_message: "Loading games...".to_string(),
             pending_scroll_to_selected: false,
-        }
-    }
-}
-
-impl Default for InstallState {
-    fn default() -> Self {
-        Self {
-            selected_tile_key: None,
-            search_query: String::new(),
-            status_message: String::new(),
         }
     }
 }
@@ -137,23 +131,6 @@ impl SettingsState {
     }
 }
 
-impl Default for UpdateState {
-    fn default() -> Self {
-        Self {
-            status_message: String::new(),
-            latest_update: None,
-            check_rx: None,
-            install_rx: None,
-        }
-    }
-}
-
-impl Default for StartupLoadState {
-    fn default() -> Self {
-        Self { games_rx: None }
-    }
-}
-
 impl Default for ControllerState {
     fn default() -> Self {
         Self {
@@ -161,11 +138,5 @@ impl Default for ControllerState {
             stick_x_held: false,
             stick_y_held: false,
         }
-    }
-}
-
-impl Default for BackgroundJobState {
-    fn default() -> Self {
-        Self { rx: None }
     }
 }
