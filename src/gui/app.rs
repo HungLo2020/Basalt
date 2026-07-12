@@ -196,7 +196,9 @@ impl eframe::App for BasaltApp {
                     right_region_gray,
                     right_panel_width,
                 );
-                ctx.request_repaint_after(Duration::from_millis(16));
+                if self.controller.is_some() {
+                    ctx.request_repaint_after(Duration::from_millis(100));
+                }
             }
             TopBarTab::Install => {
                 self.render_install_screen(
