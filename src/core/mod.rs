@@ -38,7 +38,9 @@ pub use game_service::{
 };
 pub use mattmc_install::{install_mattmc, MattmcInstallReport};
 pub use playlist_service::FAVORITES_PLAYLIST_NAME;
-pub use script_service::{run_game_sibling_script, sync_mattmc, sync_mattmc_down, sync_mattmc_up};
+pub use script_service::{
+    run_game_sibling_script, sync_mattmc, sync_mattmc_down, sync_mattmc_up, update_mattmc,
+};
 pub use settings::{
     default_emulation_remote_paths, load_emulation_remote_paths, load_launcher_display_settings,
     save_emulation_remote_paths, save_launcher_display_settings, LauncherDisplaySettings,

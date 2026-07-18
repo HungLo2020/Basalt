@@ -244,6 +244,25 @@ impl BasaltApp {
         );
     }
 
+    pub(super) fn update_mattmc_from_install_gui(&mut self) {
+        self.update_mattmc_from_gui(GuiBackgroundStatusTarget::Install);
+    }
+
+    pub(super) fn update_mattmc_from_library_gui(&mut self) {
+        self.update_mattmc_from_gui(GuiBackgroundStatusTarget::Library);
+    }
+
+    fn update_mattmc_from_gui(&mut self, status_target: GuiBackgroundStatusTarget) {
+        self.start_background_job(
+            status_target,
+            "MattMC update started".to_string(),
+            move || GuiBackgroundJobResult::UpdateMattmc {
+                status_target,
+                result: core::update_mattmc().map_err(String::from),
+            },
+        );
+    }
+
     pub(super) fn install_emulator_core_from_gui(&mut self, system: &str) {
         let system = system.to_string();
         self.start_background_job(

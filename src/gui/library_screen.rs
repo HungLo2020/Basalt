@@ -119,6 +119,18 @@ impl BasaltApp {
                                 {
                                     self.sync_mattmc_down_from_gui();
                                 }
+
+                                if ui
+                                    .add_enabled(
+                                        can_start_background_job,
+                                        egui::Button::new(
+                                            RichText::new("Update").size(body_text_size),
+                                        ),
+                                    )
+                                    .clicked()
+                                {
+                                    self.update_mattmc_from_library_gui();
+                                }
                             });
                         }
                     } else {

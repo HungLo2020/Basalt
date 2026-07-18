@@ -44,6 +44,10 @@ pub fn mattmc_sync_script_name() -> &'static str {
     "SyncGameData.sh"
 }
 
+pub fn mattmc_update_script_name() -> &'static str {
+    "update-mattmc.sh"
+}
+
 pub fn mattmc_release_zip_suffix() -> &'static str {
     "linux-x64"
 }

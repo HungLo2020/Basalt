@@ -29,6 +29,10 @@ pub(super) enum GuiBackgroundJobResult {
     },
     SyncMattmcUp(Result<(), String>),
     SyncMattmcDown(Result<(), String>),
+    UpdateMattmc {
+        status_target: GuiBackgroundStatusTarget,
+        result: Result<(), String>,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -197,6 +201,21 @@ impl BasaltApp {
                 }
                 Err(err) => {
                     self.library.status_message = format!("SyncDown failed: {}", err);
+                }
+            },
+            GuiBackgroundJobResult::UpdateMattmc {
+                status_target,
+                result,
+            } => match result {
+                Ok(_) => {
+                    self.set_background_status(status_target, "Update completed for MattMC");
+                    self.refresh_games();
+                }
+                Err(err) => {
+                    self.set_background_status(
+                        status_target,
+                        &format!("MattMC update failed: {}", err),
+                    );
                 }
             },
         }

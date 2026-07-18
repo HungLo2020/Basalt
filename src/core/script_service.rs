@@ -11,6 +11,10 @@ pub fn sync_mattmc() -> CoreResult<()> {
     run_game_sibling_script(MATTMC_GAME_NAME, platform::mattmc_sync_script_name())
 }
 
+pub fn update_mattmc() -> CoreResult<()> {
+    run_game_sibling_script(MATTMC_GAME_NAME, platform::mattmc_update_script_name())
+}
+
 pub fn sync_mattmc_up() -> CoreResult<()> {
     run_game_sibling_script_with_input(
         MATTMC_GAME_NAME,

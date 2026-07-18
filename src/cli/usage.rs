@@ -75,6 +75,10 @@ pub fn usage_sync_mattmc() -> String {
     "Usage: basalt sync-mattmc".to_string()
 }
 
+pub fn usage_update_mattmc() -> String {
+    "Usage: basalt update-mattmc".to_string()
+}
+
 pub fn full_usage() -> String {
     [
         "Basalt CLI",
@@ -113,6 +117,8 @@ pub fn full_usage() -> String {
         "                               Run backup.sh from MattMC launch script directory",
         "  basalt sync-mattmc",
         "                               Run SyncGameData.sh from MattMC launch script directory",
+        "  basalt update-mattmc",
+        "                               Run update-mattmc script from MattMC launch script directory",
         "  basalt sync-up <platform>",
         "                               Sync up for a platform: use mattmc or emulator system key (e.g. nes, gba)",
         "  basalt sync-down <platform>",

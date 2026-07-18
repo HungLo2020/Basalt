@@ -51,6 +51,10 @@ pub fn mattmc_sync_script_name() -> &'static str {
     "SyncGameData.sh"
 }
 
+pub fn mattmc_update_script_name() -> &'static str {
+    "update-mattmc.sh"
+}
+
 pub fn mattmc_release_zip_suffix() -> &'static str {
     "linux-x64"
 }
@@ -196,7 +200,10 @@ pub fn install_basalt_update_and_restart(installer_path: &Path) -> Result<(), St
             );
         }
 
-        format!("sudo -n dpkg -i {}", shell_single_quoted_path(installer_path))
+        format!(
+            "sudo -n dpkg -i {}",
+            shell_single_quoted_path(installer_path)
+        )
     } else {
         return Err(
             "Basalt updates require pkexec or sudo to install the .deb package.".to_string(),

@@ -18,6 +18,7 @@ pub(super) enum CliCommand {
     Launch,
     BackupMattmc,
     SyncMattmc,
+    UpdateMattmc,
     SyncUp,
     SyncDown,
     SyncSavesUp,
@@ -44,13 +45,18 @@ impl CliCommand {
             Some("launch") => Ok(Self::Launch),
             Some("backup-mattmc") => Ok(Self::BackupMattmc),
             Some("sync-mattmc") => Ok(Self::SyncMattmc),
+            Some("update-mattmc") => Ok(Self::UpdateMattmc),
             Some("sync-up") => Ok(Self::SyncUp),
             Some("sync-down") => Ok(Self::SyncDown),
             Some("sync-saves-up") => Ok(Self::SyncSavesUp),
             Some("sync-saves-down") => Ok(Self::SyncSavesDown),
             Some("settings") => Ok(Self::Settings),
             Some("refresh-metadata") => Ok(Self::RefreshMetadata),
-            Some(other) => Err(format!("Unknown command: {}\n\n{}", other, usage::full_usage())),
+            Some(other) => Err(format!(
+                "Unknown command: {}\n\n{}",
+                other,
+                usage::full_usage()
+            )),
             None => Err(usage::full_usage()),
         }
     }
@@ -75,6 +81,7 @@ impl CliCommand {
             Self::Launch => commands::launch::run(args),
             Self::BackupMattmc => commands::backup_mattmc::run(args),
             Self::SyncMattmc => commands::sync_mattmc::run(args),
+            Self::UpdateMattmc => commands::update_mattmc::run(args),
             Self::SyncUp => commands::sync::run_up(args),
             Self::SyncDown => commands::sync::run_down(args),
             Self::SyncSavesUp => commands::sync_saves::run_up(args),

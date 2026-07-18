@@ -89,6 +89,18 @@ impl BasaltApp {
                                 {
                                     self.install_mattmc_from_gui();
                                 }
+
+                                if ui
+                                    .add_enabled(
+                                        can_start_background_job,
+                                        egui::Button::new(
+                                            RichText::new("Update MattMC").size(body_text_size),
+                                        ),
+                                    )
+                                    .clicked()
+                                {
+                                    self.update_mattmc_from_install_gui();
+                                }
                             }
                             InstallTileKind::EmulatorCore(system) => {
                                 let status =

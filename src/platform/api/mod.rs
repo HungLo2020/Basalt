@@ -27,6 +27,10 @@ pub fn mattmc_sync_script_name() -> &'static str {
     platforms::mattmc_sync_script_name()
 }
 
+pub fn mattmc_update_script_name() -> &'static str {
+    platforms::mattmc_update_script_name()
+}
+
 pub fn mattmc_release_zip_suffix() -> &'static str {
     platforms::mattmc_release_zip_suffix()
 }
