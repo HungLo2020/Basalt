@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::fs;
 use std::io::copy;
 use std::path::PathBuf;
@@ -124,18 +123,15 @@ fn latest_build_info(release_json: &Value) -> Result<BasaltBuildInfo, String> {
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .trim();
-            let build_time = build_info_json
-                .get("built_at_unix")
-                .and_then(Value::as_str)
-                .or_else(|| build_info_json.get("built_at").and_then(Value::as_str))
-                .unwrap_or("")
-                .trim();
+            let build_time = json_string_or_u64(&build_info_json, "built_at_unix")
+                .or_else(|| json_string_or_u64(&build_info_json, "built_at"))
+                .unwrap_or_default();
 
             if !version.is_empty() || !commit.is_empty() {
                 return Ok(BasaltBuildInfo {
                     version: version.to_string(),
                     commit: commit.to_string(),
-                    build_time: build_time.to_string(),
+                    build_time,
                 });
             }
         }
@@ -230,21 +226,38 @@ fn find_asset_url(release_json: &Value, target_name: &str) -> Option<String> {
 fn is_newer_build(current: &BasaltBuildInfo, latest: &BasaltBuildInfo) -> bool {
     let current_commit = normalized_commit(&current.commit);
     let latest_commit = normalized_commit(&latest.commit);
-    if !current_commit.is_empty() && !latest_commit.is_empty() {
-        if let (Some(current_build_time), Some(latest_build_time)) = (
-            current.build_time.parse::<u64>().ok(),
-            latest.build_time.parse::<u64>().ok(),
-        ) {
-            return latest_build_time > current_build_time;
-        }
 
+    // Release artifacts should be treated as the source of truth. If the release
+    // carries a different commit than this executable, offer the update even
+    // when package versions are unchanged.
+    if !current_commit.is_empty() && !latest_commit.is_empty() {
         return !commits_match(current_commit, latest_commit);
     }
 
-    match compare_versions(&latest.version, &current.version) {
-        Some(Ordering::Greater) => true,
-        Some(_) => false,
-        None => !latest.build_time.is_empty() && latest.build_time != current.build_time,
+    if let (Some(current_build_time), Some(latest_build_time)) = (
+        current.build_time.parse::<u64>().ok(),
+        latest.build_time.parse::<u64>().ok(),
+    ) {
+        return latest_build_time > current_build_time;
+    }
+
+    !latest.build_time.trim().is_empty()
+        && normalized_build_time(&latest.build_time) != normalized_build_time(&current.build_time)
+}
+
+fn json_string_or_u64(json: &Value, key: &str) -> Option<String> {
+    let value = json.get(key)?;
+    if let Some(string_value) = value.as_str() {
+        let trimmed = string_value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    } else {
+        value
+            .as_u64()
+            .map(|numeric_value| numeric_value.to_string())
     }
 }
 
@@ -261,21 +274,13 @@ fn commits_match(current: &str, latest: &str) -> bool {
     current.starts_with(latest) || latest.starts_with(current)
 }
 
-fn compare_versions(left: &str, right: &str) -> Option<Ordering> {
-    let left_parts = parse_version_parts(left)?;
-    let right_parts = parse_version_parts(right)?;
-    let max_len = left_parts.len().max(right_parts.len());
-
-    for index in 0..max_len {
-        let left_value = left_parts.get(index).copied().unwrap_or(0);
-        let right_value = right_parts.get(index).copied().unwrap_or(0);
-        match left_value.cmp(&right_value) {
-            Ordering::Equal => {}
-            ordering => return Some(ordering),
-        }
+fn normalized_build_time(value: &str) -> &str {
+    let trimmed = value.trim();
+    if trimmed.eq_ignore_ascii_case("unknown") {
+        ""
+    } else {
+        trimmed
     }
-
-    Some(Ordering::Equal)
 }
 
 fn parse_version_parts(value: &str) -> Option<Vec<u64>> {
@@ -411,44 +416,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn version_comparison_handles_prefixes_lengths_and_suffixes() {
-        assert_eq!(compare_versions("v1.2.0", "1.2"), Some(Ordering::Equal));
-        assert_eq!(compare_versions("1.2.1", "1.2.0"), Some(Ordering::Greater));
-        assert_eq!(compare_versions("1.2", "1.2.1"), Some(Ordering::Less));
-        assert_eq!(compare_versions("1.10.0", "1.9.9"), Some(Ordering::Greater));
-        assert_eq!(
-            compare_versions("1.2.3-beta", "1.2.3"),
-            Some(Ordering::Equal)
-        );
-        assert_eq!(compare_versions("latest", "1.2.3"), None);
-    }
-
-    #[test]
-    fn newer_build_uses_numeric_build_time_before_commit_difference() {
+    fn newer_build_uses_commit_difference_before_numeric_build_time() {
         let current = BasaltBuildInfo {
-            version: "0.1.0".to_string(),
-            commit: "abc1234".to_string(),
-            build_time: "100".to_string(),
-        };
-        let latest_same_commit = BasaltBuildInfo {
-            version: "0.1.0".to_string(),
-            commit: "abc1234".to_string(),
-            build_time: "100".to_string(),
-        };
-        let latest_new_commit_same_time = BasaltBuildInfo {
-            version: "0.1.0".to_string(),
-            commit: "def5678".to_string(),
-            build_time: "100".to_string(),
-        };
-        let latest_newer_build_time = BasaltBuildInfo {
             version: "0.1.0".to_string(),
             commit: "abc1234".to_string(),
             build_time: "200".to_string(),
         };
+        let latest_same_commit = BasaltBuildInfo {
+            version: "0.1.0".to_string(),
+            commit: "abc1234".to_string(),
+            build_time: "300".to_string(),
+        };
+        let latest_new_commit_older_build_time = BasaltBuildInfo {
+            version: "0.1.0".to_string(),
+            commit: "def5678".to_string(),
+            build_time: "100".to_string(),
+        };
 
         assert!(!is_newer_build(&current, &latest_same_commit));
-        assert!(!is_newer_build(&current, &latest_new_commit_same_time));
-        assert!(is_newer_build(&current, &latest_newer_build_time));
+        assert!(is_newer_build(
+            &current,
+            &latest_new_commit_older_build_time
+        ));
     }
 
     #[test]
@@ -468,16 +457,48 @@ mod tests {
     }
 
     #[test]
-    fn newer_build_uses_semver_when_commit_data_is_missing() {
+    fn newer_build_uses_numeric_build_time_when_commit_data_is_missing() {
         let current = BasaltBuildInfo {
             version: "0.1.0".to_string(),
             commit: String::new(),
             build_time: "100".to_string(),
         };
         let latest = BasaltBuildInfo {
+            version: "0.1.0".to_string(),
+            commit: String::new(),
+            build_time: "200".to_string(),
+        };
+
+        assert!(is_newer_build(&current, &latest));
+    }
+
+    #[test]
+    fn newer_build_ignores_version_when_release_is_not_newer() {
+        let current = BasaltBuildInfo {
+            version: "0.1.0".to_string(),
+            commit: String::new(),
+            build_time: "200".to_string(),
+        };
+        let latest = BasaltBuildInfo {
             version: "0.2.0".to_string(),
             commit: String::new(),
             build_time: "100".to_string(),
+        };
+
+        assert!(!is_newer_build(&current, &latest));
+    }
+
+    #[test]
+    fn newer_build_offers_update_for_unknown_current_metadata() {
+        let current = BasaltBuildInfo {
+            version: "0.1.0".to_string(),
+            commit: "unknown".to_string(),
+            build_time: "unknown".to_string(),
+        };
+        let latest = BasaltBuildInfo {
+            version: "0.1.0".to_string(),
+            commit: "def5678".to_string(),
+            build_time: "200".to_string(),
         };
 
         assert!(is_newer_build(&current, &latest));

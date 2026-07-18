@@ -41,7 +41,7 @@ jobs:
       - name: Prepare release metadata
         id: metadata
         run: |
-          commit_sha=$(git rev-parse --short HEAD)
+          commit_sha=$(git rev-parse HEAD)
           timestamp=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
           timestamp_unix=$(date -u +"%s")
           version=$(sed -nE '/^\[package\]/,/^\[/ s/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' Cargo.toml | head -n1)
@@ -99,17 +99,22 @@ jobs:
 
       - name: Create or overwrite latest release
         run: |
-          commit_sha=$(git rev-parse --short HEAD)
+          commit_sha=$(git rev-parse HEAD)
+          commit_short=$(git rev-parse --short HEAD)
           timestamp=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
           if gh release view latest >/dev/null 2>&1; then
             gh release delete latest --yes --cleanup-tag
           fi
 
-          gh release create latest \
-            --title "Basalt Latest Build ($commit_sha)" \
+          mapfile -d '' release_files < <(find release-artifacts -type f -print0)
+
+          gh release create latest "${release_files[@]}" \
+            --target "$commit_sha" \
+            --latest \
+            --title "Basalt Latest Build ($commit_short)" \
             --notes "Automated Basalt build. Commit: $commit_sha. Built: $timestamp"
 
-          find release-artifacts -type f -print0 | xargs -0 -I{} gh release upload latest "{}" --clobber
+          gh release edit latest --draft=false --latest --target "$commit_sha"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

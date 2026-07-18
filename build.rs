@@ -14,10 +14,20 @@ use resvg::usvg::{Options, Tree};
 fn main() {
     println!("cargo:rerun-if-changed=resources/assets/icons/basalt.svg");
     println!("cargo:rerun-if-changed=.git/HEAD");
+    println!("cargo:rerun-if-changed=.git/packed-refs");
+    println!("cargo:rerun-if-env-changed=GITHUB_SHA");
+
+    if let Some(head_ref) = git_output(&["symbolic-ref", "-q", "HEAD"]) {
+        println!("cargo:rerun-if-changed=.git/{}", head_ref);
+    }
 
     println!(
         "cargo:rustc-env=BASALT_BUILD_COMMIT={}",
-        git_output(&["rev-parse", "--short", "HEAD"]).unwrap_or_else(|| "unknown".to_string())
+        env::var("GITHUB_SHA")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| git_output(&["rev-parse", "HEAD"]))
+            .unwrap_or_else(|| "unknown".to_string())
     );
     println!(
         "cargo:rustc-env=BASALT_BUILD_TIME={}",
