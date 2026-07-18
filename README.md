@@ -1,6 +1,6 @@
 # Basalt
 
-Basalt is a minimal, clean game launcher intended to be reliable on Linux first, with cross-platform support for macOS and Windows.
+Basalt is a minimal, focused game launcher intended to be reliable on Linux first, with cross-platform support for macOS and Windows.
 
 ## Install
 
