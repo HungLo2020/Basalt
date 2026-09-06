@@ -123,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[publish] ERROR: download failed; cached scripts are not used: {error}", file=sys.stderr)
         return 1
 
-    manager = [sys.executable, str(downloaded_script)]
+    manager = [sys.executable, str(downloaded_script), "--repo", "mattpackages"]
     if args.command == "doctor":
         print("[publish] Running repository doctor")
         return run(manager + ["doctor"], root)

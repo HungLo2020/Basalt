@@ -2,7 +2,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, call, patch
 
 
 SCRIPT_PATH = Path(__file__).parents[1] / "DevUtils/PublishMattOSPackage.py"
@@ -13,6 +13,50 @@ SPEC.loader.exec_module(publish)
 
 
 class PublishMattOSPackageTests(unittest.TestCase):
+    def test_doctor_passes_explicit_repository(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                patch.object(publish, "repository_root", return_value=root),
+                patch.object(publish, "download_latest_script") as download,
+                patch.object(publish, "run", return_value=0) as run,
+            ):
+                self.assertEqual(publish.main(["doctor"]), 0)
+
+            download.assert_called_once_with(root / publish.SCRIPT_RELATIVE_PATH)
+            run.assert_called_once_with(
+                [publish.sys.executable, str(root / publish.SCRIPT_RELATIVE_PATH),
+                 "--repo", "mattpackages", "doctor"],
+                root,
+            )
+
+    def test_upload_passes_explicit_repository(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifact = root / "builds/pkg.deb"
+            artifact.parent.mkdir()
+            artifact.touch()
+            (root / publish.BUILD_METADATA_RELATIVE_PATH).write_text(
+                "BUILD_ARTIFACT_TYPE=deb\nBUILD_ARTIFACT_PATH=builds/pkg.deb\n",
+                encoding="utf-8",
+            )
+            with (
+                patch.object(publish, "repository_root", return_value=root),
+                patch.object(publish, "download_latest_script") as download,
+                patch.object(publish, "run", return_value=0) as run,
+            ):
+                self.assertEqual(publish.main(["publish"]), 0)
+
+            download.assert_called_once_with(root / publish.SCRIPT_RELATIVE_PATH)
+            self.assertEqual(run.call_args_list, [
+                call(["bash", str(root / "DevUtils/Build.sh")], root),
+                call(
+                    [publish.sys.executable, str(root / publish.SCRIPT_RELATIVE_PATH),
+                     "--repo", "mattpackages", "upload", str(artifact.resolve())],
+                    root,
+                ),
+            ])
+
     def test_parse_build_metadata(self):
         metadata = publish.parse_build_metadata(
             "# generated\nBUILD_ARTIFACT_TYPE=deb\nBUILD_ARTIFACT_PATH=builds/pkg.deb\n"
