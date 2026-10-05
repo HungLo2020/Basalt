@@ -24,7 +24,7 @@ pub fn install_runtime_and_cores(progress: &Progress) -> CoreResult<EmulationIns
     let runtime_command = runtime::ensure_runtime_command()?;
     progress.check_cancelled()?;
 
-    progress.report_step("Downloading controller profiles");
+    progress.report_step("Checking controller profiles");
     let _ = autoconfig::ensure_xbox_autoconfig_profiles();
 
     let specs = emulator_systems::emulator_system_specs();
@@ -60,6 +60,11 @@ pub fn install_core_for_system(system: &str, progress: &Progress) -> CoreResult<
     progress.report_step("Checking RetroArch runtime");
     let runtime_command = runtime::ensure_runtime_command()?;
     cores::ensure_core_installed(core_spec, &runtime_command, progress)?;
+
+    // Fetch controller profiles now, while the user expects network activity, so launches
+    // don't have to. A no-op when they are already present.
+    progress.report_step("Checking controller profiles");
+    let _ = autoconfig::ensure_xbox_autoconfig_profiles();
     Ok(())
 }
 
@@ -137,6 +142,8 @@ pub fn build_launch_target(system: &str, rom_path: &Path) -> Result<String, Stri
 pub fn launch_target(launch_target: &str) -> Result<(), String> {
     paths::ensure_emulator_directories()?;
     let runtime_command = runtime::ensure_runtime_command()?;
+    // Normally a no-op: profiles are fetched at core install. Only reaches the network on a
+    // machine where they were never downloaded.
     let _ = autoconfig::ensure_xbox_autoconfig_profiles();
     let parsed_launch_target = EmulationLaunchTarget::decode(launch_target)?;
     let system = paths::normalize_system_key(parsed_launch_target.system_key())?;

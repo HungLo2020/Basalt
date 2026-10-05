@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::{copy, Cursor};
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use super::paths;
@@ -54,26 +54,6 @@ fn extract_zip(archive_bytes: &[u8], destination: &Path) -> Result<(), String> {
     archive
         .extract(destination)
         .map_err(|error| error.to_string())
-}
-
-pub(super) fn download_file(url: &str, destination: &Path) -> Result<(), String> {
-    let response = ureq::get(url)
-        .set("User-Agent", "Basalt-Emulation-Installer")
-        .call()
-        .map_err(|error| format!("Failed to download {}: {}", url, error))?;
-
-    if let Some(parent) = destination.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("Failed to create download directory: {}", error))?;
-    }
-
-    let mut reader = response.into_reader();
-    let mut file = fs::File::create(destination)
-        .map_err(|error| format!("Failed to create file {}: {}", destination.display(), error))?;
-    copy(&mut reader, &mut file)
-        .map_err(|error| format!("Failed to save {}: {}", destination.display(), error))?;
-
-    Ok(())
 }
 
 #[cfg(test)]
