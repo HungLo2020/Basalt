@@ -1,6 +1,7 @@
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 mod commands;
+mod progress_printer;
 
 use std::process::ExitCode;
 

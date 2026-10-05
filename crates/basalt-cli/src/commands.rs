@@ -1,5 +1,6 @@
 use basalt_core::{self as core, CoreResult, DiscoverResult, DiscoverRunner};
 
+use super::progress_printer::ProgressPrinter;
 use super::{Command, SettingsCommand};
 
 pub(super) fn run(command: Command) -> CoreResult<()> {
@@ -36,12 +37,16 @@ pub(super) fn run(command: Command) -> CoreResult<()> {
         } => discover(steam, mattmc, emulators)?,
         Command::InstallCore { system } => {
             let system = required(&system, "system")?;
-            core::install_emulation_core_for_system(system)?;
+            let printer = ProgressPrinter::new();
+            core::install_emulation_core_for_system(system, &printer.progress())?;
+            printer.finish();
             println!("Installed emulator core for system '{}'.", system);
         }
         Command::CoreStatus { system } => core_status(required(&system, "system")?)?,
         Command::InstallEmulators => {
-            let report = core::install_emulation_runtime()?;
+            let printer = ProgressPrinter::new();
+            let report = core::install_emulation_runtime(&printer.progress())?;
+            printer.finish();
             println!(
                 "Emulation runtime ready: {} | cores ready: {}",
                 report.runtime_ready, report.cores_ready
@@ -50,7 +55,9 @@ pub(super) fn run(command: Command) -> CoreResult<()> {
             println!("Save folder: ~/Games/Emulators/saves/<system>");
         }
         Command::InstallMattmc => {
-            let report = core::install_mattmc()?;
+            let printer = ProgressPrinter::new();
+            let report = core::install_mattmc(&printer.progress())?;
+            printer.finish();
             println!(
                 "Installed MattMC release '{}' into {}",
                 report.release_tag,
@@ -218,7 +225,9 @@ fn sync_roms(platform: &str, up: bool) -> CoreResult<()> {
     }
 
     if up {
-        let report = core::sync_emulation_roms_up_for_system(platform)?;
+        let printer = ProgressPrinter::new();
+        let report = core::sync_emulation_roms_up_for_system(platform, &printer.progress())?;
+        printer.finish();
         println!(
             "Sync Up ({}) complete: copied {}, unchanged {}, deleted {}.",
             platform.to_uppercase(),
@@ -227,8 +236,10 @@ fn sync_roms(platform: &str, up: bool) -> CoreResult<()> {
             report.deleted
         );
     } else {
+        let printer = ProgressPrinter::new();
         let (sync_report, emulator_report) =
-            core::sync_emulation_roms_down_and_discover_for_system(platform)?;
+            core::sync_emulation_roms_down_and_discover_for_system(platform, &printer.progress())?;
+        printer.finish();
         println!(
             "Sync Down ({}) complete: copied {}, unchanged {}, deleted {}.",
             platform.to_uppercase(),
@@ -249,17 +260,20 @@ fn sync_roms(platform: &str, up: bool) -> CoreResult<()> {
 }
 
 fn sync_saves(system: &str, up: bool) -> CoreResult<()> {
+    let printer = ProgressPrinter::new();
+    let progress = printer.progress();
     let (label, report) = if up {
         (
             "Sync Saves Up",
-            core::sync_emulation_saves_up_for_system(system)?,
+            core::sync_emulation_saves_up_for_system(system, &progress)?,
         )
     } else {
         (
             "Sync Saves Down",
-            core::sync_emulation_saves_down_for_system(system)?,
+            core::sync_emulation_saves_down_for_system(system, &progress)?,
         )
     };
+    printer.finish();
 
     println!(
         "{} ({}) complete: copied {}, unchanged {}, deleted {}.",

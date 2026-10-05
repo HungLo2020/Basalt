@@ -25,6 +25,9 @@ pub enum CoreError {
     #[error("Unsupported emulator system: {0}")]
     UnsupportedSystem(String),
 
+    #[error("Cancelled")]
+    Cancelled,
+
     #[error("{action} {}: {source}", path.display())]
     Io {
         action: &'static str,

@@ -1,47 +1,48 @@
 use std::fs;
-use std::io::{copy, Cursor, Read};
+use std::io::{copy, Cursor};
 use std::path::{Path, PathBuf};
 
 use super::paths;
 use super::runtime::RuntimeCommand;
+use crate::download::download_to_writer;
 use crate::emulator_systems::EmulatorSystemSpec;
+use crate::error::{CoreError, CoreResult};
+use crate::progress::Progress;
 
 pub(super) fn ensure_core_installed(
     core_spec: &EmulatorSystemSpec,
     _runtime_command: &RuntimeCommand,
-) -> Result<PathBuf, String> {
+    progress: &Progress,
+) -> CoreResult<PathBuf> {
     let cores_dir = paths::retroarch_cores_dir()?;
     let core_path = cores_dir.join(core_spec.core_file);
     if core_path.exists() {
         return Ok(core_path);
     }
 
-    let archive_bytes = download_bytes(core_spec.archive_url)?;
+    // Downloaded into memory, so cancelling before extraction leaves nothing behind.
+    let mut archive_bytes = Vec::new();
+    download_to_writer(
+        core_spec.archive_url,
+        "Basalt-Emulation-Installer",
+        &mut archive_bytes,
+        progress,
+        &format!("Downloading {} core", core_spec.short_name),
+    )?;
+    progress.check_cancelled()?;
+
+    progress.report_step(format!("Installing {} core", core_spec.short_name));
     extract_zip(&archive_bytes, &cores_dir)
         .map_err(|error| format!("Failed to extract {}: {}", core_spec.archive_url, error))?;
 
     if core_path.exists() {
         Ok(core_path)
     } else {
-        Err(format!(
+        Err(CoreError::new(format!(
             "Core installation did not produce expected file: {}",
             core_path.display()
-        ))
+        )))
     }
-}
-
-fn download_bytes(url: &str) -> Result<Vec<u8>, String> {
-    let response = ureq::get(url)
-        .set("User-Agent", "Basalt-Emulation-Installer")
-        .call()
-        .map_err(|error| format!("Failed to download {}: {}", url, error))?;
-
-    let mut bytes = Vec::new();
-    response
-        .into_reader()
-        .read_to_end(&mut bytes)
-        .map_err(|error| format!("Failed to read {}: {}", url, error))?;
-    Ok(bytes)
 }
 
 /// Extracts every entry of an in-memory ZIP into `destination`. Entry paths that would escape

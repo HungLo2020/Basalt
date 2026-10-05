@@ -219,6 +219,7 @@ impl BasaltApp {
                                 RichText::new(&self.install.status_message)
                                     .size(secondary_text_size),
                             );
+                            self.render_background_job_progress(ui);
                         }
                     } else {
                         ui.label(

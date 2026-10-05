@@ -8,6 +8,7 @@
 pub mod artwork;
 mod discovery;
 mod discovery_service;
+mod download;
 mod emulation;
 mod emulation_target;
 mod emulator_systems;
@@ -16,6 +17,7 @@ mod game_service;
 mod mattmc_install;
 pub mod platform;
 mod playlist_service;
+mod progress;
 mod registry;
 mod runners;
 mod script_service;
@@ -45,6 +47,7 @@ pub use game_service::{
 };
 pub use mattmc_install::{install_mattmc, MattmcInstallReport};
 pub use playlist_service::FAVORITES_PLAYLIST_NAME;
+pub use progress::{CancelToken, Progress, ProgressUnit, ProgressUpdate};
 pub use runners::RunnerKind;
 pub use script_service::{
     run_game_sibling_script, sync_mattmc, sync_mattmc_down, sync_mattmc_up, update_mattmc,
@@ -69,8 +72,10 @@ pub use update_service::{
 /// library matches what is on disk.
 pub fn sync_emulation_roms_down_and_discover_for_system(
     system: &str,
+    progress: &Progress,
 ) -> CoreResult<(EmulationRomSyncReport, EmulatorDiscoverReport)> {
-    let sync_report = emulation::sync_roms_down_for_system(system)?;
+    let sync_report = emulation::sync_roms_down_for_system(system, progress)?;
+    progress.report_step("Updating library");
     let discover_report = discovery_service::discover_with_runners(&[DiscoverRunner::Emulators])?;
     let emulator_report = discover_report.emulators.unwrap_or(EmulatorDiscoverReport {
         found: 0,

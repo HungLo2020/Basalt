@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use super::emulation_target::EmulationLaunchTarget;
 use super::emulator_systems::{self, EmulatorSystemSpec};
 use super::error::{CoreError, CoreResult};
+use super::progress::Progress;
 
 mod autoconfig;
 mod cores;
@@ -17,18 +18,35 @@ pub struct EmulationInstallReport {
     pub cores_ready: usize,
 }
 
-pub fn install_runtime_and_cores() -> CoreResult<EmulationInstallReport> {
+pub fn install_runtime_and_cores(progress: &Progress) -> CoreResult<EmulationInstallReport> {
     paths::ensure_emulator_directories()?;
+    progress.report_step("Checking RetroArch runtime");
     let runtime_command = runtime::ensure_runtime_command()?;
+    progress.check_cancelled()?;
 
+    progress.report_step("Downloading controller profiles");
     let _ = autoconfig::ensure_xbox_autoconfig_profiles();
 
+    let specs = emulator_systems::emulator_system_specs();
     let mut cores_ready = 0usize;
-    for core_spec in emulator_systems::emulator_system_specs() {
-        if cores::ensure_core_installed(core_spec, &runtime_command)?.exists() {
+    for (index, core_spec) in specs.iter().enumerate() {
+        progress.check_cancelled()?;
+        progress.report_items(
+            format!("Installing {} core", core_spec.short_name),
+            index as u64,
+            specs.len() as u64,
+        );
+        // Per-core byte progress would fight the overall count, so cores report nothing here.
+        let core_progress = Progress::cancel_only(progress);
+        if cores::ensure_core_installed(core_spec, &runtime_command, &core_progress)?.exists() {
             cores_ready += 1;
         }
     }
+    progress.report_items(
+        "Emulator cores installed",
+        specs.len() as u64,
+        specs.len() as u64,
+    );
 
     Ok(EmulationInstallReport {
         runtime_ready: true,
@@ -36,11 +54,12 @@ pub fn install_runtime_and_cores() -> CoreResult<EmulationInstallReport> {
     })
 }
 
-pub fn install_core_for_system(system: &str) -> CoreResult<()> {
+pub fn install_core_for_system(system: &str, progress: &Progress) -> CoreResult<()> {
     let core_spec = supported_system(system)?;
     paths::ensure_emulator_directories()?;
+    progress.report_step("Checking RetroArch runtime");
     let runtime_command = runtime::ensure_runtime_command()?;
-    cores::ensure_core_installed(core_spec, &runtime_command)?;
+    cores::ensure_core_installed(core_spec, &runtime_command, progress)?;
     Ok(())
 }
 
@@ -50,20 +69,20 @@ pub fn is_core_installed_for_system(system: &str) -> CoreResult<bool> {
     Ok(core_path.exists() && core_path.is_file())
 }
 
-pub fn sync_roms_up_for_system(system: &str) -> CoreResult<RomSyncReport> {
-    Ok(sync::sync_roms_up_for_system(system)?)
+pub fn sync_roms_up_for_system(system: &str, progress: &Progress) -> CoreResult<RomSyncReport> {
+    sync::sync_roms_up_for_system(system, progress)
 }
 
-pub fn sync_roms_down_for_system(system: &str) -> CoreResult<RomSyncReport> {
-    Ok(sync::sync_roms_down_for_system(system)?)
+pub fn sync_roms_down_for_system(system: &str, progress: &Progress) -> CoreResult<RomSyncReport> {
+    sync::sync_roms_down_for_system(system, progress)
 }
 
-pub fn sync_saves_up_for_system(system: &str) -> CoreResult<RomSyncReport> {
-    Ok(sync::sync_saves_up_for_system(system)?)
+pub fn sync_saves_up_for_system(system: &str, progress: &Progress) -> CoreResult<RomSyncReport> {
+    sync::sync_saves_up_for_system(system, progress)
 }
 
-pub fn sync_saves_down_for_system(system: &str) -> CoreResult<RomSyncReport> {
-    Ok(sync::sync_saves_down_for_system(system)?)
+pub fn sync_saves_down_for_system(system: &str, progress: &Progress) -> CoreResult<RomSyncReport> {
+    sync::sync_saves_down_for_system(system, progress)
 }
 
 fn supported_system(system: &str) -> CoreResult<&'static EmulatorSystemSpec> {
@@ -137,7 +156,7 @@ pub fn launch_target(launch_target: &str) -> Result<(), String> {
 
     let core_spec = emulator_systems::emulator_system(&system)
         .ok_or_else(|| format!("Unsupported emulator system: {}", system))?;
-    let core_path = cores::ensure_core_installed(core_spec, &runtime_command)?;
+    let core_path = cores::ensure_core_installed(core_spec, &runtime_command, &Progress::none())?;
 
     runtime::launch_retroarch(&runtime_command, &system, &rom_path, &core_path)
 }

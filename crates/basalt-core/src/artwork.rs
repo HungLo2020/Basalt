@@ -15,6 +15,7 @@ mod matching_index;
 mod validation;
 
 pub use cache::clear_artwork_cache;
+pub use local_overrides::{override_artwork_dirs, user_override_artwork_dir};
 
 const EMULATOR_ARTWORK_USER_AGENT: &str = "Basalt-Emulator-Artwork";
 const EMULATOR_ARTWORK_IMAGES_PATH: &str = "images";
@@ -23,8 +24,6 @@ const EMULATOR_ARTWORK_INDEX_TTL_SECONDS: u64 = 60 * 60 * 24;
 const EMULATOR_ARTWORK_KEY_VERSION: &str = "v2";
 const EMULATOR_ARTWORK_MIN_WIDTH: u32 = 120;
 const EMULATOR_ARTWORK_MIN_HEIGHT: u32 = 120;
-const LOCAL_GAME_ARTWORK_DIR: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../../resources/gameartwork");
 const LOCAL_ARTWORK_EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
 
 /// Where a game's artwork comes from.

@@ -3,6 +3,8 @@ use std::fs;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
+use crate::error::CoreResult;
+use crate::progress::Progress;
 use crate::settings;
 
 use super::is_save_sync_supported_for_system;
@@ -20,26 +22,39 @@ enum RomSyncDirection {
     Down,
 }
 
-pub(super) fn sync_roms_up_for_system(system: &str) -> Result<RomSyncReport, String> {
-    sync_roms_for_system(system, RomSyncDirection::Up)
+pub(super) fn sync_roms_up_for_system(
+    system: &str,
+    progress: &Progress,
+) -> CoreResult<RomSyncReport> {
+    sync_roms_for_system(system, RomSyncDirection::Up, progress)
 }
 
-pub(super) fn sync_roms_down_for_system(system: &str) -> Result<RomSyncReport, String> {
-    sync_roms_for_system(system, RomSyncDirection::Down)
+pub(super) fn sync_roms_down_for_system(
+    system: &str,
+    progress: &Progress,
+) -> CoreResult<RomSyncReport> {
+    sync_roms_for_system(system, RomSyncDirection::Down, progress)
 }
 
-pub(super) fn sync_saves_up_for_system(system: &str) -> Result<RomSyncReport, String> {
-    sync_saves_for_system(system, RomSyncDirection::Up)
+pub(super) fn sync_saves_up_for_system(
+    system: &str,
+    progress: &Progress,
+) -> CoreResult<RomSyncReport> {
+    sync_saves_for_system(system, RomSyncDirection::Up, progress)
 }
 
-pub(super) fn sync_saves_down_for_system(system: &str) -> Result<RomSyncReport, String> {
-    sync_saves_for_system(system, RomSyncDirection::Down)
+pub(super) fn sync_saves_down_for_system(
+    system: &str,
+    progress: &Progress,
+) -> CoreResult<RomSyncReport> {
+    sync_saves_for_system(system, RomSyncDirection::Down, progress)
 }
 
 fn sync_roms_for_system(
     system: &str,
     direction: RomSyncDirection,
-) -> Result<RomSyncReport, String> {
+    progress: &Progress,
+) -> CoreResult<RomSyncReport> {
     let system_key = paths::normalize_system_key(system)?;
     let remote_paths = settings::load_emulation_remote_paths()?;
 
@@ -55,22 +70,29 @@ fn sync_roms_for_system(
         return Err(format!(
             "Source ROM directory does not exist: {}",
             source_dir.display()
-        ));
+        )
+        .into());
     }
 
-    sync_directory_contents(&source_dir, &destination_dir, "ROM", |_: &Path| true)
+    let message = format!("Syncing {} ROMs", system_key.to_uppercase());
+    sync_directory_contents(
+        &source_dir,
+        &destination_dir,
+        "ROM",
+        |_: &Path| true,
+        &message,
+        progress,
+    )
 }
 
 fn sync_saves_for_system(
     system: &str,
     direction: RomSyncDirection,
-) -> Result<RomSyncReport, String> {
+    progress: &Progress,
+) -> CoreResult<RomSyncReport> {
     let system_key = paths::normalize_system_key(system)?;
     if !is_save_sync_supported_for_system(&system_key) {
-        return Err(format!(
-            "Save sync is not supported for system: {}",
-            system_key
-        ));
+        return Err(format!("Save sync is not supported for system: {}", system_key).into());
     }
 
     let remote_paths = settings::load_emulation_remote_paths()?;
@@ -99,7 +121,15 @@ fn sync_saves_for_system(
         RomSyncDirection::Down => (remote_dir, local_dir),
     };
 
-    sync_directory_contents(&source_dir, &destination_dir, "save", is_syncable_save_file)
+    let message = format!("Syncing {} saves", system_key.to_uppercase());
+    sync_directory_contents(
+        &source_dir,
+        &destination_dir,
+        "save",
+        is_syncable_save_file,
+        &message,
+        progress,
+    )
 }
 
 fn sync_directory_contents<F>(
@@ -107,7 +137,9 @@ fn sync_directory_contents<F>(
     destination_dir: &Path,
     file_label: &str,
     include_file: F,
-) -> Result<RomSyncReport, String>
+    message: &str,
+    progress: &Progress,
+) -> CoreResult<RomSyncReport>
 where
     F: Fn(&Path) -> bool,
 {
@@ -134,7 +166,13 @@ where
     let mut unchanged = 0usize;
     let mut deleted = 0usize;
 
-    for source_file in source_files {
+    let total_files = source_files.len() as u64;
+    for (index, source_file) in source_files.into_iter().enumerate() {
+        // Stopping between files is safe: copied files are complete, and the deletion pass
+        // below never runs for a cancelled sync.
+        progress.check_cancelled()?;
+        progress.report_items(message, index as u64, total_files);
+
         let relative_path = source_file.strip_prefix(source_dir).map_err(|error| {
             format!(
                 "Failed to compute relative {} path for {}: {}",
@@ -190,6 +228,9 @@ where
             unchanged += 1;
         }
     }
+
+    progress.check_cancelled()?;
+    progress.report_items(message, total_files, total_files);
 
     for destination_file in destination_files {
         let relative_path = destination_file
@@ -368,8 +409,15 @@ mod tests {
         fs::write(source.join("ignored.state"), "source ignored").unwrap();
         fs::write(destination.join("ignored.state"), "destination ignored").unwrap();
 
-        let report =
-            sync_directory_contents(&source, &destination, "save", is_syncable_save_file).unwrap();
+        let report = sync_directory_contents(
+            &source,
+            &destination,
+            "save",
+            is_syncable_save_file,
+            "Syncing saves",
+            &Progress::none(),
+        )
+        .unwrap();
 
         assert_eq!(report.copied, 2);
         assert_eq!(report.unchanged, 1);
@@ -387,6 +435,35 @@ mod tests {
             fs::read_to_string(destination.join("ignored.state")).unwrap(),
             "destination ignored"
         );
+
+        let _ = fs::remove_dir_all(temp_root);
+    }
+
+    #[test]
+    fn cancelled_sync_stops_before_copying_or_deleting() {
+        let temp_root = unique_temp_dir("basalt-sync-cancel-test");
+        let source = temp_root.join("source");
+        let destination = temp_root.join("destination");
+        fs::create_dir_all(&source).unwrap();
+        fs::create_dir_all(&destination).unwrap();
+        fs::write(source.join("new.srm"), "new").unwrap();
+        fs::write(destination.join("stale.srm"), "keep me").unwrap();
+
+        let cancel = crate::progress::CancelToken::new();
+        cancel.cancel();
+        let progress = Progress::new(|_| {}, cancel);
+        let result = sync_directory_contents(
+            &source,
+            &destination,
+            "save",
+            is_syncable_save_file,
+            "Syncing saves",
+            &progress,
+        );
+
+        assert!(matches!(result, Err(crate::CoreError::Cancelled)));
+        assert!(!destination.join("new.srm").exists());
+        assert!(destination.join("stale.srm").exists());
 
         let _ = fs::remove_dir_all(temp_root);
     }

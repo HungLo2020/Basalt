@@ -31,6 +31,24 @@ pub fn cache_dir() -> Result<PathBuf, String> {
     project_dirs().map(|dirs| dirs.cache_dir().to_path_buf())
 }
 
+/// Read-only, system-wide Basalt data installed by the package (e.g. `/usr/share/basalt`),
+/// in priority order. Empty on platforms without such a convention.
+pub fn system_data_dirs() -> Vec<PathBuf> {
+    if !cfg!(target_os = "linux") {
+        return Vec::new();
+    }
+
+    let raw = std::env::var("XDG_DATA_DIRS")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "/usr/local/share:/usr/share".to_string());
+
+    std::env::split_paths(&raw)
+        .filter(|dir| dir.is_absolute())
+        .map(|dir| dir.join("basalt"))
+        .collect()
+}
+
 /// The pre-XDG `~/.basalt` directory that older builds stored everything in.
 pub fn legacy_app_dir() -> Result<PathBuf, String> {
     Ok(home_dir()?.join(LEGACY_APP_DIR_NAME))

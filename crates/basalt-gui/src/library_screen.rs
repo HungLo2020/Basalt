@@ -145,6 +145,7 @@ impl BasaltApp {
                             RichText::new(&self.library.status_message).size(secondary_text_size),
                         );
                     }
+                    self.render_background_job_progress(ui);
                 });
             });
 

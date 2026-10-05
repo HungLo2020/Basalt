@@ -1,15 +1,57 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::{
     extract_steam_appid, normalize_matching_title, parse_emulator_launch_target, ArtworkKind,
-    ArtworkRequest, LOCAL_ARTWORK_EXTENSIONS, LOCAL_GAME_ARTWORK_DIR,
+    ArtworkRequest, LOCAL_ARTWORK_EXTENSIONS,
 };
+use crate::{platform, storage};
+
+const ARTWORK_DIR_NAME: &str = "artwork";
+
+/// Folders searched for override images, highest priority first:
+/// 1. the user's own folder (`~/.local/share/basalt/artwork` on Linux)
+/// 2. in debug builds, the repository's `resources/gameartwork`
+/// 3. artwork installed with the package (`/usr/share/basalt/artwork` on Linux)
+pub fn override_artwork_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Ok(data_dir) = storage::data_dir() {
+        dirs.push(data_dir.join(ARTWORK_DIR_NAME));
+    }
+
+    if cfg!(debug_assertions) {
+        dirs.push(PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../resources/gameartwork"
+        )));
+    }
+
+    dirs.extend(
+        platform::system_data_dirs()
+            .into_iter()
+            .map(|dir| dir.join(ARTWORK_DIR_NAME)),
+    );
+
+    dirs
+}
+
+/// The user's override folder, created if missing so it is easy to find and drop images into.
+pub fn user_override_artwork_dir() -> Option<PathBuf> {
+    let dir = storage::data_dir().ok()?.join(ARTWORK_DIR_NAME);
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
 
 pub(super) fn find_local_game_artwork_path(request: &ArtworkRequest) -> Option<PathBuf> {
-    let artwork_dir = local_game_artwork_dir()?;
     let candidate_bases = build_local_artwork_name_candidates(request);
+    override_artwork_dirs()
+        .iter()
+        .filter(|dir| dir.is_dir())
+        .find_map(|dir| find_in_dir(dir, &candidate_bases))
+}
 
-    for base_name in &candidate_bases {
+fn find_in_dir(artwork_dir: &Path, candidate_bases: &[String]) -> Option<PathBuf> {
+    for base_name in candidate_bases {
         for extension in LOCAL_ARTWORK_EXTENSIONS {
             let candidate = artwork_dir.join(format!("{}.{}", base_name, extension));
             if candidate.is_file() {
@@ -18,7 +60,7 @@ pub(super) fn find_local_game_artwork_path(request: &ArtworkRequest) -> Option<P
         }
     }
 
-    let read_dir = std::fs::read_dir(&artwork_dir).ok()?;
+    let read_dir = std::fs::read_dir(artwork_dir).ok()?;
     for entry in read_dir {
         let Ok(entry) = entry else {
             continue;
@@ -127,18 +169,4 @@ fn is_supported_local_artwork_extension(extension: &str) -> bool {
     LOCAL_ARTWORK_EXTENSIONS
         .iter()
         .any(|value| value.eq_ignore_ascii_case(extension))
-}
-
-fn local_game_artwork_dir() -> Option<PathBuf> {
-    let manifest_dir = PathBuf::from(LOCAL_GAME_ARTWORK_DIR);
-    if std::fs::create_dir_all(&manifest_dir).is_ok() {
-        return Some(manifest_dir);
-    }
-
-    let workspace_relative = PathBuf::from("resources/gameartwork");
-    if std::fs::create_dir_all(&workspace_relative).is_ok() {
-        return Some(workspace_relative);
-    }
-
-    None
 }

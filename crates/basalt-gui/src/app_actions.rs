@@ -76,7 +76,7 @@ impl BasaltApp {
         self.start_background_job(
             GuiBackgroundStatusTarget::Library,
             "Discovering games...".to_string(),
-            || {
+            |_| {
                 GuiBackgroundJobResult::Discover(core::discover_with_runners(
                     &core::ALL_DISCOVER_RUNNERS,
                 ))
@@ -210,7 +210,7 @@ impl BasaltApp {
         self.start_background_job(
             GuiBackgroundStatusTarget::Install,
             "MattMC install started".to_string(),
-            || GuiBackgroundJobResult::InstallMattmc(core::install_mattmc()),
+            |progress| GuiBackgroundJobResult::InstallMattmc(core::install_mattmc(&progress)),
         );
     }
 
@@ -226,7 +226,7 @@ impl BasaltApp {
         self.start_background_job(
             status_target,
             "MattMC update started".to_string(),
-            move || GuiBackgroundJobResult::UpdateMattmc {
+            move |_| GuiBackgroundJobResult::UpdateMattmc {
                 status_target,
                 result: core::update_mattmc(),
             },
@@ -238,8 +238,8 @@ impl BasaltApp {
         self.start_background_job(
             GuiBackgroundStatusTarget::Install,
             format!("Installing {} emulator core...", system.to_uppercase()),
-            move || {
-                let result = core::install_emulation_core_for_system(&system);
+            move |progress| {
+                let result = core::install_emulation_core_for_system(&system, &progress);
                 GuiBackgroundJobResult::InstallEmulatorCore { system, result }
             },
         );
@@ -250,8 +250,8 @@ impl BasaltApp {
         self.start_background_job(
             GuiBackgroundStatusTarget::Install,
             format!("Sync Roms Up ({}) started", system.to_uppercase()),
-            move || {
-                let result = core::sync_emulation_roms_up_for_system(&system);
+            move |progress| {
+                let result = core::sync_emulation_roms_up_for_system(&system, &progress);
                 GuiBackgroundJobResult::SyncEmulatorRomsUp { system, result }
             },
         );
@@ -262,8 +262,9 @@ impl BasaltApp {
         self.start_background_job(
             GuiBackgroundStatusTarget::Install,
             format!("Sync Roms Down ({}) started", system.to_uppercase()),
-            move || {
-                let result = core::sync_emulation_roms_down_and_discover_for_system(&system);
+            move |progress| {
+                let result =
+                    core::sync_emulation_roms_down_and_discover_for_system(&system, &progress);
                 GuiBackgroundJobResult::SyncEmulatorRomsDown { system, result }
             },
         );
@@ -274,8 +275,8 @@ impl BasaltApp {
         self.start_background_job(
             GuiBackgroundStatusTarget::Install,
             format!("Sync Saves Up ({}) started", system.to_uppercase()),
-            move || {
-                let result = core::sync_emulation_saves_up_for_system(&system);
+            move |progress| {
+                let result = core::sync_emulation_saves_up_for_system(&system, &progress);
                 GuiBackgroundJobResult::SyncEmulatorSavesUp { system, result }
             },
         );
@@ -286,8 +287,8 @@ impl BasaltApp {
         self.start_background_job(
             GuiBackgroundStatusTarget::Install,
             format!("Sync Saves Down ({}) started", system.to_uppercase()),
-            move || {
-                let result = core::sync_emulation_saves_down_for_system(&system);
+            move |progress| {
+                let result = core::sync_emulation_saves_down_for_system(&system, &progress);
                 GuiBackgroundJobResult::SyncEmulatorSavesDown { system, result }
             },
         );
@@ -297,7 +298,7 @@ impl BasaltApp {
         self.start_background_job(
             GuiBackgroundStatusTarget::Library,
             "SyncUp started for MattMC".to_string(),
-            || GuiBackgroundJobResult::SyncMattmcUp(core::sync_mattmc_up()),
+            |_| GuiBackgroundJobResult::SyncMattmcUp(core::sync_mattmc_up()),
         );
     }
 
@@ -305,7 +306,7 @@ impl BasaltApp {
         self.start_background_job(
             GuiBackgroundStatusTarget::Library,
             "SyncDown started for MattMC".to_string(),
-            || GuiBackgroundJobResult::SyncMattmcDown(core::sync_mattmc_down()),
+            |_| GuiBackgroundJobResult::SyncMattmcDown(core::sync_mattmc_down()),
         );
     }
 

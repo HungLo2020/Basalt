@@ -1,7 +1,10 @@
 use std::sync::mpsc::{self, TryRecvError};
 use std::thread;
 
-use basalt_core::{self as core, CoreResult, DiscoverResult};
+use std::sync::Arc;
+
+use basalt_core::{self as core, CancelToken, CoreResult, DiscoverResult, Progress};
+use eframe::egui;
 
 use super::app::BasaltApp;
 
@@ -47,13 +50,15 @@ impl BasaltApp {
         self.background_job.rx.is_some()
     }
 
+    /// Runs `build_result` on a worker thread. It receives a [`Progress`] that feeds the progress
+    /// bar and Cancel button; jobs that can't report progress simply ignore it.
     pub(super) fn start_background_job<F>(
         &mut self,
         status_target: GuiBackgroundStatusTarget,
         pending_message: String,
         build_result: F,
     ) where
-        F: FnOnce() -> GuiBackgroundJobResult + Send + 'static,
+        F: FnOnce(Progress) -> GuiBackgroundJobResult + Send + 'static,
     {
         if self.background_job.rx.is_some() {
             self.set_background_status(status_target, "Another operation is already running");
@@ -64,9 +69,61 @@ impl BasaltApp {
         self.background_job.rx = Some(rx);
         self.set_background_status(status_target, &pending_message);
 
+        let cancel = CancelToken::new();
+        self.background_job.cancel = Some(cancel.clone());
+        if let Ok(mut slot) = self.background_job.progress.lock() {
+            *slot = None;
+        }
+
+        let progress_slot = Arc::clone(&self.background_job.progress);
+        let egui_ctx = self.egui_ctx.clone();
+        let progress = Progress::new(
+            move |update| {
+                if let Ok(mut slot) = progress_slot.lock() {
+                    *slot = Some(update.clone());
+                }
+                egui_ctx.request_repaint();
+            },
+            cancel,
+        );
+
+        let egui_ctx = self.egui_ctx.clone();
         thread::spawn(move || {
-            let _ = tx.send(build_result());
+            let _ = tx.send(build_result(progress));
+            egui_ctx.request_repaint();
         });
+    }
+
+    /// Progress bar and Cancel button for the running job, shown under a screen's status text.
+    pub(super) fn render_background_job_progress(&self, ui: &mut egui::Ui) {
+        if !self.has_background_job() {
+            return;
+        }
+        let Some(update) = self
+            .background_job
+            .progress
+            .lock()
+            .ok()
+            .and_then(|slot| slot.clone())
+        else {
+            return;
+        };
+
+        ui.add_space(6.0);
+        ui.label(&update.message);
+        let bar = match update.fraction() {
+            Some(fraction) => egui::ProgressBar::new(fraction).show_percentage(),
+            None => egui::ProgressBar::new(0.0).animate(true),
+        };
+        ui.add(bar);
+
+        if let Some(cancel) = &self.background_job.cancel {
+            if cancel.is_cancelled() {
+                ui.label("Cancelling...");
+            } else if ui.button("Cancel").clicked() {
+                cancel.cancel();
+            }
+        }
     }
 
     pub(super) fn poll_background_job(&mut self) {
@@ -82,15 +139,23 @@ impl BasaltApp {
 
         match received {
             Ok(result) => {
-                self.background_job.rx = None;
+                self.finish_background_job();
                 self.apply_background_job_result(result);
             }
             Err(TryRecvError::Disconnected) => {
-                self.background_job.rx = None;
+                self.finish_background_job();
                 self.library.status_message =
                     "Operation failed: background task disconnected".to_string();
             }
             Err(TryRecvError::Empty) => {}
+        }
+    }
+
+    fn finish_background_job(&mut self) {
+        self.background_job.rx = None;
+        self.background_job.cancel = None;
+        if let Ok(mut slot) = self.background_job.progress.lock() {
+            *slot = None;
         }
     }
 

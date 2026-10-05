@@ -78,6 +78,12 @@ main() {
   fi
   install -m 644 "$desktop_file" "$package_root/usr/share/applications/basalt.desktop"
 
+  # Bundled artwork overrides; users can add their own in ~/.local/share/basalt/artwork.
+  mkdir -p "$package_root/usr/share/basalt/artwork"
+  find "$repo_root/resources/gameartwork" -maxdepth 1 -type f \
+    \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) \
+    -exec install -m 644 -t "$package_root/usr/share/basalt/artwork" {} +
+
   icon_file="$repo_root/resources/assets/icons/basalt.svg"
   if [[ ! -f "$icon_file" ]]; then
     echo "[build-linux-amd64] Missing icon file: $icon_file" >&2

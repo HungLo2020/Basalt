@@ -484,7 +484,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "basalt-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "basalt-core",
  "clap",
@@ -492,7 +492,7 @@ dependencies = [
 
 [[package]]
 name = "basalt-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "directories",
  "image",
@@ -506,7 +506,7 @@ dependencies = [
 
 [[package]]
 name = "basalt-gui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "basalt-core",
  "crossbeam-channel",

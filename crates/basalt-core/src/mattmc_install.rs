@@ -9,6 +9,8 @@ use zip::ZipArchive;
 
 use crate::platform;
 
+use super::download::download_to_writer;
+use super::progress::Progress;
 use super::{CoreError, CoreResult, DiscoverResult, DiscoverRunner};
 
 const MATTMC_RELEASES_API_LATEST_URL: &str =
@@ -31,7 +33,7 @@ impl MattmcInstallReport {
     }
 }
 
-pub fn install_mattmc() -> CoreResult<MattmcInstallReport> {
+pub fn install_mattmc(progress: &Progress) -> CoreResult<MattmcInstallReport> {
     let home = platform::home_dir()?;
     let games_dir = home.join("Games");
     let target_dir = games_dir.join("MattMC");
@@ -42,12 +44,41 @@ pub fn install_mattmc() -> CoreResult<MattmcInstallReport> {
     fs::create_dir_all(&target_dir)
         .map_err(|err| CoreError::new(format!("Failed to create MattMC directory: {}", err)))?;
 
+    progress.report_step("Checking latest MattMC release");
     let (latest_tag, archive_url) = fetch_latest_release_tag_and_client_zip_url()?;
     let temp_archive_path = temp_archive_path()?;
+    let extraction_root = temp_extraction_root()?;
     let mut cleanup_warnings = Vec::new();
 
-    download_archive(&archive_url, &temp_archive_path)?;
-    extract_zip_into_target(&temp_archive_path, &target_dir, &mut cleanup_warnings)?;
+    // Download and extraction only touch temp files, so they can be cancelled. Once copying into
+    // ~/Games/MattMC starts, the install runs to completion so it is never left half-upgraded.
+    let staged = download_archive(&archive_url, &temp_archive_path, &latest_tag, progress)
+        .and_then(|_| extract_zip_archive(&temp_archive_path, &extraction_root, progress))
+        .and_then(|_| progress.check_cancelled());
+    if let Err(error) = staged {
+        let _ = fs::remove_file(&temp_archive_path);
+        let _ = fs::remove_dir_all(&extraction_root);
+        return Err(error);
+    }
+
+    progress.report_step(format!("Installing MattMC {}", latest_tag));
+    let installed = staged_source_root(&extraction_root)
+        .and_then(|source_root| copy_directory_contents(&source_root, &target_dir));
+    if let Err(error) = fs::remove_dir_all(&extraction_root) {
+        cleanup_warnings.push(format!(
+            "Failed to remove temporary extraction directory at {}: {}",
+            extraction_root.display(),
+            error
+        ));
+    }
+    if let Err(error) = fs::remove_file(&temp_archive_path) {
+        cleanup_warnings.push(format!(
+            "Failed to remove temporary archive at {}: {}",
+            temp_archive_path.display(),
+            error
+        ));
+    }
+    installed?;
 
     let discover_report = super::discover_with_runners(&[DiscoverRunner::Mattmc])?;
     let discovery_result = match discover_report.mattmc {
@@ -59,14 +90,6 @@ pub fn install_mattmc() -> CoreResult<MattmcInstallReport> {
             ));
         }
     };
-
-    if let Err(error) = fs::remove_file(&temp_archive_path) {
-        cleanup_warnings.push(format!(
-            "Failed to remove temporary archive at {}: {}",
-            temp_archive_path.display(),
-            error
-        ));
-    }
 
     Ok(MattmcInstallReport {
         release_tag: latest_tag,
@@ -160,7 +183,12 @@ fn is_mattmc_client_zip_asset(name_lower: &str, url_lower: &str, platform_suffix
         && name_lower.contains(platform_suffix)
 }
 
-fn download_archive(archive_url: &str, destination_path: &Path) -> CoreResult<()> {
+fn download_archive(
+    archive_url: &str,
+    destination_path: &Path,
+    release_tag: &str,
+    progress: &Progress,
+) -> CoreResult<()> {
     if let Some(parent_directory) = destination_path.parent() {
         fs::create_dir_all(parent_directory).map_err(|err| {
             CoreError::new(format!(
@@ -170,17 +198,6 @@ fn download_archive(archive_url: &str, destination_path: &Path) -> CoreResult<()
         })?;
     }
 
-    let response = ureq::get(archive_url)
-        .set("User-Agent", "Basalt-MattMC-Installer")
-        .call()
-        .map_err(|err| {
-            CoreError::new(format!(
-                "Failed to download MattMC release archive: {}",
-                err
-            ))
-        })?;
-
-    let mut reader = response.into_reader();
     let mut destination_file = fs::File::create(destination_path).map_err(|err| {
         CoreError::new(format!(
             "Failed to create MattMC archive destination file {}: {}",
@@ -189,34 +206,19 @@ fn download_archive(archive_url: &str, destination_path: &Path) -> CoreResult<()
         ))
     })?;
 
-    copy(&mut reader, &mut destination_file).map_err(|err| {
-        CoreError::new(format!(
-            "Failed to write MattMC archive to {}: {}",
-            destination_path.display(),
-            err
-        ))
-    })?;
-
+    download_to_writer(
+        archive_url,
+        "Basalt-MattMC-Installer",
+        &mut destination_file,
+        progress,
+        &format!("Downloading MattMC {}", release_tag),
+    )?;
     Ok(())
 }
 
-fn extract_zip_into_target(
-    archive_path: &Path,
-    target_dir: &Path,
-    cleanup_warnings: &mut Vec<String>,
-) -> CoreResult<()> {
-    let extraction_root = temp_extraction_root()?;
-
-    fs::create_dir_all(&extraction_root).map_err(|err| {
-        CoreError::new(format!(
-            "Failed to create temporary extraction directory: {}",
-            err
-        ))
-    })?;
-
-    extract_zip_archive(archive_path, &extraction_root)?;
-
-    let entries = fs::read_dir(&extraction_root).map_err(|err| {
+/// Release ZIPs usually wrap everything in one top-level folder; install its contents.
+fn staged_source_root(extraction_root: &Path) -> CoreResult<PathBuf> {
+    let entries = fs::read_dir(extraction_root).map_err(|err| {
         CoreError::new(format!(
             "Failed to inspect extracted MattMC ZIP directory: {}",
             err
@@ -234,26 +236,25 @@ fn extract_zip_into_target(
         children.push(entry.path());
     }
 
-    let source_root = if children.len() == 1 && children[0].is_dir() {
+    Ok(if children.len() == 1 && children[0].is_dir() {
         children[0].clone()
     } else {
-        extraction_root.clone()
-    };
-
-    copy_directory_contents(&source_root, target_dir)?;
-
-    if let Err(error) = fs::remove_dir_all(&extraction_root) {
-        cleanup_warnings.push(format!(
-            "Failed to remove temporary extraction directory at {}: {}",
-            extraction_root.display(),
-            error
-        ));
-    }
-
-    Ok(())
+        extraction_root.to_path_buf()
+    })
 }
 
-fn extract_zip_archive(archive_path: &Path, extraction_root: &Path) -> CoreResult<()> {
+fn extract_zip_archive(
+    archive_path: &Path,
+    extraction_root: &Path,
+    progress: &Progress,
+) -> CoreResult<()> {
+    fs::create_dir_all(extraction_root).map_err(|err| {
+        CoreError::new(format!(
+            "Failed to create temporary extraction directory: {}",
+            err
+        ))
+    })?;
+
     let zip_file = fs::File::open(archive_path).map_err(|err| {
         CoreError::new(format!(
             "Failed to open ZIP archive {}: {}",
@@ -270,7 +271,11 @@ fn extract_zip_archive(archive_path: &Path, extraction_root: &Path) -> CoreResul
         ))
     })?;
 
+    let entry_count = zip_archive.len() as u64;
     for index in 0..zip_archive.len() {
+        progress.check_cancelled()?;
+        progress.report_items("Extracting MattMC", index as u64, entry_count);
+
         let mut entry = zip_archive.by_index(index).map_err(|err| {
             CoreError::new(format!("Failed to read ZIP entry {}: {}", index, err))
         })?;

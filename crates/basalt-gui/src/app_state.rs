@@ -1,6 +1,7 @@
 use std::sync::mpsc::Receiver;
+use std::sync::{Arc, Mutex};
 
-use basalt_core::{self as core, CoreResult, GameEntry, Playlist};
+use basalt_core::{self as core, CancelToken, CoreResult, GameEntry, Playlist, ProgressUpdate};
 use gilrs::Gilrs;
 
 use super::background_jobs::GuiBackgroundJobResult;
@@ -59,6 +60,9 @@ pub(super) struct ControllerState {
 #[derive(Default)]
 pub(super) struct BackgroundJobState {
     pub(super) rx: Option<Receiver<GuiBackgroundJobResult>>,
+    /// Latest progress reported by the running job, written from its worker thread.
+    pub(super) progress: Arc<Mutex<Option<ProgressUpdate>>>,
+    pub(super) cancel: Option<CancelToken>,
 }
 
 impl Default for NavigationState {
