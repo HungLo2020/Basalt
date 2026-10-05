@@ -30,6 +30,16 @@ MattMC is fully independent and can run without a launcher, but Basalt is design
 - Predictable behavior over feature bloat.
 - Clear, maintainable codebase with low overhead.
 
+## Project Layout
+
+Basalt is a Cargo workspace with three crates:
+
+- `crates/basalt-core` — library with all launcher logic (library, discovery, launching, emulation, sync). No UI dependencies.
+- `crates/basalt-cli` — the `basalt` command-line tool. Running `basalt` with no command opens the GUI.
+- `crates/basalt-gui` — the `basalt-gui` desktop app.
+
+Basalt stores its data in the platform's standard locations. On Linux these are `~/.local/share/basalt` (games, playlists, blacklist), `~/.config/basalt` (settings), and `~/.cache/basalt` (artwork). Files from the older `~/.basalt` directory are moved there automatically on first run.
+
 ## Rust and Cargo Basics
 
 This project uses Rust and Cargo.
@@ -39,7 +49,8 @@ This project uses Rust and Cargo.
 
 Common Cargo commands:
 
-- `cargo run` — builds the project (if needed) and runs the main binary.
+- `cargo run --bin basalt-gui` — builds the project (if needed) and runs the GUI.
+- `cargo run --bin basalt -- list` — runs a CLI command (here, `list`).
 - `cargo build` — compiles the project without running it.
 - `cargo build --release` — builds an optimized release binary.
 - `cargo check` — quickly checks code for compile errors without a full build.

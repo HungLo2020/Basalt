@@ -44,7 +44,7 @@ jobs:
           commit_sha=$(git rev-parse HEAD)
           timestamp=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
           timestamp_unix=$(date -u +"%s")
-          version=$(sed -nE '/^\[package\]/,/^\[/ s/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' Cargo.toml | head -n1)
+          version=$(sed -nE '/^\[workspace\.package\]/,/^\[/ s/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' Cargo.toml | head -n1)
 
           mkdir -p builds
           cat > builds/basalt-build-info.json <<EOF

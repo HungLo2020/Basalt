@@ -1,0 +1,155 @@
+use super::error::{CoreError, CoreResult};
+use super::playlist_service;
+use super::registry;
+use super::runners;
+use super::storage::with_data_lock;
+use super::GameEntry;
+
+pub fn add_game(name: &str, raw_script_path: &str) -> CoreResult<()> {
+    if name.is_empty() {
+        return Err(CoreError::InvalidInput(
+            "Game name cannot be empty".to_string(),
+        ));
+    }
+
+    if name.contains('\t') || name.contains('\n') {
+        return Err(CoreError::InvalidInput(
+            "Game name cannot contain tabs or newlines".to_string(),
+        ));
+    }
+
+    if is_name_blacklisted(name)? {
+        return Err(CoreError::Blacklisted(name.to_string()));
+    }
+
+    let resolved_target = runners::resolve_add_target(raw_script_path)?;
+
+    with_data_lock(|| {
+        let mut entries = registry::load_entries()?;
+        if entries.iter().any(|entry| entry.name == name) {
+            return Err(CoreError::GameNameExists(name.to_string()));
+        }
+
+        if entries.iter().any(|entry| {
+            entry.runner_kind == resolved_target.runner_kind
+                && entry.launch_target == resolved_target.launch_target
+        }) {
+            return Err(CoreError::GameTargetExists(
+                resolved_target.launch_target.clone(),
+            ));
+        }
+
+        entries.push(GameEntry {
+            name: name.to_string(),
+            runner_kind: resolved_target.runner_kind,
+            launch_target: resolved_target.launch_target.clone(),
+        });
+
+        registry::save_entries(&entries)?;
+        playlist_service::sync_automatic_playlists()
+    })
+}
+
+pub fn list_games() -> CoreResult<Vec<GameEntry>> {
+    let blacklisted_names = registry::load_blacklisted_names()?;
+
+    Ok(registry::load_entries()?
+        .into_iter()
+        .filter(|entry| !blacklisted_names.contains(&entry.name.to_lowercase()))
+        .collect())
+}
+
+pub fn remove_game(name: &str) -> CoreResult<()> {
+    if name.is_empty() {
+        return Err(CoreError::InvalidInput(
+            "Game name cannot be empty".to_string(),
+        ));
+    }
+
+    with_data_lock(|| {
+        let mut entries = registry::load_entries()?;
+        let original_len = entries.len();
+
+        entries.retain(|entry| entry.name != name);
+
+        if entries.len() == original_len {
+            return Err(CoreError::GameNotFound(name.to_string()));
+        }
+
+        registry::save_entries(&entries)?;
+        playlist_service::remove_game_from_all_playlists(name)?;
+        playlist_service::sync_automatic_playlists()
+    })
+}
+
+pub fn remove_all_games() -> CoreResult<usize> {
+    with_data_lock(|| {
+        let entries = registry::load_entries()?;
+        let removed_count = entries.len();
+        let removed_names: Vec<String> = entries.into_iter().map(|entry| entry.name).collect();
+
+        registry::save_entries(&[])?;
+        playlist_service::remove_games_from_all_playlists(&removed_names)?;
+        playlist_service::sync_automatic_playlists()?;
+
+        Ok(removed_count)
+    })
+}
+
+pub fn add_game_to_playlist(playlist_name: &str, game_name: &str) -> CoreResult<()> {
+    with_data_lock(|| {
+        ensure_game_exists(game_name)?;
+        playlist_service::add_game_to_playlist(playlist_name, game_name)
+    })
+}
+
+pub fn remove_game_from_playlist(playlist_name: &str, game_name: &str) -> CoreResult<()> {
+    with_data_lock(|| {
+        ensure_game_exists(game_name)?;
+        playlist_service::remove_game_from_playlist(playlist_name, game_name)
+    })
+}
+
+pub fn list_playlists() -> CoreResult<Vec<super::types::Playlist>> {
+    // Listing refreshes the automatic Steam/Emulation playlists, which may write.
+    with_data_lock(playlist_service::list_playlists)
+}
+
+/// Launches a game and blocks until its process exits. Front ends that must stay responsive
+/// (the GUI) should call this from a worker thread.
+pub fn launch_game(name: &str) -> CoreResult<()> {
+    if name.is_empty() {
+        return Err(CoreError::InvalidInput(
+            "Game name cannot be empty".to_string(),
+        ));
+    }
+
+    let entries = registry::load_entries()?;
+    let entry = entries
+        .into_iter()
+        .find(|game| game.name == name)
+        .ok_or_else(|| CoreError::GameNotFound(name.to_string()))?;
+
+    runners::launch(entry.runner_kind, &entry.launch_target)?;
+    Ok(())
+}
+
+fn is_name_blacklisted(name: &str) -> CoreResult<bool> {
+    let blacklisted_names = registry::load_blacklisted_names()?;
+    Ok(blacklisted_names.contains(&name.to_lowercase()))
+}
+
+fn ensure_game_exists(game_name: &str) -> CoreResult<()> {
+    if game_name.is_empty() {
+        return Err(CoreError::InvalidInput(
+            "Game name cannot be empty".to_string(),
+        ));
+    }
+
+    let entries = registry::load_entries()?;
+    if entries.iter().any(|entry| entry.name == game_name) {
+        Ok(())
+    } else {
+        Err(CoreError::GameNotFound(game_name.to_string()))
+    }
+}

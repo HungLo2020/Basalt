@@ -2,7 +2,7 @@
 Type=Application
 Name=Basalt
 Comment=Basalt game launcher
-Exec=basalt
+Exec=basalt-gui
 Icon=basalt
 Terminal=false
 Categories=Game;

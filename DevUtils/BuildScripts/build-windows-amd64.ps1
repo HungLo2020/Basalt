@@ -40,7 +40,7 @@ function Read-CargoPackageVersion {
     $inPackageSection = $false
 
     foreach ($line in $lines) {
-        if ($line -match '^\[package\]\s*$') {
+        if ($line -match '^\[(workspace\.)?package\]\s*$') {
             $inPackageSection = $true
             continue
         }
@@ -95,8 +95,8 @@ function Main {
     }
     New-Item -Path $buildsDir -ItemType Directory | Out-Null
 
-    Write-Log 'Building Rust release binary'
-    & cargo build --manifest-path $cargoToml --release --locked --target $targetTriple
+    Write-Log 'Building Rust release binaries'
+    & cargo build --manifest-path $cargoToml --release --locked --workspace --target $targetTriple
     if ($LASTEXITCODE -ne 0) {
         throw '[build-windows-amd64] cargo build failed.'
     }
@@ -104,13 +104,13 @@ function Main {
     $stagingDir = Join-Path $buildsDir 'installer-files'
     New-Item -Path $stagingDir -ItemType Directory | Out-Null
 
-    $sourceExe = Join-Path $repoRoot "target\$targetTriple\release\basalt.exe"
-    if (-not (Test-Path $sourceExe)) {
-        throw "[build-windows-amd64] Built executable not found: $sourceExe"
+    foreach ($exeName in @('basalt.exe', 'basalt-gui.exe')) {
+        $sourceExe = Join-Path $repoRoot "target\$targetTriple\release\$exeName"
+        if (-not (Test-Path $sourceExe)) {
+            throw "[build-windows-amd64] Built executable not found: $sourceExe"
+        }
+        Copy-Item -Path $sourceExe -Destination (Join-Path $stagingDir $exeName) -Force
     }
-
-    $stagedExe = Join-Path $stagingDir 'basalt.exe'
-    Copy-Item -Path $sourceExe -Destination $stagedExe -Force
 
     $outputBase = "Basalt-Setup-$version-windows-amd64"
     $artifactPath = Join-Path $buildsDir "$outputBase.exe"
@@ -133,26 +133,27 @@ SolidCompression=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 WizardStyle=modern
-UninstallDisplayIcon={app}\basalt.exe
+UninstallDisplayIcon={app}\basalt-gui.exe
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "$stagedExe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "$stagingDir\basalt.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "$stagingDir\basalt-gui.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Registry]
 Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPath(ExpandConstant('{app}'))
 
 [Icons]
-Name: "{autoprograms}\Basalt"; Filename: "{app}\basalt.exe"
-Name: "{autodesktop}\Basalt"; Filename: "{app}\basalt.exe"; Tasks: desktopicon
+Name: "{autoprograms}\Basalt"; Filename: "{app}\basalt-gui.exe"
+Name: "{autodesktop}\Basalt"; Filename: "{app}\basalt-gui.exe"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop icon"; GroupDescription: "Additional icons:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\basalt.exe"; Description: "Launch Basalt"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\basalt-gui.exe"; Description: "Launch Basalt"; Flags: nowait postinstall skipifsilent
 
 [Code]
 const

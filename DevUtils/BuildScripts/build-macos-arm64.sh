@@ -57,7 +57,7 @@ read_cargo_package_version() {
   local cargo_toml_path="$1"
 
   awk '
-    /^\[package\][[:space:]]*$/ { in_package = 1; next }
+    /^\[(workspace\.)?package\][[:space:]]*$/ { in_package = 1; next }
     /^\[/ { in_package = 0 }
     in_package && /^[[:space:]]*version[[:space:]]*=/ {
       line = $0
@@ -102,8 +102,8 @@ main() {
   rm -rf "$builds_dir"
   mkdir -p "$builds_dir"
 
-  log "Building Rust release binary"
-  cargo build --manifest-path "$cargo_toml" --release --locked --target aarch64-apple-darwin
+  log "Building Rust release binaries"
+  cargo build --manifest-path "$cargo_toml" --release --locked --workspace --target aarch64-apple-darwin
 
   app_name="Basalt"
   app_bundle="${app_name}.app"
@@ -113,8 +113,11 @@ main() {
 
   mkdir -p "$app_dir/Contents/MacOS"
 
-  cp "$repo_root/target/aarch64-apple-darwin/release/basalt" "$app_dir/Contents/MacOS/$app_name"
-  chmod +x "$app_dir/Contents/MacOS/$app_name"
+  # The bundle executable is the GUI. The CLI ships alongside it under a name that can't
+  # collide with "Basalt" on case-insensitive filesystems.
+  cp "$repo_root/target/aarch64-apple-darwin/release/basalt-gui" "$app_dir/Contents/MacOS/$app_name"
+  cp "$repo_root/target/aarch64-apple-darwin/release/basalt" "$app_dir/Contents/MacOS/basalt-cli"
+  chmod +x "$app_dir/Contents/MacOS/$app_name" "$app_dir/Contents/MacOS/basalt-cli"
 
   cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

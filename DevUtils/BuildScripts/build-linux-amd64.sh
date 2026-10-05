@@ -16,7 +16,7 @@ read_cargo_package_version() {
   local cargo_toml_path="$1"
 
   awk '
-    /^\[package\][[:space:]]*$/ { in_package = 1; next }
+    /^\[(workspace\.)?package\][[:space:]]*$/ { in_package = 1; next }
     /^\[/ { in_package = 0 }
     in_package && /^[[:space:]]*version[[:space:]]*=/ {
       line = $0
@@ -58,8 +58,8 @@ main() {
     find "$legacy_build_dir" -maxdepth 1 -type f -name '*.flatpak' -delete
   fi
 
-  log "Building Rust release binary"
-  cargo build --manifest-path "$cargo_toml" --release
+  log "Building Rust release binaries"
+  cargo build --manifest-path "$cargo_toml" --release --workspace
 
   package_root="$builds_dir/pkgroot"
   mkdir -p \
@@ -69,6 +69,7 @@ main() {
     "$package_root/usr/share/icons/hicolor/scalable/apps"
 
   install -m 755 "$repo_root/target/release/basalt" "$package_root/usr/bin/basalt"
+  install -m 755 "$repo_root/target/release/basalt-gui" "$package_root/usr/bin/basalt-gui"
 
   desktop_file="$repo_root/resources/packaging/linux/basalt.desktop"
   if [[ ! -f "$desktop_file" ]]; then
@@ -93,7 +94,7 @@ Section: utils
 Priority: optional
 Architecture: amd64
 Maintainer: Basalt Maintainers
-Description: Basalt game launcher CLI
+Description: Basalt game launcher (basalt CLI and basalt-gui)
 EOF
 
   deb_path="$builds_dir/basalt_${version}_amd64.deb"
