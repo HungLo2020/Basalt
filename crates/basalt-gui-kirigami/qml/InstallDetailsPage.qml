@@ -8,9 +8,8 @@ Kirigami.ScrollablePage {
     id: details
 
     required property string tileKey
-    property Kirigami.Page installPage: null
-
-    readonly property var tile: installPage ? installPage.tileByKey(tileKey) : null
+    // Bound by InstallPage when it creates this page (it owns the tile list).
+    property var tile: null
     readonly property bool isCore: tile !== null && tile.kind === "core"
     readonly property string system: isCore ? tile.system : ""
     readonly property bool coreInstalled: {

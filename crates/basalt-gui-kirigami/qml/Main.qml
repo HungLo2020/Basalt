@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls as Controls
 import org.kde.kirigami as Kirigami
 import org.basalt.app
 
@@ -14,9 +13,9 @@ Kirigami.ApplicationWindow {
 
     // Section pages are created once and owned by the window, so switching sections keeps
     // their state (search, selection, scroll position).
-    property Kirigami.Page libraryPage: null
-    property Kirigami.Page installPage: null
-    property Kirigami.Page settingsPage: null
+    property LibraryPage libraryPage: null
+    property InstallPage installPage: null
+    property SettingsPage settingsPage: null
     property string currentSection: ""
     // Set from BASALT_SCREENSHOT_DIR by the launcher; runs ScreenshotTour instead of normal use.
     property string screenshotDir: ""
@@ -27,29 +26,25 @@ Kirigami.ApplicationWindow {
             return;
         }
 
-        let page;
+        currentSection = section;
+        pageStack.clear();
         if (section === "install") {
             if (!installPage) {
-                installPage = installComponent.createObject(root);
+                installPage = installComponent.createObject(root, { pageRow: pageStack });
             }
-            page = installPage;
+            pageStack.push(installPage);
+            installPage.restoreDetails();
         } else if (section === "settings") {
             if (!settingsPage) {
                 settingsPage = settingsComponent.createObject(root);
             }
-            page = settingsPage;
+            pageStack.push(settingsPage);
         } else {
             if (!libraryPage) {
-                libraryPage = libraryComponent.createObject(root);
+                libraryPage = libraryComponent.createObject(root, { pageRow: pageStack });
             }
-            page = libraryPage;
-        }
-
-        currentSection = section;
-        pageStack.clear();
-        pageStack.push(page);
-        if (page.restoreDetails) {
-            page.restoreDetails();
+            pageStack.push(libraryPage);
+            libraryPage.restoreDetails();
         }
     }
 
@@ -93,14 +88,6 @@ Kirigami.ApplicationWindow {
                 checkable: true
                 checked: root.currentSection === "settings"
                 onTriggered: root.showSection("settings")
-            },
-            // Shown only when a newer Basalt release can be installed.
-            Kirigami.Action {
-                text: "Update Basalt"
-                icon.name: "update-none"
-                visible: Backend.updateButtonText === "Update Basalt"
-                enabled: Backend.updateButtonEnabled
-                onTriggered: Backend.updateButtonClicked()
             }
         ]
     }

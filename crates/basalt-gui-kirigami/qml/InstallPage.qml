@@ -1,6 +1,7 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls as Controls
-import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.basalt.app
 
@@ -9,6 +10,8 @@ Kirigami.ScrollablePage {
 
     title: "Install"
 
+    // The window's page row (Main.qml passes it in), where details pages are pushed.
+    required property Kirigami.PageRow pageRow
     readonly property alias tileGrid: grid
 
     // The grid takes the spare width; the details column keeps its preferred width.
@@ -28,11 +31,11 @@ Kirigami.ScrollablePage {
         return tiles.find(tile => tile.key === key) || null;
     }
 
-    property Kirigami.Page detailsPage: null
+    property InstallDetailsPage detailsPage: null
 
     function showDetails(tile) {
-        while (pageStack.depth > 1) {
-            pageStack.pop();
+        while (pageRow.depth > 1) {
+            pageRow.pop();
         }
         if (detailsPage && (!tile || detailsPage.tileKey !== tile.key)) {
             detailsPage.destroy();
@@ -40,9 +43,13 @@ Kirigami.ScrollablePage {
         }
         if (tile) {
             if (!detailsPage) {
-                detailsPage = detailsComponent.createObject(page, { tileKey: tile.key });
+                const key = tile.key;
+                detailsPage = detailsComponent.createObject(page, {
+                    tileKey: key,
+                    tile: Qt.binding(() => page.tileByKey(key))
+                });
             }
-            pageStack.push(detailsPage);
+            pageRow.push(detailsPage);
         }
     }
 
@@ -103,9 +110,7 @@ Kirigami.ScrollablePage {
     Component {
         id: detailsComponent
 
-        InstallDetailsPage {
-            installPage: page
-        }
+        InstallDetailsPage {}
     }
 
     Component.onCompleted: forceActiveFocus()

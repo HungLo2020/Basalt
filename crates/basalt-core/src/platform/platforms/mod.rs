@@ -1,25 +1,11 @@
-use std::path::Path;
 use std::process::Output;
 
-#[cfg(not(any(
-    all(target_os = "linux", target_arch = "x86_64"),
-    all(target_os = "windows", target_arch = "x86_64")
-)))]
-mod fallback;
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-mod linux_x86_64;
-#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-mod windows_x86_64;
+#[cfg(not(target_os = "linux"))]
+compile_error!("Basalt only supports Linux.");
 
-#[cfg(not(any(
-    all(target_os = "linux", target_arch = "x86_64"),
-    all(target_os = "windows", target_arch = "x86_64")
-)))]
-use fallback as implementation;
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-use linux_x86_64 as implementation;
-#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-use windows_x86_64 as implementation;
+mod linux;
+
+use linux as implementation;
 
 pub(super) fn command_exists(command_name: &str) -> bool {
     implementation::command_exists(command_name)
@@ -58,20 +44,4 @@ pub(super) fn launch_script_with_stdin(
 
 pub(super) fn run_command(command_name: &str, args: &[&str]) -> Result<Output, String> {
     implementation::run_command(command_name, args)
-}
-
-pub(super) fn basalt_update_asset_suffix() -> &'static str {
-    implementation::basalt_update_asset_suffix()
-}
-
-pub(super) fn basalt_update_asset_marker() -> &'static str {
-    implementation::basalt_update_asset_marker()
-}
-
-pub(super) fn install_basalt_update_and_restart(installer_path: &Path) -> Result<(), String> {
-    implementation::install_basalt_update_and_restart(installer_path)
-}
-
-pub(super) fn can_install_basalt_updates() -> bool {
-    implementation::can_install_basalt_updates()
 }

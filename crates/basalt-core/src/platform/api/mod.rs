@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, ExitStatus, Output};
 
 use directories::{BaseDirs, ProjectDirs};
@@ -32,12 +32,8 @@ pub fn cache_dir() -> Result<PathBuf, String> {
 }
 
 /// Read-only, system-wide Basalt data installed by the package (e.g. `/usr/share/basalt`),
-/// in priority order. Empty on platforms without such a convention.
+/// in priority order.
 pub fn system_data_dirs() -> Vec<PathBuf> {
-    if !cfg!(target_os = "linux") {
-        return Vec::new();
-    }
-
     let raw = std::env::var("XDG_DATA_DIRS")
         .ok()
         .filter(|value| !value.trim().is_empty())
@@ -66,15 +62,14 @@ pub fn command_exists(command_name: &str) -> bool {
 /// Runs an executable that ships next to the current one (falling back to PATH),
 /// waits for it to exit, and returns its exit status.
 pub fn run_sibling_executable(name: &str) -> Result<ExitStatus, String> {
-    let file_name = format!("{}{}", name, std::env::consts::EXE_SUFFIX);
     let sibling = std::env::current_exe()
         .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join(&file_name)))
+        .and_then(|exe| exe.parent().map(|dir| dir.join(name)))
         .filter(|candidate| candidate.is_file());
 
     let program = match sibling {
         Some(path) => path,
-        None if command_exists(&file_name) || command_exists(name) => PathBuf::from(name),
+        None if command_exists(name) => PathBuf::from(name),
         None => {
             return Err(format!(
                 "Could not find '{}' next to this executable or on PATH",
@@ -118,20 +113,4 @@ pub fn launch_script_with_stdin(script_path: &str, stdin_content: &str) -> Resul
 
 pub fn run_command(command_name: &str, args: &[&str]) -> Result<Output, String> {
     platforms::run_command(command_name, args)
-}
-
-pub fn basalt_update_asset_suffix() -> &'static str {
-    platforms::basalt_update_asset_suffix()
-}
-
-pub fn basalt_update_asset_marker() -> &'static str {
-    platforms::basalt_update_asset_marker()
-}
-
-pub fn install_basalt_update_and_restart(installer_path: &Path) -> Result<(), String> {
-    platforms::install_basalt_update_and_restart(installer_path)
-}
-
-pub fn can_install_basalt_updates() -> bool {
-    platforms::can_install_basalt_updates()
 }

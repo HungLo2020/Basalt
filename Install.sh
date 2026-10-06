@@ -51,6 +51,11 @@ install_deb_package() {
     sudo dpkg -i "$deb_path"
   fi
 
+  if ! grep -rqs "mattpackages" /etc/apt/sources.list /etc/apt/sources.list.d/; then
+    echo "[deb-install] Note: the MattPackages apt repository is not configured on this system." >&2
+    echo "[deb-install] Basalt updates are delivered through it with apt; without it this install will not update." >&2
+  fi
+
   if command -v basalt >/dev/null 2>&1; then
     log "Installed successfully"
     echo "Run with: basalt list"

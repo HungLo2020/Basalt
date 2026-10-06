@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import org.kde.kirigami as Kirigami
 import org.basalt.app
@@ -8,7 +10,8 @@ import org.basalt.app
 QtObject {
     id: tour
 
-    required property Kirigami.ApplicationWindow window
+    // The Main window; untyped because Main creates this object (typing it would be a cycle).
+    required property var window
     required property string outputDir
 
     property int step: 0
@@ -49,7 +52,7 @@ QtObject {
     function capture() {
         const name = steps[step].name;
         // windowGrabber is a context property the launcher provides only for this tour.
-        const saved = windowGrabber.grab(window, outputDir + "/" + name + ".png");
+        const saved = windowGrabber.grab(window, outputDir + "/" + name + ".png"); // qmllint disable unqualified
         console.info("screenshot", name, saved ? "saved" : "FAILED");
         step += 1;
         if (step < steps.length) {
@@ -71,7 +74,7 @@ QtObject {
             if (tour.waitingForProgress && Backend.jobMessage !== "") {
                 tour.waitingForProgress = false;
                 // Give the progress bar a moment to render; the next step cancels the job.
-                progressDelay.start();
+                tour.progressDelay.start();
             }
         }
     }

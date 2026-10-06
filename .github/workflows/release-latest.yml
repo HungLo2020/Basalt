@@ -38,9 +38,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Trust the checkout for git
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -49,31 +46,6 @@ jobs:
 
       - name: Test
         run: cargo test --locked --workspace
-
-      - name: Prepare release metadata
-        id: metadata
-        run: |
-          commit_sha=$(git rev-parse HEAD)
-          timestamp=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          timestamp_unix=$(date -u +"%s")
-          version=$(sed -nE '/^\[workspace\.package\]/,/^\[/ s/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' Cargo.toml | head -n1)
-
-          mkdir -p builds
-          cat > builds/basalt-build-info.json <<EOF
-          {
-            "version": "$version",
-            "commit": "$commit_sha",
-            "built_at": "$timestamp",
-            "built_at_unix": "$timestamp_unix"
-          }
-          EOF
-
-      - name: Upload release metadata artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: basalt-build-info
-          path: builds/basalt-build-info.json
-          if-no-files-found: error
 
   build-linux:
     needs: validate

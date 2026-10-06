@@ -4,7 +4,13 @@ Basalt is a minimal, focused game launcher for Linux.
 
 ## Install
 
-Run this on Linux to download only `Install.sh` from this repository and execute it:
+On a system with the MattPackages apt repository configured:
+
+`sudo apt install basalt`
+
+Basalt is then updated with the rest of the system (`sudo apt upgrade`); it has no built-in updater.
+
+Without the repository, `Install.sh` installs the latest `.deb` from GitHub releases (or builds one locally), but that install will not update itself:
 
 `curl -fsSL https://raw.githubusercontent.com/HungLo2020/Basalt/main/Install.sh | bash`
 
@@ -49,6 +55,8 @@ Linux (Debian/Ubuntu package names):
 sudo apt install qt6-base-dev qt6-declarative-dev qml6-module-org-kde-kirigami qml6-module-org-kde-desktop
 cargo run
 ```
+
+Because of that, QML mistakes are caught by `qmllint` instead of the compiler: run `bash DevUtils/LintQml.sh` (CI runs it too). It also checks the QML against the Rust `Backend`'s properties.
 
 The QML is compiled by Qt at runtime rather than ahead of time: Qt's ahead-of-time QML compiler uses Qt's private ABI, which would tie the `.deb` to one exact Qt version. The package only needs minimum Qt versions, so distribution Qt updates don't break it.
 

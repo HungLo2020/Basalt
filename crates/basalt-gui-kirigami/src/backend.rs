@@ -39,10 +39,8 @@ pub mod qobject {
         #[qproperty(QString, remote_saves_root)]
         #[qproperty(bool, fullscreen)]
         #[qproperty(bool, maximized)]
-        // Self-update.
-        #[qproperty(QString, update_status)]
-        #[qproperty(QString, update_button_text)]
-        #[qproperty(bool, update_button_enabled)]
+        // Basalt itself is updated by the system package manager; shown in Settings.
+        #[qproperty(QString, app_version)]
         #[qproperty(bool, controller_connected)]
         type Backend = super::BackendRust;
 
@@ -84,8 +82,6 @@ pub mod qobject {
         fn save_remote_paths(self: Pin<&mut Backend>, roms_root: &QString, saves_root: &QString);
         #[qinvokable]
         fn set_display_mode(self: Pin<&mut Backend>, fullscreen: bool, maximized: bool);
-        #[qinvokable]
-        fn update_button_clicked(self: Pin<&mut Backend>);
 
         /// Image URL for an artwork key, or "" while unresolved.
         #[qinvokable]
@@ -110,7 +106,7 @@ use std::thread;
 
 use basalt_core::{
     ArtworkRequest, CancelToken, CoreError, CoreResult, DiscoverReport, DiscoverResult, GameEntry,
-    Playlist, Progress, UpdateCheckResult,
+    Playlist, Progress,
 };
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
@@ -155,9 +151,7 @@ pub struct BackendRust {
     remote_saves_root: QString,
     fullscreen: bool,
     maximized: bool,
-    update_status: QString,
-    update_button_text: QString,
-    update_button_enabled: bool,
+    app_version: QString,
     controller_connected: bool,
 
     initialized: bool,
@@ -168,9 +162,6 @@ pub struct BackendRust {
     artwork_generation: u64,
     artwork: Option<ArtworkResolver>,
     job_cancel: Option<CancelToken>,
-    latest_update: Option<UpdateCheckResult>,
-    /// Button label while an update check or install is running.
-    update_busy: Option<&'static str>,
 }
 
 impl Default for BackendRust {
@@ -195,9 +186,7 @@ impl Default for BackendRust {
             remote_saves_root: QString::default(),
             fullscreen: false,
             maximized: false,
-            update_status: QString::default(),
-            update_button_text: QString::from("Check for updates"),
-            update_button_enabled: true,
+            app_version: QString::from(env!("CARGO_PKG_VERSION")),
             controller_connected: false,
 
             initialized: false,
@@ -208,8 +197,6 @@ impl Default for BackendRust {
             artwork_generation: 0,
             artwork: None,
             job_cancel: None,
-            latest_update: None,
-            update_busy: None,
         }
     }
 }
@@ -231,7 +218,6 @@ impl qobject::Backend {
         self.as_mut().start_artwork_resolver();
         self.as_mut().start_controller();
         self.as_mut().load_games_in_background();
-        self.as_mut().start_update_check();
     }
 
     fn load_settings(mut self: Pin<&mut Self>) {
@@ -798,107 +784,6 @@ impl qobject::Backend {
             Err(error) => format!("Save failed: {}", error),
         };
         self.as_mut().set_settings_status(qs(message));
-    }
-
-    // ----- self-update -----------------------------------------------------------------------
-
-    fn start_update_check(mut self: Pin<&mut Self>) {
-        if self.rust().update_busy.is_some() {
-            return;
-        }
-        self.as_mut().rust_mut().update_busy = Some("Checking...");
-        self.as_mut()
-            .set_update_status(qs("Checking for Basalt updates..."));
-        self.as_mut().refresh_update_button();
-
-        let qt_thread = self.qt_thread();
-        thread::spawn(move || {
-            let result = basalt_core::check_for_basalt_updates();
-            let _ = qt_thread.queue(move |mut backend: Pin<&mut qobject::Backend>| {
-                backend.as_mut().rust_mut().update_busy = None;
-                let message = match &result {
-                    Ok(update) if update.update_available && basalt_core::can_install_basalt_updates() => {
-                        format!(
-                            "Basalt update available: {} ({}) - {}",
-                            update.release_name, update.latest.version, update.release_page_url
-                        )
-                    }
-                    Ok(update) if update.update_available => format!(
-                        "Basalt update available: {} ({}), but automatic updates are not supported on this platform.",
-                        update.release_name, update.latest.version
-                    ),
-                    Ok(update) => format!(
-                        "Basalt is up to date: {} ({})",
-                        update.current.version, update.current.commit
-                    ),
-                    Err(error) => error.to_string(),
-                };
-                backend.as_mut().rust_mut().latest_update = result.ok();
-                backend.as_mut().set_update_status(qs(message));
-                backend.as_mut().refresh_update_button();
-            });
-        });
-    }
-
-    fn update_button_clicked(mut self: Pin<&mut Self>) {
-        if !*self.update_button_enabled() {
-            return;
-        }
-
-        let available_update = self
-            .rust()
-            .latest_update
-            .clone()
-            .filter(|update| update.update_available);
-        let Some(update) = available_update else {
-            self.as_mut().start_update_check();
-            return;
-        };
-
-        self.as_mut().rust_mut().update_busy = Some("Updating...");
-        self.as_mut()
-            .set_update_status(qs(format!("Downloading {}...", update.asset_name)));
-        self.as_mut().refresh_update_button();
-
-        let qt_thread = self.qt_thread();
-        thread::spawn(move || {
-            // On success this restarts Basalt and does not return.
-            let result = basalt_core::download_basalt_update(&update)
-                .and_then(|downloaded| basalt_core::install_basalt_update_and_restart(&downloaded));
-            let _ = qt_thread.queue(move |mut backend: Pin<&mut qobject::Backend>| {
-                backend.as_mut().rust_mut().update_busy = None;
-                let message = match result {
-                    Ok(()) => "Basalt update completed".to_string(),
-                    Err(error) => format!("Basalt update failed: {}", error),
-                };
-                backend.as_mut().set_update_status(qs(message));
-                backend.as_mut().refresh_update_button();
-            });
-        });
-    }
-
-    fn refresh_update_button(mut self: Pin<&mut Self>) {
-        let update_available = self
-            .rust()
-            .latest_update
-            .as_ref()
-            .is_some_and(|update| update.update_available);
-        let can_install = basalt_core::can_install_basalt_updates();
-
-        let busy = self.rust().update_busy;
-        let text = if let Some(label) = busy {
-            label
-        } else if update_available && can_install {
-            "Update Basalt"
-        } else if update_available {
-            "Update unsupported"
-        } else {
-            "Check for updates"
-        };
-        let enabled = busy.is_none() && (!update_available || can_install);
-
-        self.as_mut().set_update_button_text(qs(text));
-        self.as_mut().set_update_button_enabled(enabled);
     }
 
     // ----- queries ---------------------------------------------------------------------------

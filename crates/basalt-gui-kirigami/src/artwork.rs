@@ -85,12 +85,12 @@ impl ArtworkResolver {
     }
 }
 
-/// `file://` URL for a local path, valid on Linux, macOS, and Windows (`C:\x` -> `file:///C:/x`).
-/// Characters that would otherwise start a URL query or fragment are escaped.
+/// `file://` URL for an absolute local path. Characters that would otherwise start a URL query
+/// or fragment are escaped.
 pub fn file_url(path: &Path) -> String {
-    let normalized = path.to_string_lossy().replace('\\', "/");
-    let mut escaped = String::with_capacity(normalized.len());
-    for character in normalized.chars() {
+    let path = path.to_string_lossy();
+    let mut escaped = String::with_capacity(path.len());
+    for character in path.chars() {
         match character {
             '%' => escaped.push_str("%25"),
             '#' => escaped.push_str("%23"),
@@ -99,11 +99,7 @@ pub fn file_url(path: &Path) -> String {
         }
     }
 
-    if escaped.starts_with('/') {
-        format!("file://{}", escaped)
-    } else {
-        format!("file:///{}", escaped)
-    }
+    format!("file://{}", escaped)
 }
 
 #[cfg(test)]
@@ -111,14 +107,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn file_urls_handle_unix_windows_and_special_characters() {
+    fn file_urls_escape_special_characters() {
         assert_eq!(
             file_url(Path::new("/home/me/Pokemon Radical Red.jpeg")),
             "file:///home/me/Pokemon Radical Red.jpeg"
-        );
-        assert_eq!(
-            file_url(Path::new(r"C:\Games\art.png")),
-            "file:///C:/Games/art.png"
         );
         assert_eq!(
             file_url(Path::new("/art/Sonic #2? 100%.png")),

@@ -8,10 +8,9 @@ Kirigami.ScrollablePage {
     id: details
 
     required property string gameName
-    property Kirigami.Page library: null
-
-    readonly property var game: library ? library.gameByName(gameName) : null
-    readonly property bool running: library ? library.isRunning(gameName) : false
+    // Bound by LibraryPage when it creates this page (it owns the game list).
+    property var game: null
+    property bool running: false
 
     Kirigami.ColumnView.fillWidth: false
     Kirigami.ColumnView.preferredWidth: Kirigami.Units.gridUnit * 24

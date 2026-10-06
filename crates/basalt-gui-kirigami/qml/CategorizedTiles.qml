@@ -1,3 +1,8 @@
+pragma ComponentBehavior: Bound
+// keyOf/titleOf/imageOf/iconOf/badgeOf are function-valued properties on purpose: they let the
+// same grid present games and install tiles.
+// qmllint disable use-proper-function
+
 import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts

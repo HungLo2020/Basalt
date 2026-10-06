@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
@@ -9,6 +11,8 @@ Kirigami.ScrollablePage {
 
     title: "Library"
 
+    // The window's page row (Main.qml passes it in), where details pages are pushed.
+    required property Kirigami.PageRow pageRow
     readonly property alias tileGrid: grid
 
     // The grid takes the spare width; the details column keeps its preferred width.
@@ -51,13 +55,13 @@ Kirigami.ScrollablePage {
         }
     }
 
-    property Kirigami.Page detailsPage: null
+    property GameDetailsPage detailsPage: null
 
     function showDetails(game) {
         // Keep exactly one details column to the right of the library. The page is created and
-        // destroyed here (parented to this page) rather than by pageStack.
-        while (pageStack.depth > 1) {
-            pageStack.pop();
+        // destroyed here (parented to this page) rather than by the page row.
+        while (pageRow.depth > 1) {
+            pageRow.pop();
         }
         if (detailsPage && (!game || detailsPage.gameName !== game.name)) {
             detailsPage.destroy();
@@ -65,9 +69,14 @@ Kirigami.ScrollablePage {
         }
         if (game) {
             if (!detailsPage) {
-                detailsPage = detailsComponent.createObject(page, { gameName: game.name });
+                const name = game.name;
+                detailsPage = detailsComponent.createObject(page, {
+                    gameName: name,
+                    game: Qt.binding(() => page.gameByName(name)),
+                    running: Qt.binding(() => page.isRunning(name))
+                });
             }
-            pageStack.push(detailsPage);
+            pageRow.push(detailsPage);
         }
     }
 
@@ -180,9 +189,7 @@ Kirigami.ScrollablePage {
     Component {
         id: detailsComponent
 
-        GameDetailsPage {
-            library: page
-        }
+        GameDetailsPage {}
     }
 
     Component.onCompleted: forceActiveFocus()

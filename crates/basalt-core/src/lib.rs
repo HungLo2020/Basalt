@@ -24,7 +24,6 @@ mod script_service;
 mod settings;
 mod storage;
 mod types;
-mod update_service;
 
 pub use artwork::{clear_artwork_cache, ArtworkKind, ArtworkRequest};
 pub use discovery_service::{discover_games, discover_with_runners};
@@ -60,12 +59,6 @@ pub use settings::{
 pub use types::{
     DiscoverReport, DiscoverResult, DiscoverRunner, EmulatorDiscoverReport, GameEntry, Playlist,
     SteamDiscoverReport, ALL_DISCOVER_RUNNERS,
-};
-pub use update_service::{
-    can_install_updates as can_install_basalt_updates,
-    check_for_updates as check_for_basalt_updates, download_update as download_basalt_update,
-    install_update_and_restart as install_basalt_update_and_restart, BasaltBuildInfo,
-    DownloadedUpdate, UpdateCheckResult,
 };
 
 /// Syncs a system's ROMs down from the remote root, then re-runs emulator discovery so the

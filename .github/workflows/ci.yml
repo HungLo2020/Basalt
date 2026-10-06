@@ -29,7 +29,10 @@ jobs:
             qt6-base-dev \
             qt6-base-dev-tools \
             qt6-declarative-dev \
-            qt6-declarative-dev-tools
+            qt6-declarative-dev-tools \
+            qml6-module-org-kde-kirigami \
+            qml6-module-qtquick-controls \
+            qml6-module-qtquick-layouts
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,3 +45,6 @@ jobs:
 
       - name: Test
         run: cargo test --locked --workspace
+
+      - name: Lint QML
+        run: bash DevUtils/LintQml.sh

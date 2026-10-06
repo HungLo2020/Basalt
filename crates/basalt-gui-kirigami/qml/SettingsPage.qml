@@ -80,21 +80,19 @@ Kirigami.ScrollablePage {
 
         Kirigami.Separator {
             Kirigami.FormData.isSection: true
-            Kirigami.FormData.label: "Basalt Updates"
+            Kirigami.FormData.label: "About"
         }
 
         Controls.Label {
-            Kirigami.FormData.label: "Status:"
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 24
-            text: Backend.updateStatus !== "" ? Backend.updateStatus : "Update status unavailable"
-            wrapMode: Text.Wrap
+            Kirigami.FormData.label: "Version:"
+            text: "Basalt " + Backend.appVersion
         }
 
-        Controls.Button {
-            text: Backend.updateButtonText
-            icon.name: "update-none"
-            enabled: Backend.updateButtonEnabled
-            onClicked: Backend.updateButtonClicked()
+        Controls.Label {
+            Kirigami.FormData.label: "Updates:"
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 24
+            text: "Basalt is updated by your system's package manager (apt) from the MattPackages repository."
+            wrapMode: Text.Wrap
         }
 
         Kirigami.Separator {

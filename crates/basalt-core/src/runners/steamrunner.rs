@@ -51,10 +51,6 @@ pub fn launch(appid: &str) -> Result<(), String> {
             &["run", "com.valvesoftware.Steam", "-applaunch", appid],
         )
         .map_err(|err| format!("Failed to launch Steam app via flatpak: {}", err))?
-    } else if cfg!(target_os = "macos") && platform::command_exists("open") {
-        let steam_url = format!("steam://rungameid/{}", appid);
-        platform::run_command("open", &[&steam_url])
-            .map_err(|err| format!("Failed to launch Steam app via open command: {}", err))?
     } else {
         return Err("Steam is not installed or not on PATH.".to_string());
     };
