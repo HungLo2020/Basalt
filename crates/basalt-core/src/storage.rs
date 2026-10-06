@@ -12,8 +12,8 @@ use std::cell::Cell;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Once;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::error::{CoreError, CoreResult};
 use crate::platform;
@@ -69,10 +69,10 @@ fn migrate_legacy_app_dir() {
         };
         for file_name in file_names {
             let source = legacy_dir.join(file_name);
-            if source.is_file() {
-                if let Err(error) = move_file_if_absent(&source, &target_dir.join(file_name)) {
-                    eprintln!("Warning: could not migrate {}: {}", source.display(), error);
-                }
+            if source.is_file()
+                && let Err(error) = move_file_if_absent(&source, &target_dir.join(file_name))
+            {
+                eprintln!("Warning: could not migrate {}: {}", source.display(), error);
             }
         }
     }

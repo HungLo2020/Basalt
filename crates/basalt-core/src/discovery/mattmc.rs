@@ -1,9 +1,9 @@
 use crate::error::CoreError;
-use crate::mattmc::{mattmc_install_dir, MATTMC_GAME_NAME};
+use crate::mattmc::{MATTMC_GAME_NAME, mattmc_install_dir};
 use crate::platform;
 use crate::registry;
 use crate::runners::RunnerKind;
-use crate::{add_game, CoreResult, DiscoverResult};
+use crate::{CoreResult, DiscoverResult, add_game};
 
 pub fn discover_mattmc_entry() -> CoreResult<DiscoverResult> {
     let mattmc_root = mattmc_install_dir()?;

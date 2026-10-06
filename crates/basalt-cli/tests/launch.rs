@@ -4,7 +4,7 @@ mod common;
 
 use std::fs;
 
-use common::{stdout, TestHome};
+use common::{TestHome, stdout};
 
 #[test]
 fn launching_an_emulator_game_without_its_core_fails_without_installing() {

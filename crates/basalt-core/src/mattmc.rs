@@ -3,9 +3,9 @@
 
 use std::path::PathBuf;
 
+use crate::GameEntry;
 use crate::error::CoreResult;
 use crate::platform;
-use crate::GameEntry;
 
 /// The library entry name MattMC is registered under by discovery and install. MattMC features
 /// apply to the entry with exactly this name.

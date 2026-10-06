@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use super::{
-    extract_steam_appid, normalize_matching_title, parse_emulator_launch_target, ArtworkKind,
-    ArtworkRequest, LOCAL_ARTWORK_EXTENSIONS,
+    ArtworkKind, ArtworkRequest, LOCAL_ARTWORK_EXTENSIONS, extract_steam_appid,
+    normalize_matching_title, parse_emulator_launch_target,
 };
 use crate::{platform, storage};
 
@@ -107,21 +107,21 @@ fn build_local_artwork_name_candidates(request: &ArtworkRequest) -> Vec<String> 
     push_local_candidate(&mut candidates, &request.key);
     push_local_candidate(&mut candidates, &request.target);
 
-    if request.kind == ArtworkKind::Steam {
-        if let Some(appid) = extract_steam_appid(&request.target) {
-            push_local_candidate(&mut candidates, &appid);
-        }
+    if request.kind == ArtworkKind::Steam
+        && let Some(appid) = extract_steam_appid(&request.target)
+    {
+        push_local_candidate(&mut candidates, &appid);
     }
 
-    if request.kind == ArtworkKind::Emulator {
-        if let Some((_, rom_path)) = parse_emulator_launch_target(&request.target) {
-            if let Some(file_stem) = rom_path.file_stem().and_then(|value| value.to_str()) {
-                push_local_candidate(&mut candidates, file_stem);
-            }
+    if request.kind == ArtworkKind::Emulator
+        && let Some((_, rom_path)) = parse_emulator_launch_target(&request.target)
+    {
+        if let Some(file_stem) = rom_path.file_stem().and_then(|value| value.to_str()) {
+            push_local_candidate(&mut candidates, file_stem);
+        }
 
-            if let Some(file_name) = rom_path.file_name().and_then(|value| value.to_str()) {
-                push_local_candidate(&mut candidates, file_name);
-            }
+        if let Some(file_name) = rom_path.file_name().and_then(|value| value.to_str()) {
+            push_local_candidate(&mut candidates, file_name);
         }
     }
 

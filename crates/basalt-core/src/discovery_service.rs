@@ -2,7 +2,7 @@ use super::discovery;
 use super::error::CoreResult;
 use super::playlist_service;
 use super::storage::with_data_lock;
-use super::{DiscoverReport, DiscoverRunner, SteamDiscoverReport, ALL_DISCOVER_RUNNERS};
+use super::{ALL_DISCOVER_RUNNERS, DiscoverReport, DiscoverRunner, SteamDiscoverReport};
 
 pub fn discover_games() -> CoreResult<DiscoverReport> {
     discover_with_runners(&ALL_DISCOVER_RUNNERS)

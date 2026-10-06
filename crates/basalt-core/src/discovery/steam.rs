@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::{add_game, CoreResult};
+use crate::{CoreResult, add_game};
 
 /// Adds every installed Steam app to the registry. Returns (found, added, already_exists).
 ///

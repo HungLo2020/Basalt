@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Child;
 
-use common::{stdout, TestHome};
+use common::{TestHome, stdout};
 use serde_json::Value;
 
 fn files_in(dir: &Path) -> Vec<String> {
@@ -89,10 +89,11 @@ fn legacy_basalt_dir_is_migrated_to_xdg_locations() {
     );
     assert!(home.data_dir().join("blacklist.txt").is_file());
     assert!(home.config_dir().join("settings.json").is_file());
-    assert!(home
-        .path
-        .join(".cache/basalt/steam_artwork/620.jpg")
-        .is_file());
+    assert!(
+        home.path
+            .join(".cache/basalt/steam_artwork/620.jpg")
+            .is_file()
+    );
     assert!(!legacy.exists(), "emptied legacy dir should be removed");
 
     let settings = stdout(&home.run(&["settings", "get"]));
@@ -141,8 +142,10 @@ fn duplicate_adds_fail_with_a_clear_error() {
 
     let by_name = home.run(&["add", "Celeste", &home.script("other")]);
     assert!(!by_name.status.success());
-    assert!(String::from_utf8_lossy(&by_name.stderr)
-        .contains("A game with name 'Celeste' already exists"));
+    assert!(
+        String::from_utf8_lossy(&by_name.stderr)
+            .contains("A game with name 'Celeste' already exists")
+    );
 
     let by_target = home.run(&["add", "Another Name", &script]);
     assert!(!by_target.status.success());

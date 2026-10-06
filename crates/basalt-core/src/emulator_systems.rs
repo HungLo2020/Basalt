@@ -31,8 +31,7 @@ const EMULATOR_SYSTEMS: [EmulatorSystemSpec; 6] = [
     EmulatorSystemSpec {
         system_key: "nes",
         core_file: "nestopia_libretro.so",
-        archive_url:
-            "https://buildbot.libretro.com/nightly/linux/x86_64/latest/nestopia_libretro.so.zip",
+        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/nestopia_libretro.so.zip",
         rom_extensions: &["nes", "fds", "unf", "unif"],
         supports_save_sync: true,
         short_name: "NES",
@@ -44,8 +43,7 @@ const EMULATOR_SYSTEMS: [EmulatorSystemSpec; 6] = [
     EmulatorSystemSpec {
         system_key: "gba",
         core_file: "mgba_libretro.so",
-        archive_url:
-            "https://buildbot.libretro.com/nightly/linux/x86_64/latest/mgba_libretro.so.zip",
+        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/mgba_libretro.so.zip",
         rom_extensions: &["gba"],
         supports_save_sync: true,
         short_name: "GBA",
@@ -57,8 +55,7 @@ const EMULATOR_SYSTEMS: [EmulatorSystemSpec; 6] = [
     EmulatorSystemSpec {
         system_key: "snes",
         core_file: "snes9x_libretro.so",
-        archive_url:
-            "https://buildbot.libretro.com/nightly/linux/x86_64/latest/snes9x_libretro.so.zip",
+        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/snes9x_libretro.so.zip",
         rom_extensions: &["sfc", "smc", "swc", "fig", "bs"],
         supports_save_sync: true,
         short_name: "SNES",
@@ -70,8 +67,7 @@ const EMULATOR_SYSTEMS: [EmulatorSystemSpec; 6] = [
     EmulatorSystemSpec {
         system_key: "atari2600",
         core_file: "stella_libretro.so",
-        archive_url:
-            "https://buildbot.libretro.com/nightly/linux/x86_64/latest/stella_libretro.so.zip",
+        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/stella_libretro.so.zip",
         rom_extensions: &["a26", "bin", "rom"],
         supports_save_sync: false,
         short_name: "Atari 2600",
@@ -83,8 +79,7 @@ const EMULATOR_SYSTEMS: [EmulatorSystemSpec; 6] = [
     EmulatorSystemSpec {
         system_key: "nds",
         core_file: "melonds_libretro.so",
-        archive_url:
-            "https://buildbot.libretro.com/nightly/linux/x86_64/latest/melonds_libretro.so.zip",
+        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/melonds_libretro.so.zip",
         rom_extensions: &["nds"],
         supports_save_sync: true,
         short_name: "NDS",
@@ -96,8 +91,7 @@ const EMULATOR_SYSTEMS: [EmulatorSystemSpec; 6] = [
     EmulatorSystemSpec {
         system_key: "3ds",
         core_file: "citra_libretro.so",
-        archive_url:
-            "https://buildbot.libretro.com/nightly/linux/x86_64/latest/citra_libretro.so.zip",
+        archive_url: "https://buildbot.libretro.com/nightly/linux/x86_64/latest/citra_libretro.so.zip",
         rom_extensions: &["3ds", "cci", "cxi", "3dsx"],
         supports_save_sync: true,
         short_name: "3DS",

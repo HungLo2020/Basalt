@@ -6,12 +6,12 @@
 //! from before a refresh are ignored.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 
 use basalt_core::{ArtworkKind, ArtworkRequest};
-use crossbeam_channel::{unbounded, Sender};
+use crossbeam_channel::{Sender, unbounded};
 
 /// Bundled with the QML module (see build.rs).
 pub const MATTMC_ARTWORK_URL: &str = "qrc:/qt/qml/org/basalt/app/assets/MattMC.svg";

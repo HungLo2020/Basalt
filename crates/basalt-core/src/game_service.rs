@@ -1,9 +1,9 @@
+use super::GameEntry;
 use super::error::{CoreError, CoreResult};
 use super::playlist_service;
 use super::registry;
 use super::runners;
 use super::storage::with_data_lock;
-use super::GameEntry;
 
 pub fn add_game(name: &str, raw_script_path: &str) -> CoreResult<()> {
     if name.is_empty() {

@@ -11,7 +11,7 @@ default-members = ["crates/basalt-core", "crates/basalt-gui-kirigami"]
 
 [workspace.package]
 version = "0.3.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.89"
 
 [workspace.dependencies]

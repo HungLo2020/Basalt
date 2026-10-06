@@ -2,12 +2,12 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::EmulationLaunchTarget;
 use crate::emulation;
 use crate::error::CoreError;
 use crate::playlist_service;
 use crate::registry;
 use crate::runners::RunnerKind;
-use crate::EmulationLaunchTarget;
 use crate::{CoreResult, EmulatorDiscoverReport, GameEntry};
 
 pub fn discover_emulator_entries() -> CoreResult<EmulatorDiscoverReport> {

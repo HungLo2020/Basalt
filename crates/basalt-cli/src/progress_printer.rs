@@ -51,11 +51,11 @@ impl ProgressPrinter {
 
     /// Ends the current progress line so normal output starts on a fresh line.
     pub(super) fn finish(&self) {
-        if let Some(Ok(mut state)) = self.state.as_ref().map(|state| state.lock()) {
-            if state.line_open {
-                eprintln!();
-                state.line_open = false;
-            }
+        if let Some(Ok(mut state)) = self.state.as_ref().map(|state| state.lock())
+            && state.line_open
+        {
+            eprintln!();
+            state.line_open = false;
         }
     }
 }

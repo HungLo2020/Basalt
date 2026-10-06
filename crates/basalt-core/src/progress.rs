@@ -6,8 +6,8 @@
 //! operation has started changing an installation in place.
 
 use std::fmt;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::error::{CoreError, CoreResult};
 

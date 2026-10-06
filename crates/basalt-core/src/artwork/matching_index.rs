@@ -4,8 +4,8 @@ use std::sync::{Mutex, OnceLock};
 
 use super::cache;
 use super::{
-    encode_url_path_segment, normalize_matching_title, stable_hash_hex, strip_bracketed_segments,
-    EMULATOR_ARTWORK_INDEX_TTL_SECONDS, EMULATOR_ARTWORK_USER_AGENT,
+    EMULATOR_ARTWORK_INDEX_TTL_SECONDS, EMULATOR_ARTWORK_USER_AGENT, encode_url_path_segment,
+    normalize_matching_title, stable_hash_hex, strip_bracketed_segments,
 };
 use crate::error::{CoreError, CoreResult};
 
@@ -263,10 +263,10 @@ fn load_thumbnail_listing(system_catalog: &str, artwork_set: &str) -> Option<Vec
     let cache_key = format!("{}|{}", system_catalog, artwork_set);
     let in_memory_cache = thumbnail_listing_memory_cache();
 
-    if let Ok(cache) = in_memory_cache.lock() {
-        if let Some(existing) = cache.get(&cache_key) {
-            return Some(existing.clone());
-        }
+    if let Ok(cache) = in_memory_cache.lock()
+        && let Some(existing) = cache.get(&cache_key)
+    {
+        return Some(existing.clone());
     }
 
     let listing = if let Some(cached_listing) =

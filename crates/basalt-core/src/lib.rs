@@ -26,27 +26,27 @@ mod settings;
 mod storage;
 mod types;
 
-pub use artwork::{clear_artwork_cache, ArtworkKind, ArtworkRequest};
+pub use artwork::{ArtworkKind, ArtworkRequest, clear_artwork_cache};
 pub use discovery_service::{discover_games, discover_with_runners};
 pub use emulation::{
+    EmulationInstallReport, RomSyncReport as EmulationRomSyncReport,
     install_core_for_system as install_emulation_core_for_system,
     install_runtime_and_cores as install_emulation_runtime,
     is_core_installed_for_system as is_emulation_core_installed_for_system,
     is_save_sync_supported_for_system as is_emulation_save_sync_supported_for_system,
     sync_roms_up_for_system as sync_emulation_roms_up_for_system,
     sync_saves_down_for_system as sync_emulation_saves_down_for_system,
-    sync_saves_up_for_system as sync_emulation_saves_up_for_system, EmulationInstallReport,
-    RomSyncReport as EmulationRomSyncReport,
+    sync_saves_up_for_system as sync_emulation_saves_up_for_system,
 };
 pub use emulation_target::EmulationLaunchTarget;
-pub use emulator_systems::{emulator_artwork_catalog_path, emulator_systems, EmulatorSystem};
+pub use emulator_systems::{EmulatorSystem, emulator_artwork_catalog_path, emulator_systems};
 pub use error::{CoreError, CoreResult};
 pub use game_service::{
     add_game, add_game_to_playlist, launch_game, list_games, list_playlists, remove_all_games,
     remove_game, remove_game_from_playlist,
 };
-pub use mattmc::{mattmc_install_dir, MATTMC_GAME_NAME};
-pub use mattmc_install::{install_mattmc, MattmcInstallReport};
+pub use mattmc::{MATTMC_GAME_NAME, mattmc_install_dir};
+pub use mattmc_install::{MattmcInstallReport, install_mattmc};
 pub use playlist_service::FAVORITES_PLAYLIST_NAME;
 pub use progress::{CancelToken, Progress, ProgressUnit, ProgressUpdate};
 pub use runners::RunnerKind;
@@ -54,13 +54,13 @@ pub use script_service::{
     backup_mattmc, sync_mattmc, sync_mattmc_down, sync_mattmc_up, update_mattmc,
 };
 pub use settings::{
-    default_emulation_remote_paths, load_emulation_remote_paths, load_launcher_display_settings,
-    save_emulation_remote_paths, save_launcher_display_settings, EmulationRemotePaths,
-    LauncherDisplaySettings,
+    EmulationRemotePaths, LauncherDisplaySettings, default_emulation_remote_paths,
+    load_emulation_remote_paths, load_launcher_display_settings, save_emulation_remote_paths,
+    save_launcher_display_settings,
 };
 pub use types::{
-    DiscoverReport, DiscoverResult, DiscoverRunner, EmulatorDiscoverReport, GameEntry, Playlist,
-    SteamDiscoverReport, ALL_DISCOVER_RUNNERS,
+    ALL_DISCOVER_RUNNERS, DiscoverReport, DiscoverResult, DiscoverRunner, EmulatorDiscoverReport,
+    GameEntry, Playlist, SteamDiscoverReport,
 };
 
 /// Syncs a system's ROMs down from the remote root, then re-runs emulator discovery so the

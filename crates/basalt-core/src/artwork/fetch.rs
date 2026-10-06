@@ -4,8 +4,8 @@ use super::cache;
 use super::matching_index;
 use super::validation;
 use super::{
-    emulator_system_catalog_path, parse_emulator_launch_target, stable_hash_hex,
-    EMULATOR_ARTWORK_USER_AGENT,
+    EMULATOR_ARTWORK_USER_AGENT, emulator_system_catalog_path, parse_emulator_launch_target,
+    stable_hash_hex,
 };
 
 pub(super) fn fetch_steam_portrait_artwork(appid: &str) -> Option<PathBuf> {

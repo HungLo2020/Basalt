@@ -11,28 +11,28 @@ pub fn detect_appid(raw_input: &str) -> Option<String> {
         return Some(trimmed.to_string());
     }
 
-    if let Some(value) = trimmed.strip_prefix("steam://rungameid/") {
-        if value.chars().all(|char_value| char_value.is_ascii_digit()) {
-            return Some(value.to_string());
-        }
+    if let Some(value) = trimmed.strip_prefix("steam://rungameid/")
+        && value.chars().all(|char_value| char_value.is_ascii_digit())
+    {
+        return Some(value.to_string());
     }
 
-    if let Some(value) = trimmed.strip_prefix("steam://run/") {
-        if value.chars().all(|char_value| char_value.is_ascii_digit()) {
-            return Some(value.to_string());
-        }
+    if let Some(value) = trimmed.strip_prefix("steam://run/")
+        && value.chars().all(|char_value| char_value.is_ascii_digit())
+    {
+        return Some(value.to_string());
     }
 
-    if let Some(value) = trimmed.strip_prefix("steam:appid:") {
-        if value.chars().all(|char_value| char_value.is_ascii_digit()) {
-            return Some(value.to_string());
-        }
+    if let Some(value) = trimmed.strip_prefix("steam:appid:")
+        && value.chars().all(|char_value| char_value.is_ascii_digit())
+    {
+        return Some(value.to_string());
     }
 
-    if let Some(value) = trimmed.strip_prefix("steam-appid:") {
-        if value.chars().all(|char_value| char_value.is_ascii_digit()) {
-            return Some(value.to_string());
-        }
+    if let Some(value) = trimmed.strip_prefix("steam-appid:")
+        && value.chars().all(|char_value| char_value.is_ascii_digit())
+    {
+        return Some(value.to_string());
     }
 
     None

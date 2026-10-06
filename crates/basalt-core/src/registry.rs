@@ -3,10 +3,10 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
+use super::GameEntry;
 use super::error::{CoreError, CoreResult};
 use super::runners::RunnerKind;
 use super::storage;
-use super::GameEntry;
 
 const REGISTRY_FILE_NAME: &str = "games.tsv";
 const BLACKLIST_FILE_NAME: &str = "blacklist.txt";

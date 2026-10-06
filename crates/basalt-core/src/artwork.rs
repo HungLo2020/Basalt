@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use super::mattmc::MATTMC_GAME_NAME;
 use super::runners::RunnerKind;
-use super::{emulator_artwork_catalog_path, EmulationLaunchTarget, GameEntry};
+use super::{EmulationLaunchTarget, GameEntry, emulator_artwork_catalog_path};
 
 mod cache;
 mod fetch;
@@ -224,10 +224,10 @@ fn extract_steam_appid(launch_target: &str) -> Option<String> {
         "steam:appid:",
         "steam-appid:",
     ] {
-        if let Some(value) = trimmed.strip_prefix(prefix) {
-            if value.chars().all(|char_value| char_value.is_ascii_digit()) {
-                return Some(value.to_string());
-            }
+        if let Some(value) = trimmed.strip_prefix(prefix)
+            && value.chars().all(|char_value| char_value.is_ascii_digit())
+        {
+            return Some(value.to_string());
         }
     }
 

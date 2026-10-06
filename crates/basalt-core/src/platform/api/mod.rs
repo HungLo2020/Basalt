@@ -76,7 +76,7 @@ pub fn run_sibling_executable(name: &str) -> CoreResult<ExitStatus> {
             return Err(CoreError::new(format!(
                 "Could not find '{}' next to this executable or on PATH",
                 name
-            )))
+            )));
         }
     };
 
