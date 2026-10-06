@@ -1,7 +1,7 @@
 use basalt_core::{self as core, CoreResult, DiscoverResult, DiscoverRunner};
 
 use super::progress_printer::ProgressPrinter;
-use super::{Command, SettingsCommand};
+use super::{Command, SettingsCommand, SyncDirection};
 
 pub(super) fn run(command: Command) -> CoreResult<()> {
     match command {
@@ -38,21 +38,20 @@ pub(super) fn run(command: Command) -> CoreResult<()> {
         Command::InstallCore { system } => {
             let system = required(&system, "system")?;
             let printer = ProgressPrinter::new();
-            core::install_emulation_core_for_system(system, &printer.progress())?;
+            core::install_emulator_core(system, &printer.progress())?;
             printer.finish();
             println!("Installed emulator core for system '{}'.", system);
         }
         Command::CoreStatus { system } => core_status(required(&system, "system")?)?,
         Command::InstallEmulators => {
             let printer = ProgressPrinter::new();
-            let report = core::install_emulation_runtime(&printer.progress())?;
+            let report = core::install_emulators(&printer.progress())?;
             printer.finish();
             println!(
-                "Emulation runtime ready: {} | cores ready: {}",
-                report.runtime_ready, report.cores_ready
+                "RetroArch is ready; {} emulator cores installed.",
+                report.cores_installed
             );
-            println!("ROM folders: ~/Games/Emulators/roms/nes and ~/Games/Emulators/roms/gba");
-            println!("Save folder: ~/Games/Emulators/saves/<system>");
+            print_emulator_folders()?;
         }
         Command::InstallMattmc => {
             let printer = ProgressPrinter::new();
@@ -64,19 +63,26 @@ pub(super) fn run(command: Command) -> CoreResult<()> {
                 report.install_dir.display()
             );
             println!("{}", report.discovery_message());
-            for warning in report.cleanup_warnings {
-                eprintln!("Warning: {}", warning);
-            }
         }
         Command::Launch { name } => core::launch_game(name.trim())?,
         Command::BackupMattmc => {
             core::backup_mattmc()?;
             println!("Ran backup script for MattMC.");
         }
-        Command::SyncMattmc => {
-            core::sync_mattmc()?;
-            println!("Ran sync script for MattMC.");
-        }
+        Command::SyncMattmc { direction } => match direction {
+            Some(SyncDirection::Up) => {
+                core::sync_mattmc_up()?;
+                println!("Ran sync-up script for MattMC.");
+            }
+            Some(SyncDirection::Down) => {
+                core::sync_mattmc_down()?;
+                println!("Ran sync-down script for MattMC.");
+            }
+            None => {
+                core::sync_mattmc_interactive()?;
+                println!("Ran sync script for MattMC.");
+            }
+        },
         Command::UpdateMattmc => {
             core::update_mattmc()?;
             println!("Ran update script for MattMC.");
@@ -198,11 +204,31 @@ fn discover(steam: bool, mattmc: bool, emulators: bool) -> CoreResult<()> {
     Ok(())
 }
 
+/// Each system's ROM and save folders, as core resolves them.
+fn print_emulator_folders() -> CoreResult<()> {
+    println!("ROM and save folders:");
+    for system in core::emulator_systems() {
+        let saves = if system.supports_save_sync {
+            core::emulator_save_dir(system.key)?.display().to_string()
+        } else {
+            "save sync not supported".to_string()
+        };
+        println!(
+            "  {:<10} ROMs: {}  Saves: {}",
+            system.key,
+            core::emulator_rom_dir(system.key)?.display(),
+            saves
+        );
+    }
+    Ok(())
+}
+
 fn core_status(system: &str) -> CoreResult<()> {
-    let core_installed = core::is_emulation_core_installed_for_system(system)?;
-    let save_sync_supported = core::is_emulation_save_sync_supported_for_system(system);
+    let core_installed = core::is_emulator_core_installed(system)?;
+    let save_sync_supported = core::emulator_supports_save_sync(system);
 
     println!("System: {}", system);
+    println!("ROM folder: {}", core::emulator_rom_dir(system)?.display());
     println!(
         "Core installed: {}",
         if core_installed { "yes" } else { "no" }
@@ -229,7 +255,7 @@ fn sync_roms(platform: &str, up: bool) -> CoreResult<()> {
 
     if up {
         let printer = ProgressPrinter::new();
-        let report = core::sync_emulation_roms_up_for_system(platform, &printer.progress())?;
+        let report = core::sync_roms_up(platform, &printer.progress())?;
         printer.finish();
         println!(
             "Sync Up ({}) complete: copied {}, unchanged {}, deleted {}.",
@@ -240,8 +266,7 @@ fn sync_roms(platform: &str, up: bool) -> CoreResult<()> {
         );
     } else {
         let printer = ProgressPrinter::new();
-        let (sync_report, emulator_report) =
-            core::sync_emulation_roms_down_and_discover_for_system(platform, &printer.progress())?;
+        let (sync_report, emulator_report) = core::sync_roms_down(platform, &printer.progress())?;
         printer.finish();
         println!(
             "Sync Down ({}) complete: copied {}, unchanged {}, deleted {}.",
@@ -266,15 +291,9 @@ fn sync_saves(system: &str, up: bool) -> CoreResult<()> {
     let printer = ProgressPrinter::new();
     let progress = printer.progress();
     let (label, report) = if up {
-        (
-            "Sync Saves Up",
-            core::sync_emulation_saves_up_for_system(system, &progress)?,
-        )
+        ("Sync Saves Up", core::sync_saves_up(system, &progress)?)
     } else {
-        (
-            "Sync Saves Down",
-            core::sync_emulation_saves_down_for_system(system, &progress)?,
-        )
+        ("Sync Saves Down", core::sync_saves_down(system, &progress)?)
     };
     printer.finish();
 

@@ -4,11 +4,11 @@
 
 use std::collections::HashSet;
 
-use basalt_core::{self as core, EmulationLaunchTarget, GameEntry, Playlist, RunnerKind};
+use basalt_core::{self as core, EmulatorLaunchTarget, GameEntry, Playlist, RunnerKind};
 use serde::Serialize;
 
 const STEAM_CATEGORY: &str = "Steam";
-const MY_GAMES_CATEGORY: &str = "MyGames";
+const MY_GAMES_CATEGORY: &str = "My Games";
 const EMULATION_CATEGORY: &str = "Emulation";
 const EMULATORS_CATEGORY: &str = "Emulators";
 
@@ -19,7 +19,7 @@ pub struct GameView {
     pub runner: &'static str,
     pub target: String,
     pub category: String,
-    /// Sorts categories: Steam, MyGames, then emulator systems.
+    /// Sorts categories: Steam, My Games, then emulator systems.
     pub category_order: String,
     pub artwork_key: String,
     pub favorite: bool,
@@ -133,7 +133,7 @@ fn game_category(game: &GameEntry) -> (String, String) {
         RunnerKind::Steam => (STEAM_CATEGORY.to_string(), "0".to_string()),
         RunnerKind::Bash => (MY_GAMES_CATEGORY.to_string(), "1".to_string()),
         RunnerKind::Emulator => {
-            let system = EmulationLaunchTarget::decode(&game.launch_target)
+            let system = EmulatorLaunchTarget::decode(&game.launch_target)
                 .ok()
                 .map(|target| target.system_key().trim().to_uppercase())
                 .filter(|system| !system.is_empty())
@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn games_json_categorizes_and_marks_favorites() {
-        let rom_target = EmulationLaunchTarget::new_retroarch("gba", PathBuf::from("/r/a.gba"))
+        let rom_target = EmulatorLaunchTarget::new_retroarch("gba", PathBuf::from("/r/a.gba"))
             .unwrap()
             .encode()
             .unwrap();
@@ -185,7 +185,7 @@ mod tests {
         assert_eq!(json[0]["category"], "Steam");
         assert_eq!(json[0]["favorite"], true);
         assert_eq!(json[0]["artworkKey"], "steam:2280");
-        assert_eq!(json[1]["category"], "MyGames");
+        assert_eq!(json[1]["category"], "My Games");
         assert_eq!(json[1]["isMattmc"], true);
         assert_eq!(json[2]["category"], "GBA");
         assert_eq!(json[2]["categoryOrder"], "2-GBA");

@@ -7,10 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 use zip::ZipArchive;
 
-use crate::platform;
-
 use super::download::download_to_writer;
-use super::mattmc::mattmc_install_dir;
+use super::mattmc::{MATTMC_RELEASE_ZIP_SUFFIX, mattmc_install_dir};
 use super::progress::Progress;
 use super::{CoreError, CoreResult, DiscoverResult, DiscoverRunner};
 
@@ -21,7 +19,6 @@ pub struct MattmcInstallReport {
     pub release_tag: String,
     pub install_dir: PathBuf,
     pub discovery_result: DiscoverResult,
-    pub cleanup_warnings: Vec<String>,
 }
 
 impl MattmcInstallReport {
@@ -44,7 +41,6 @@ pub fn install_mattmc(progress: &Progress) -> CoreResult<MattmcInstallReport> {
     let (latest_tag, archive_url) = fetch_latest_release_tag_and_client_zip_url()?;
     let temp_archive_path = temp_archive_path()?;
     let extraction_root = temp_extraction_root()?;
-    let mut cleanup_warnings = Vec::new();
 
     // Download and extraction only touch temp files, so they can be cancelled. Once copying into
     // ~/Games/MattMC starts, the install runs to completion so it is never left half-upgraded.
@@ -61,14 +57,14 @@ pub fn install_mattmc(progress: &Progress) -> CoreResult<MattmcInstallReport> {
     let installed = staged_source_root(&extraction_root)
         .and_then(|source_root| copy_directory_contents(&source_root, &target_dir));
     if let Err(error) = fs::remove_dir_all(&extraction_root) {
-        cleanup_warnings.push(format!(
+        crate::warnings::warn(format!(
             "Failed to remove temporary extraction directory at {}: {}",
             extraction_root.display(),
             error
         ));
     }
     if let Err(error) = fs::remove_file(&temp_archive_path) {
-        cleanup_warnings.push(format!(
+        crate::warnings::warn(format!(
             "Failed to remove temporary archive at {}: {}",
             temp_archive_path.display(),
             error
@@ -92,12 +88,11 @@ pub fn install_mattmc(progress: &Progress) -> CoreResult<MattmcInstallReport> {
         release_tag: latest_tag,
         install_dir: target_dir,
         discovery_result,
-        cleanup_warnings,
     })
 }
 
 fn fetch_latest_release_tag_and_client_zip_url() -> CoreResult<(String, String)> {
-    let platform_suffix = platform::mattmc_release_zip_suffix();
+    let platform_suffix = MATTMC_RELEASE_ZIP_SUFFIX;
     let response = ureq::get(MATTMC_RELEASES_API_LATEST_URL)
         .set("Accept", "application/vnd.github+json")
         .set("User-Agent", "Basalt-MattMC-Installer")

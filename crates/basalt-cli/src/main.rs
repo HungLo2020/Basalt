@@ -5,7 +5,8 @@ mod progress_printer;
 
 use std::process::ExitCode;
 
-use clap::{ArgGroup, Parser, Subcommand};
+use basalt_core as core;
+use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
 
 const GUI_EXECUTABLE_NAME: &str = "basalt-gui";
 
@@ -70,8 +71,12 @@ enum Command {
     /// Run backup.sh from the MattMC launch script directory
     BackupMattmc,
 
-    /// Run SyncGameData from the MattMC launch script directory
-    SyncMattmc,
+    /// Sync MattMC's game data with its remote copy (without a direction, the script asks)
+    SyncMattmc {
+        /// Which way to sync: `up` (local to remote) or `down` (remote to local)
+        #[arg(value_enum)]
+        direction: Option<SyncDirection>,
+    },
 
     /// Run update-mattmc from the MattMC launch script directory
     UpdateMattmc,
@@ -98,6 +103,12 @@ enum Command {
     RefreshMetadata,
 }
 
+#[derive(Clone, Copy, ValueEnum)]
+enum SyncDirection {
+    Up,
+    Down,
+}
+
 #[derive(Subcommand)]
 enum SettingsCommand {
     /// Show remote ROM/Saves root directories
@@ -122,7 +133,14 @@ fn main() -> ExitCode {
         return launch_gui();
     };
 
-    match commands::run(command) {
+    let result = commands::run(command);
+
+    // Non-fatal problems core ran into along the way.
+    for warning in core::take_warnings() {
+        eprintln!("Warning: {}", warning);
+    }
+
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("Error: {}", error);
@@ -134,7 +152,7 @@ fn main() -> ExitCode {
 /// `basalt` with no arguments opens the GUI, as it did before the CLI and GUI were split into
 /// separate executables.
 fn launch_gui() -> ExitCode {
-    match basalt_core::platform::run_sibling_executable(GUI_EXECUTABLE_NAME) {
+    match basalt_core::run_sibling_executable(GUI_EXECUTABLE_NAME) {
         Ok(status) if status.success() => ExitCode::SUCCESS,
         Ok(_) => ExitCode::FAILURE,
         Err(error) => {
@@ -174,6 +192,21 @@ mod tests {
                 emulators: true
             })
         ));
+    }
+
+    #[test]
+    fn sync_mattmc_takes_an_optional_direction() {
+        let parse = |args: &[&str]| match Cli::try_parse_from(args).unwrap().command {
+            Some(Command::SyncMattmc { direction }) => {
+                direction.map(|d| matches!(d, SyncDirection::Up))
+            }
+            _ => panic!("expected sync-mattmc"),
+        };
+
+        assert_eq!(parse(&["basalt", "sync-mattmc"]), None);
+        assert_eq!(parse(&["basalt", "sync-mattmc", "up"]), Some(true));
+        assert_eq!(parse(&["basalt", "sync-mattmc", "down"]), Some(false));
+        assert!(Cli::try_parse_from(["basalt", "sync-mattmc", "sideways"]).is_err());
     }
 
     #[test]

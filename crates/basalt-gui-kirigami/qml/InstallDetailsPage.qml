@@ -64,14 +64,20 @@ Kirigami.ScrollablePage {
 
             Controls.Label {
                 Kirigami.FormData.label: "ROMs:"
-                text: "~/Games/Emulators/roms/" + details.system
+                Layout.fillWidth: true
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 20
+                text: Backend.emulatorRomDir(details.system)
+                wrapMode: Text.WrapAnywhere
             }
 
             Controls.Label {
                 Kirigami.FormData.label: "Saves:"
+                Layout.fillWidth: true
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 20
                 text: details.tile && details.tile.supportsSaveSync
-                    ? "~/Games/Emulators/saves/" + details.system
+                    ? Backend.emulatorSaveDir(details.system)
                     : "not supported"
+                wrapMode: Text.WrapAnywhere
             }
         }
 

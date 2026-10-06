@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use super::paths;
 use super::runtime::RuntimeCommand;
+use super::systems::EmulatorSystemSpec;
 use crate::download::download_to_writer;
-use crate::emulator_systems::EmulatorSystemSpec;
 use crate::error::{CoreError, CoreResult};
 use crate::progress::Progress;
 

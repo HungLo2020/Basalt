@@ -88,6 +88,11 @@ pub mod qobject {
         fn artwork_url(self: &Backend, key: &QString) -> QString;
         #[qinvokable]
         fn is_core_installed(self: &Backend, system: &QString) -> bool;
+        /// A system's ROM / save folder, or "" for an unknown system.
+        #[qinvokable]
+        fn emulator_rom_dir(self: &Backend, system: &QString) -> QString;
+        #[qinvokable]
+        fn emulator_save_dir(self: &Backend, system: &QString) -> QString;
 
         /// Gamepad navigation: move the library selection by (columns, rows).
         #[qsignal]
@@ -288,6 +293,8 @@ impl qobject::Backend {
                             .set_library_status(qs(format!("Failed to load games: {}", error)));
                     }
                 }
+                // E.g. files that couldn't be moved from the old ~/.basalt directory.
+                backend.as_mut().show_core_warnings(StatusTarget::Library);
             });
         });
     }
@@ -504,7 +511,7 @@ impl qobject::Backend {
     // ----- MattMC and emulation jobs ---------------------------------------------------------
 
     fn sync_mattmc(mut self: Pin<&mut Self>, up: bool) {
-        let label = if up { "SyncUp" } else { "SyncDown" };
+        let label = if up { "Sync Up" } else { "Sync Down" };
         self.as_mut().start_job(
             StatusTarget::Library,
             format!("{} started for MattMC", label),
@@ -573,7 +580,7 @@ impl qobject::Backend {
         self.as_mut().start_job(
             StatusTarget::Install,
             format!("Installing {} emulator core...", label),
-            move |progress| basalt_core::install_emulation_core_for_system(&system, &progress),
+            move |progress| basalt_core::install_emulator_core(&system, &progress),
             move |mut backend, result| {
                 let message = match result {
                     Ok(()) => format!("Installed {} emulator core", label),
@@ -596,7 +603,7 @@ impl qobject::Backend {
             self.as_mut().start_job(
                 StatusTarget::Install,
                 format!("{} started", label),
-                move |progress| basalt_core::sync_emulation_roms_up_for_system(&system, &progress),
+                move |progress| basalt_core::sync_roms_up(&system, &progress),
                 move |mut backend, result| {
                     let message = match result {
                         Ok(report) => format!(
@@ -613,7 +620,7 @@ impl qobject::Backend {
                 StatusTarget::Install,
                 format!("{} started", label),
                 move |progress| {
-                    basalt_core::sync_emulation_roms_down_and_discover_for_system(&system, &progress)
+                    basalt_core::sync_roms_down(&system, &progress)
                 },
                 move |mut backend, result| {
                     let message = match result {
@@ -651,9 +658,9 @@ impl qobject::Backend {
             format!("{} started", label),
             move |progress| {
                 if up {
-                    basalt_core::sync_emulation_saves_up_for_system(&system, &progress)
+                    basalt_core::sync_saves_up(&system, &progress)
                 } else {
-                    basalt_core::sync_emulation_saves_down_for_system(&system, &progress)
+                    basalt_core::sync_saves_down(&system, &progress)
                 }
             },
             move |mut backend, result| {
@@ -734,10 +741,32 @@ impl qobject::Backend {
                 backend.as_mut().set_job_cancelling(false);
                 backend.as_mut().set_job_message(QString::default());
                 finish(backend.as_mut(), result);
+                backend.as_mut().show_core_warnings(target);
                 let revision = *backend.core_status_revision() + 1;
                 backend.as_mut().set_core_status_revision(revision);
             });
         });
+    }
+
+    /// Appends warnings core queued during an operation (see basalt_core::take_warnings) to
+    /// that screen's status line.
+    fn show_core_warnings(mut self: Pin<&mut Self>, target: StatusTarget) {
+        let warnings = basalt_core::take_warnings();
+        if warnings.is_empty() {
+            return;
+        }
+
+        let current = match target {
+            StatusTarget::Library => self.library_status().to_string(),
+            StatusTarget::Install => self.install_status().to_string(),
+        };
+        let joined = warnings.join("; ");
+        let message = if current.is_empty() {
+            format!("Warning: {}", joined)
+        } else {
+            format!("{} | Warning: {}", current, joined)
+        };
+        self.as_mut().set_status(target, message);
     }
 
     fn set_status(mut self: Pin<&mut Self>, target: StatusTarget, message: String) {
@@ -796,8 +825,20 @@ impl qobject::Backend {
             .unwrap_or_default()
     }
 
+    fn emulator_rom_dir(&self, system: &QString) -> QString {
+        basalt_core::emulator_rom_dir(&system.to_string())
+            .map(|dir| qs(dir.display().to_string()))
+            .unwrap_or_default()
+    }
+
+    fn emulator_save_dir(&self, system: &QString) -> QString {
+        basalt_core::emulator_save_dir(&system.to_string())
+            .map(|dir| qs(dir.display().to_string()))
+            .unwrap_or_default()
+    }
+
     fn is_core_installed(&self, system: &QString) -> bool {
-        basalt_core::is_emulation_core_installed_for_system(&system.to_string()).unwrap_or(false)
+        basalt_core::is_emulator_core_installed(&system.to_string()).unwrap_or(false)
     }
 }
 

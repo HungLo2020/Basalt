@@ -102,10 +102,6 @@ impl Progress {
         }
     }
 
-    pub fn cancel_token(&self) -> &CancelToken {
-        &self.cancel
-    }
-
     pub(crate) fn report(
         &self,
         message: impl Into<String>,

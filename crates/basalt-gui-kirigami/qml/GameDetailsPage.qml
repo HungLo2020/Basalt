@@ -99,14 +99,14 @@ Kirigami.ScrollablePage {
                 spacing: Kirigami.Units.smallSpacing
 
                 Controls.Button {
-                    text: "SyncUp"
+                    text: "Sync Up"
                     icon.name: "cloud-upload"
                     enabled: !Backend.jobActive
                     onClicked: Backend.syncMattmc(true)
                 }
 
                 Controls.Button {
-                    text: "SyncDown"
+                    text: "Sync Down"
                     icon.name: "cloud-download"
                     enabled: !Backend.jobActive
                     onClicked: Backend.syncMattmc(false)

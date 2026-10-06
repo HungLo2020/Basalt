@@ -7,11 +7,11 @@ use crate::error::CoreResult;
 use crate::progress::Progress;
 use crate::settings;
 
-use super::is_save_sync_supported_for_system;
+use super::emulator_supports_save_sync;
 use super::paths;
 use crate::error::CoreError;
 
-pub struct RomSyncReport {
+pub struct SyncReport {
     pub copied: usize,
     pub unchanged: usize,
     pub deleted: usize,
@@ -23,31 +23,28 @@ enum RomSyncDirection {
     Down,
 }
 
-pub(super) fn sync_roms_up_for_system(
-    system: &str,
-    progress: &Progress,
-) -> CoreResult<RomSyncReport> {
+pub(super) fn sync_roms_up_for_system(system: &str, progress: &Progress) -> CoreResult<SyncReport> {
     sync_roms_for_system(system, RomSyncDirection::Up, progress)
 }
 
 pub(super) fn sync_roms_down_for_system(
     system: &str,
     progress: &Progress,
-) -> CoreResult<RomSyncReport> {
+) -> CoreResult<SyncReport> {
     sync_roms_for_system(system, RomSyncDirection::Down, progress)
 }
 
 pub(super) fn sync_saves_up_for_system(
     system: &str,
     progress: &Progress,
-) -> CoreResult<RomSyncReport> {
+) -> CoreResult<SyncReport> {
     sync_saves_for_system(system, RomSyncDirection::Up, progress)
 }
 
 pub(super) fn sync_saves_down_for_system(
     system: &str,
     progress: &Progress,
-) -> CoreResult<RomSyncReport> {
+) -> CoreResult<SyncReport> {
     sync_saves_for_system(system, RomSyncDirection::Down, progress)
 }
 
@@ -55,7 +52,7 @@ fn sync_roms_for_system(
     system: &str,
     direction: RomSyncDirection,
     progress: &Progress,
-) -> CoreResult<RomSyncReport> {
+) -> CoreResult<SyncReport> {
     let system_key = paths::normalize_system_key(system)?;
     let remote_paths = settings::load_emulation_remote_paths()?;
 
@@ -89,9 +86,9 @@ fn sync_saves_for_system(
     system: &str,
     direction: RomSyncDirection,
     progress: &Progress,
-) -> CoreResult<RomSyncReport> {
+) -> CoreResult<SyncReport> {
     let system_key = paths::normalize_system_key(system)?;
-    if !is_save_sync_supported_for_system(&system_key) {
+    if !emulator_supports_save_sync(&system_key) {
         return Err(CoreError::new(format!(
             "Save sync is not supported for system: {}",
             system_key
@@ -142,7 +139,7 @@ fn sync_directory_contents<F>(
     include_file: F,
     message: &str,
     progress: &Progress,
-) -> CoreResult<RomSyncReport>
+) -> CoreResult<SyncReport>
 where
     F: Fn(&Path) -> bool,
 {
@@ -266,7 +263,7 @@ where
 
     remove_empty_subdirectories(destination_dir)?;
 
-    Ok(RomSyncReport {
+    Ok(SyncReport {
         copied,
         unchanged,
         deleted,

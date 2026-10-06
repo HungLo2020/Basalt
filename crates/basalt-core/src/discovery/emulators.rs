@@ -2,8 +2,8 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::EmulationLaunchTarget;
 use crate::emulation;
+use crate::emulation::EmulatorLaunchTarget;
 use crate::error::CoreError;
 use crate::playlist_service;
 use crate::registry;
@@ -59,7 +59,7 @@ pub fn discover_emulator_entries() -> CoreResult<EmulatorDiscoverReport> {
     let mut removed_names = Vec::new();
     entries.retain(|entry| {
         let is_managed_emulator_entry = entry.runner_kind == RunnerKind::Emulator
-            && EmulationLaunchTarget::decode(&entry.launch_target).is_ok();
+            && EmulatorLaunchTarget::decode(&entry.launch_target).is_ok();
 
         if is_managed_emulator_entry && !discovered_targets.contains(&entry.launch_target) {
             removed_names.push(entry.name.clone());

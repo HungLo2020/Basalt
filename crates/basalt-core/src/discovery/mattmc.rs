@@ -1,13 +1,12 @@
 use crate::error::CoreError;
-use crate::mattmc::{MATTMC_GAME_NAME, mattmc_install_dir};
-use crate::platform;
+use crate::mattmc::{MATTMC_GAME_NAME, MATTMC_LAUNCH_SCRIPT_CANDIDATES, mattmc_install_dir};
 use crate::registry;
 use crate::runners::RunnerKind;
 use crate::{CoreResult, DiscoverResult, add_game};
 
 pub fn discover_mattmc_entry() -> CoreResult<DiscoverResult> {
     let mattmc_root = mattmc_install_dir()?;
-    let mattmc_script = platform::mattmc_launch_script_candidates()
+    let mattmc_script = MATTMC_LAUNCH_SCRIPT_CANDIDATES
         .iter()
         .map(|candidate| mattmc_root.join(candidate))
         .find(|candidate| candidate.exists() && candidate.is_file());

@@ -7,7 +7,8 @@ use std::path::PathBuf;
 
 use super::mattmc::MATTMC_GAME_NAME;
 use super::runners::RunnerKind;
-use super::{EmulationLaunchTarget, GameEntry, emulator_artwork_catalog_path};
+use crate::GameEntry;
+use crate::emulation::{EmulatorLaunchTarget, emulator_artwork_catalog_path};
 
 mod cache;
 mod fetch;
@@ -16,7 +17,6 @@ mod matching_index;
 mod validation;
 
 pub use cache::clear_artwork_cache;
-pub use local_overrides::{override_artwork_dirs, user_override_artwork_dir};
 
 const EMULATOR_ARTWORK_USER_AGENT: &str = "Basalt-Emulator-Artwork";
 const EMULATOR_ARTWORK_IMAGES_PATH: &str = "images";
@@ -120,7 +120,7 @@ fn emulator_system_catalog_path(system: &str) -> Option<&'static str> {
 }
 
 fn parse_emulator_launch_target(launch_target: &str) -> Option<(String, PathBuf)> {
-    let parsed_target = EmulationLaunchTarget::decode(launch_target).ok()?;
+    let parsed_target = EmulatorLaunchTarget::decode(launch_target).ok()?;
     Some((
         parsed_target.system_key().to_string(),
         parsed_target.rom_path().to_path_buf(),

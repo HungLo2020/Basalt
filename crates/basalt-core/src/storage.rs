@@ -72,7 +72,11 @@ fn migrate_legacy_app_dir() {
             if source.is_file()
                 && let Err(error) = move_file_if_absent(&source, &target_dir.join(file_name))
             {
-                eprintln!("Warning: could not migrate {}: {}", source.display(), error);
+                crate::warnings::warn(format!(
+                    "Could not move {} to its new location: {}",
+                    source.display(),
+                    error
+                ));
             }
         }
     }

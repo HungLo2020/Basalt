@@ -22,13 +22,13 @@ impl EmulationBackend {
 }
 
 #[derive(Clone, Debug)]
-pub struct EmulationLaunchTarget {
+pub struct EmulatorLaunchTarget {
     backend: EmulationBackend,
     system_key: String,
     rom_path: PathBuf,
 }
 
-impl EmulationLaunchTarget {
+impl EmulatorLaunchTarget {
     pub fn new(
         backend: EmulationBackend,
         system_key: impl Into<String>,
@@ -117,14 +117,14 @@ mod tests {
 
     #[test]
     fn launch_target_round_trips_retroarch_system_and_path() {
-        let target = EmulationLaunchTarget::new_retroarch(
+        let target = EmulatorLaunchTarget::new_retroarch(
             "GBA",
             PathBuf::from(r"C:\Games\Pokemon Radical Red.gba"),
         )
         .unwrap();
 
         let encoded = target.encode().unwrap();
-        let decoded = EmulationLaunchTarget::decode(&encoded).unwrap();
+        let decoded = EmulatorLaunchTarget::decode(&encoded).unwrap();
 
         assert_eq!(decoded.system_key(), "gba");
         assert_eq!(
@@ -136,9 +136,9 @@ mod tests {
 
     #[test]
     fn launch_target_rejects_missing_parts() {
-        assert!(EmulationLaunchTarget::decode("retroarch||game.gba").is_err());
-        assert!(EmulationLaunchTarget::decode("retroarch|gba|").is_err());
-        assert!(EmulationLaunchTarget::decode("unknown|gba|game.gba").is_err());
-        assert!(EmulationLaunchTarget::new_retroarch("gba", PathBuf::new()).is_err());
+        assert!(EmulatorLaunchTarget::decode("retroarch||game.gba").is_err());
+        assert!(EmulatorLaunchTarget::decode("retroarch|gba|").is_err());
+        assert!(EmulatorLaunchTarget::decode("unknown|gba|game.gba").is_err());
+        assert!(EmulatorLaunchTarget::new_retroarch("gba", PathBuf::new()).is_err());
     }
 }

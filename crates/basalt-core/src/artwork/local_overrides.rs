@@ -12,7 +12,7 @@ const ARTWORK_DIR_NAME: &str = "artwork";
 /// 1. the user's own folder (`~/.local/share/basalt/artwork` on Linux)
 /// 2. in debug builds, the repository's `resources/gameartwork`
 /// 3. artwork installed with the package (`/usr/share/basalt/artwork` on Linux)
-pub fn override_artwork_dirs() -> Vec<PathBuf> {
+fn override_artwork_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
     if let Ok(data_dir) = storage::data_dir() {
@@ -33,13 +33,6 @@ pub fn override_artwork_dirs() -> Vec<PathBuf> {
     );
 
     dirs
-}
-
-/// The user's override folder, created if missing so it is easy to find and drop images into.
-pub fn user_override_artwork_dir() -> Option<PathBuf> {
-    let dir = storage::data_dir().ok()?.join(ARTWORK_DIR_NAME);
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir)
 }
 
 pub(super) fn find_local_game_artwork_path(request: &ArtworkRequest) -> Option<PathBuf> {

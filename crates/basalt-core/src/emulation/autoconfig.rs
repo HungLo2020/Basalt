@@ -96,10 +96,10 @@ fn download_xbox_profiles(backend: &str, backend_dir: &Path) -> CoreResult<()> {
         }
 
         if let Err(error) = download_profile(&agent, download_url, &destination) {
-            eprintln!(
-                "Warning: Failed to download controller profile {}: {}",
+            crate::warnings::warn(format!(
+                "Failed to download controller profile {}: {}",
                 name, error
-            );
+            ));
         }
     }
 
