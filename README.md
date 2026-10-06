@@ -63,14 +63,20 @@ The QML is compiled by Qt at runtime rather than ahead of time: Qt's ahead-of-ti
 
 The app uses KDE's `org.kde.desktop` controls style by default; set `QT_QUICK_CONTROLS_STYLE` (for example `Fusion`) to use a different one.
 
-For checking the UI without touching the desktop or the network, the app has a screenshot tour: with `BASALT_SCREENSHOT_DIR` set it walks through every screen, saves a PNG of each, and quits. Run it against a throwaway home, offscreen and without network access:
-
-```
-unshare -rn env HOME=/tmp/basalt-test QT_QPA_PLATFORM=offscreen \
-  BASALT_SCREENSHOT_DIR=/tmp/basalt-shots target/debug/basalt-gui
-```
+For checking the UI without touching the desktop or the network, the app has a screenshot tour: with `BASALT_SCREENSHOT_DIR` set it walks through every screen, saves a PNG of each, and quits. `bash DevUtils/SmokeTestGui.sh [screenshot-dir]` runs it offscreen against a throwaway home with test fixtures and fails on any QML error; CI runs it on every push and keeps the screenshots as an artifact.
 
 The offscreen renderer does not draw every KDE control (progress bars, for one); use `QT_QPA_PLATFORM=xcb` to check those in a real window.
+
+## Tests
+
+- `cargo test --workspace` — unit tests, plus end-to-end tests that run the `basalt` CLI against throwaway homes (concurrent writes, `~/.basalt` migration, settings) and download tests against a local HTTP server.
+- `bash DevUtils/LintQml.sh` — `qmllint` over the GUI's QML.
+- `bash DevUtils/SmokeTestGui.sh` — the GUI smoke test.
+- `python3 -m unittest discover -s tests` — the publish script.
+
+## Publishing
+
+`python3 DevUtils/PublishMattOSPackage.py publish` builds the `.deb` and uploads it to MattPackages. It refuses to run unless the `[workspace.package]` version in `Cargo.toml` is newer than every published version, because apt ignores a re-uploaded version.
 
 ## Rust and Cargo Basics
 

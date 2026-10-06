@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest.mock import Mock, call, patch
@@ -10,6 +11,88 @@ SPEC = importlib.util.spec_from_file_location("publish_mattos_package", SCRIPT_P
 assert SPEC and SPEC.loader
 publish = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(publish)
+
+
+PACKAGES_INDEX = """Package: other
+Version: 9.9.9
+
+Package: basalt
+Version: 0.3.0
+Depends: libc6 (>= 2.39)
+
+Package: basalt
+Version: 0.2.0
+"""
+
+
+def simple_greater(candidate, existing):
+    """Stand-in for dpkg --compare-versions for plain dotted versions."""
+    return tuple(map(int, candidate.split("."))) > tuple(map(int, existing.split(".")))
+
+
+class FakeResponse:
+    def __init__(self, content):
+        self.content = content
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self):
+        return self.content
+
+
+class VersionGuardTests(unittest.TestCase):
+    def test_published_versions_reads_only_the_named_package(self):
+        self.assertEqual(publish.published_versions(PACKAGES_INDEX), ["0.3.0", "0.2.0"])
+
+    def test_refuses_versions_that_are_not_newer(self):
+        for version in ("0.3.0", "0.2.5"):
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                publish.ensure_version_is_new(version, ["0.3.0", "0.2.0"], simple_greater)
+
+    def test_allows_a_newer_version(self):
+        publish.ensure_version_is_new("0.3.1", ["0.3.0", "0.2.0"], simple_greater)
+
+    def test_fetch_falls_back_to_gzip_index(self):
+        def opener(request, timeout):
+            if request.full_url.endswith(".gz"):
+                return FakeResponse(publish.gzip.compress(PACKAGES_INDEX.encode()))
+            raise publish.URLError("404")
+
+        self.assertEqual(publish.fetch_packages_index(opener), PACKAGES_INDEX)
+
+    def test_publish_stops_before_building_when_version_exists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                patch.object(publish, "repository_root", return_value=root),
+                patch.object(publish, "download_latest_script"),
+                patch.object(publish, "read_workspace_version", return_value="0.3.0"),
+                patch.object(publish, "fetch_packages_index", return_value=PACKAGES_INDEX),
+                patch.object(publish, "dpkg_version_greater", side_effect=simple_greater),
+                patch.object(publish, "run", return_value=0) as run,
+            ):
+                self.assertEqual(publish.main(["publish"]), 1)
+
+            run.assert_not_called()
+
+    def test_reads_workspace_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Cargo.toml").write_text(
+                '[workspace]\nmembers = []\n\n[workspace.package]\nversion = "1.2.3"\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(publish.read_workspace_version(root), "1.2.3")
+
+    def test_dpkg_comparison_matches_apt_ordering(self):
+        if not shutil.which("dpkg"):
+            self.skipTest("dpkg not available")
+        self.assertTrue(publish.dpkg_version_greater("0.10.0", "0.9.0"))
+        self.assertFalse(publish.dpkg_version_greater("0.3.0", "0.3.0"))
 
 
 class PublishMattOSPackageTests(unittest.TestCase):
@@ -43,6 +126,9 @@ class PublishMattOSPackageTests(unittest.TestCase):
             with (
                 patch.object(publish, "repository_root", return_value=root),
                 patch.object(publish, "download_latest_script") as download,
+                patch.object(publish, "read_workspace_version", return_value="0.4.0"),
+                patch.object(publish, "fetch_packages_index", return_value=PACKAGES_INDEX),
+                patch.object(publish, "dpkg_version_greater", side_effect=simple_greater),
                 patch.object(publish, "run", return_value=0) as run,
             ):
                 self.assertEqual(publish.main(["publish"]), 0)

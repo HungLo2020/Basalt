@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import argparse
 import ast
+import gzip
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
-from typing import Callable, Mapping
+import tomllib
+from typing import Callable, Iterable, Mapping
+from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
@@ -20,6 +23,12 @@ REPOSITORY_SCRIPT_URL = (
 )
 SCRIPT_RELATIVE_PATH = Path("DevUtils/.downloaded/ManageMattOSRepository.py")
 BUILD_METADATA_RELATIVE_PATH = Path("builds/latest-build.env")
+PACKAGE_NAME = "basalt"
+# The repository's package index, used to refuse re-publishing an existing version: apt ignores a
+# package whose version it already has, so a re-upload would never reach anyone.
+REPOSITORY_PACKAGES_URL = (
+    "https://mattpackages.mattsherfey.com/dists/stable/main/binary-amd64/Packages"
+)
 
 
 def repository_root() -> Path:
@@ -101,6 +110,67 @@ def resolve_deb_artifact(metadata: Mapping[str, str], root: Path) -> Path:
     return artifact
 
 
+def read_workspace_version(root: Path) -> str:
+    """The version every crate (and the .deb) uses: [workspace.package] in Cargo.toml."""
+    with (root / "Cargo.toml").open("rb") as cargo_toml:
+        manifest = tomllib.load(cargo_toml)
+    version = manifest.get("workspace", {}).get("package", {}).get("version", "")
+    if not version:
+        raise ValueError("Cargo.toml has no [workspace.package] version")
+    return version
+
+
+def fetch_packages_index(opener: Callable[..., object] = urlopen) -> str:
+    """Download the repository's Packages index (plain, or .gz if that is all it serves)."""
+    errors = []
+    for url, compressed in ((REPOSITORY_PACKAGES_URL, False), (REPOSITORY_PACKAGES_URL + ".gz", True)):
+        request = Request(url, headers={"Cache-Control": "no-cache", "User-Agent": "BasaltPublishMattOSPackage/1.0"})
+        try:
+            with opener(request, timeout=30) as response:  # type: ignore[union-attr]
+                content = response.read()  # type: ignore[union-attr]
+        except (OSError, URLError) as error:
+            errors.append(f"{url}: {error}")
+            continue
+        return (gzip.decompress(content) if compressed else content).decode("utf-8")
+    raise ValueError("could not read the repository package index: " + "; ".join(errors))
+
+
+def published_versions(packages_index: str, package: str = PACKAGE_NAME) -> list[str]:
+    """Versions of `package` listed in a Debian Packages index."""
+    versions = []
+    for stanza in packages_index.split("\n\n"):
+        fields = {}
+        for line in stanza.splitlines():
+            if ":" in line and not line.startswith((" ", "\t")):
+                key, value = line.split(":", 1)
+                fields[key.strip()] = value.strip()
+        if fields.get("Package") == package and fields.get("Version"):
+            versions.append(fields["Version"])
+    return versions
+
+
+def dpkg_version_greater(candidate: str, existing: str) -> bool:
+    """True when `candidate` sorts after `existing` the way apt compares versions."""
+    result = subprocess.run(
+        ["dpkg", "--compare-versions", candidate, "gt", existing], check=False
+    )
+    return result.returncode == 0
+
+
+def ensure_version_is_new(
+    version: str,
+    published: Iterable[str],
+    greater: Callable[[str, str], bool] = dpkg_version_greater,
+) -> None:
+    """Raise unless `version` is newer than every published version."""
+    blocking = [existing for existing in published if not greater(version, existing)]
+    if blocking:
+        raise ValueError(
+            f"{PACKAGE_NAME} {version} is not newer than the published version(s) "
+            f"{', '.join(sorted(set(blocking)))}; bump [workspace.package] version in Cargo.toml"
+        )
+
+
 def run(command: list[str], root: Path) -> int:
     try:
         return subprocess.run(command, cwd=root, check=False).returncode
@@ -127,6 +197,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "doctor":
         print("[publish] Running repository doctor")
         return run(manager + ["doctor"], root)
+
+    try:
+        version = read_workspace_version(root)
+        print(f"[publish] Checking that {PACKAGE_NAME} {version} is not already published")
+        ensure_version_is_new(version, published_versions(fetch_packages_index()))
+    except (OSError, ValueError) as error:
+        print(f"[publish] ERROR: {error}", file=sys.stderr)
+        return 1
 
     print("[publish] Building Debian package")
     status = run(["bash", str(root / "DevUtils/Build.sh")], root)

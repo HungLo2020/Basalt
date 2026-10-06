@@ -12,3 +12,6 @@ path = "src/main.rs"
 [dependencies]
 basalt-core.workspace = true
 clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"

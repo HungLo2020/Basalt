@@ -63,6 +63,7 @@ QtObject {
                 timer.restart();
             }
         } else {
+            console.info("tour complete", steps.length, "screens");
             Qt.quit();
         }
     }
