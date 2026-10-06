@@ -28,6 +28,18 @@ pub enum CoreError {
     #[error("Cancelled")]
     Cancelled,
 
+    #[error(
+        "RetroArch is not installed. Install an emulator core from the Install page \
+         (or run `basalt install-emulators`) to set it up."
+    )]
+    EmulatorRuntimeMissing,
+
+    #[error(
+        "The {name} emulator core is not installed. Install it from the Install page \
+         (or run `basalt install-core {system}`)."
+    )]
+    EmulatorCoreMissing { system: String, name: String },
+
     #[error("{action} {}: {source}", path.display())]
     Io {
         action: &'static str,
@@ -72,24 +84,6 @@ impl CoreError {
 
     pub fn is_blacklisted(&self) -> bool {
         matches!(self, Self::Blacklisted(_))
-    }
-}
-
-impl From<String> for CoreError {
-    fn from(message: String) -> Self {
-        Self::Message(message)
-    }
-}
-
-impl From<&str> for CoreError {
-    fn from(message: &str) -> Self {
-        Self::Message(message.to_string())
-    }
-}
-
-impl From<CoreError> for String {
-    fn from(error: CoreError) -> Self {
-        error.to_string()
     }
 }
 

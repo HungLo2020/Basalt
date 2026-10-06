@@ -68,7 +68,7 @@ pub fn games_json(games: &[GameEntry], playlists: &[Playlist]) -> String {
                     .map(|request| request.key)
                     .unwrap_or_default(),
                 favorite: favorites.contains(game.name.as_str()),
-                is_mattmc: game.name.eq_ignore_ascii_case("MattMC"),
+                is_mattmc: game.is_mattmc(),
             }
         })
         .collect();
@@ -91,8 +91,13 @@ pub fn playlists_json(playlists: &[Playlist]) -> String {
 pub fn install_tiles_json() -> String {
     let mut tiles = vec![InstallTileView {
         key: "mattmc".to_string(),
-        title: "MattMC".to_string(),
-        description: "Install or update MattMC into ~/Games/MattMC.".to_string(),
+        title: core::MATTMC_GAME_NAME.to_string(),
+        description: format!(
+            "Install or update MattMC into {}.",
+            core::mattmc_install_dir()
+                .map(|dir| dir.display().to_string())
+                .unwrap_or_else(|_| "~/Games/MattMC".to_string())
+        ),
         kind: "mattmc",
         system: String::new(),
         supports_save_sync: false,
@@ -167,7 +172,7 @@ mod tests {
             .unwrap();
         let games = vec![
             game("Doom", RunnerKind::Steam, "2280"),
-            game("MattMC", RunnerKind::Bash, "/g/run-mattmc.sh"),
+            game(core::MATTMC_GAME_NAME, RunnerKind::Bash, "/g/run-mattmc.sh"),
             game("Pokemon", RunnerKind::Emulator, &rom_target),
         ];
         let playlists = vec![Playlist {

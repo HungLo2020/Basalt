@@ -5,6 +5,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 use super::paths;
+use crate::error::{CoreError, CoreResult};
 
 const JOYPAD_AUTOCONFIG_REPO_API_URL: &str =
     "https://api.github.com/repos/libretro/retroarch-joypad-autoconfig/contents";
@@ -18,7 +19,7 @@ const READ_TIMEOUT: Duration = Duration::from_secs(15);
 /// Only backends with no Xbox profiles on disk are fetched, so the network (and GitHub's
 /// 60-requests-per-hour unauthenticated API limit) is touched once per machine, not on every
 /// launch. Returns quickly and offline-safe when the profiles are already present.
-pub(super) fn ensure_xbox_autoconfig_profiles() -> Result<(), String> {
+pub(super) fn ensure_xbox_autoconfig_profiles() -> CoreResult<()> {
     let autoconfig_root = paths::retroarch_autoconfig_root_dir()?;
 
     for backend in AUTOCONFIG_BACKENDS {
@@ -46,7 +47,7 @@ fn has_xbox_profiles(backend_dir: &Path) -> bool {
     })
 }
 
-fn download_xbox_profiles(backend: &str, backend_dir: &Path) -> Result<(), String> {
+fn download_xbox_profiles(backend: &str, backend_dir: &Path) -> CoreResult<()> {
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(CONNECT_TIMEOUT)
         .timeout_read(READ_TIMEOUT)
@@ -57,18 +58,25 @@ fn download_xbox_profiles(backend: &str, backend_dir: &Path) -> Result<(), Strin
         .get(&backend_url)
         .set("User-Agent", USER_AGENT)
         .call()
-        .map_err(|error| format!("Failed to fetch joypad profile list: {}", error))?
+        .map_err(|error| CoreError::new(format!("Failed to fetch joypad profile list: {}", error)))?
         .into_string()
-        .map_err(|error| format!("Failed to read joypad profile list payload: {}", error))?;
-    let listing: Value = serde_json::from_str(&payload)
-        .map_err(|error| format!("Failed to parse joypad profile list: {}", error))?;
+        .map_err(|error| {
+            CoreError::new(format!(
+                "Failed to read joypad profile list payload: {}",
+                error
+            ))
+        })?;
+    let listing: Value = serde_json::from_str(&payload).map_err(|error| {
+        CoreError::new(format!("Failed to parse joypad profile list: {}", error))
+    })?;
 
-    let entries = listing
-        .as_array()
-        .ok_or_else(|| "Joypad profile listing has unexpected format".to_string())?;
+    let entries = listing.as_array().ok_or_else(|| {
+        CoreError::new("Joypad profile listing has unexpected format".to_string())
+    })?;
 
-    fs::create_dir_all(backend_dir)
-        .map_err(|error| format!("Failed to create autoconfig directory: {}", error))?;
+    fs::create_dir_all(backend_dir).map_err(|error| {
+        CoreError::new(format!("Failed to create autoconfig directory: {}", error))
+    })?;
 
     for entry in entries {
         let Some(name) = entry.get("name").and_then(Value::as_str) else {
@@ -98,17 +106,22 @@ fn download_xbox_profiles(backend: &str, backend_dir: &Path) -> Result<(), Strin
     Ok(())
 }
 
-fn download_profile(agent: &ureq::Agent, url: &str, destination: &Path) -> Result<(), String> {
+fn download_profile(agent: &ureq::Agent, url: &str, destination: &Path) -> CoreResult<()> {
     let contents = agent
         .get(url)
         .set("User-Agent", USER_AGENT)
         .call()
-        .map_err(|error| format!("Failed to download {}: {}", url, error))?
+        .map_err(|error| CoreError::new(format!("Failed to download {}: {}", url, error)))?
         .into_string()
-        .map_err(|error| format!("Failed to read {}: {}", url, error))?;
+        .map_err(|error| CoreError::new(format!("Failed to read {}: {}", url, error)))?;
 
-    fs::write(destination, contents)
-        .map_err(|error| format!("Failed to save {}: {}", destination.display(), error))
+    fs::write(destination, contents).map_err(|error| {
+        CoreError::new(format!(
+            "Failed to save {}: {}",
+            destination.display(),
+            error
+        ))
+    })
 }
 
 fn is_xbox_profile_name(name: &str) -> bool {

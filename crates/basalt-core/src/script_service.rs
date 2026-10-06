@@ -3,9 +3,10 @@ use std::path::Path;
 use super::error::{CoreError, CoreResult};
 use super::registry;
 use super::runners::RunnerKind;
+use crate::mattmc::MATTMC_GAME_NAME;
 use crate::platform;
 
-const MATTMC_GAME_NAME: &str = "MattMC";
+const MATTMC_BACKUP_SCRIPT_NAME: &str = "backup.sh";
 
 pub fn sync_mattmc() -> CoreResult<()> {
     run_game_sibling_script(MATTMC_GAME_NAME, platform::mattmc_sync_script_name())
@@ -31,13 +32,17 @@ pub fn sync_mattmc_down() -> CoreResult<()> {
     )
 }
 
-pub fn run_game_sibling_script(game_name: &str, sibling_script_name: &str) -> CoreResult<()> {
+pub fn backup_mattmc() -> CoreResult<()> {
+    run_game_sibling_script(MATTMC_GAME_NAME, MATTMC_BACKUP_SCRIPT_NAME)
+}
+
+fn run_game_sibling_script(game_name: &str, sibling_script_name: &str) -> CoreResult<()> {
     let sibling_script_path = resolve_game_sibling_script_path(game_name, sibling_script_name)?;
     platform::launch_script(&sibling_script_path)?;
     Ok(())
 }
 
-pub fn run_game_sibling_script_with_input(
+fn run_game_sibling_script_with_input(
     game_name: &str,
     sibling_script_name: &str,
     stdin_content: &str,

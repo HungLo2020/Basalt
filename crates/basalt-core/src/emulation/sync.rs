@@ -9,6 +9,7 @@ use crate::settings;
 
 use super::is_save_sync_supported_for_system;
 use super::paths;
+use crate::error::CoreError;
 
 pub struct RomSyncReport {
     pub copied: usize,
@@ -67,11 +68,10 @@ fn sync_roms_for_system(
     };
 
     if !source_dir.exists() || !source_dir.is_dir() {
-        return Err(format!(
+        return Err(CoreError::new(format!(
             "Source ROM directory does not exist: {}",
             source_dir.display()
-        )
-        .into());
+        )));
     }
 
     let message = format!("Syncing {} ROMs", system_key.to_uppercase());
@@ -92,7 +92,10 @@ fn sync_saves_for_system(
 ) -> CoreResult<RomSyncReport> {
     let system_key = paths::normalize_system_key(system)?;
     if !is_save_sync_supported_for_system(&system_key) {
-        return Err(format!("Save sync is not supported for system: {}", system_key).into());
+        return Err(CoreError::new(format!(
+            "Save sync is not supported for system: {}",
+            system_key
+        )));
     }
 
     let remote_paths = settings::load_emulation_remote_paths()?;
@@ -101,19 +104,19 @@ fn sync_saves_for_system(
     let remote_dir = Path::new(&remote_paths.saves_root_dir).join(&system_key);
 
     fs::create_dir_all(&local_dir).map_err(|error| {
-        format!(
+        CoreError::new(format!(
             "Failed to create local save directory {}: {}",
             local_dir.display(),
             error
-        )
+        ))
     })?;
 
     fs::create_dir_all(&remote_dir).map_err(|error| {
-        format!(
+        CoreError::new(format!(
             "Failed to create remote save directory {}: {}",
             remote_dir.display(),
             error
-        )
+        ))
     })?;
 
     let (source_dir, destination_dir) = match direction {
@@ -144,12 +147,12 @@ where
     F: Fn(&Path) -> bool,
 {
     fs::create_dir_all(destination_dir).map_err(|error| {
-        format!(
+        CoreError::new(format!(
             "Failed to create destination {} directory {}: {}",
             file_label,
             destination_dir.display(),
             error
-        )
+        ))
     })?;
 
     let mut source_files = Vec::new();
@@ -174,12 +177,12 @@ where
         progress.report_items(message, index as u64, total_files);
 
         let relative_path = source_file.strip_prefix(source_dir).map_err(|error| {
-            format!(
+            CoreError::new(format!(
                 "Failed to compute relative {} path for {}: {}",
                 file_label,
                 source_file.display(),
                 error
-            )
+            ))
         })?;
 
         source_relative_paths.insert(relative_path.to_path_buf());
@@ -187,23 +190,23 @@ where
         let destination_file = destination_dir.join(relative_path);
         if destination_file.exists() && destination_file.is_dir() {
             fs::remove_dir_all(&destination_file).map_err(|error| {
-                format!(
+                CoreError::new(format!(
                     "Failed to remove conflicting destination {} directory {}: {}",
                     file_label,
                     destination_file.display(),
                     error
-                )
+                ))
             })?;
         }
 
         if let Some(parent_dir) = destination_file.parent() {
             fs::create_dir_all(parent_dir).map_err(|error| {
-                format!(
+                CoreError::new(format!(
                     "Failed to create destination {} subdirectory {}: {}",
                     file_label,
                     parent_dir.display(),
                     error
-                )
+                ))
             })?;
         }
 
@@ -215,13 +218,13 @@ where
 
         if should_copy {
             fs::copy(&source_file, &destination_file).map_err(|error| {
-                format!(
+                CoreError::new(format!(
                     "Failed to copy {} {} -> {}: {}",
                     file_label,
                     source_file.display(),
                     destination_file.display(),
                     error
-                )
+                ))
             })?;
             copied += 1;
         } else {
@@ -236,12 +239,12 @@ where
         let relative_path = destination_file
             .strip_prefix(destination_dir)
             .map_err(|error| {
-                format!(
+                CoreError::new(format!(
                     "Failed to compute destination relative {} path for {}: {}",
                     file_label,
                     destination_file.display(),
                     error
-                )
+                ))
             })?;
 
         if source_relative_paths.contains(relative_path) {
@@ -250,12 +253,12 @@ where
 
         if destination_file.exists() && destination_file.is_file() {
             fs::remove_file(&destination_file).map_err(|error| {
-                format!(
+                CoreError::new(format!(
                     "Failed to delete destination {} {}: {}",
                     file_label,
                     destination_file.display(),
                     error
-                )
+                ))
             })?;
             deleted += 1;
         }
@@ -278,13 +281,19 @@ fn is_syncable_save_file(file_path: &Path) -> bool {
     !file_name.to_lowercase().contains(".state")
 }
 
-fn collect_files_recursive(root: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
-    let entries = fs::read_dir(root)
-        .map_err(|error| format!("Failed to read ROM directory {}: {}", root.display(), error))?;
+fn collect_files_recursive(root: &Path, out: &mut Vec<PathBuf>) -> CoreResult<()> {
+    let entries = fs::read_dir(root).map_err(|error| {
+        CoreError::new(format!(
+            "Failed to read ROM directory {}: {}",
+            root.display(),
+            error
+        ))
+    })?;
 
     for entry in entries {
-        let entry =
-            entry.map_err(|error| format!("Failed to read ROM directory entry: {}", error))?;
+        let entry = entry.map_err(|error| {
+            CoreError::new(format!("Failed to read ROM directory entry: {}", error))
+        })?;
         let path = entry.path();
 
         if path.is_dir() {
@@ -297,13 +306,19 @@ fn collect_files_recursive(root: &Path, out: &mut Vec<PathBuf>) -> Result<(), St
     Ok(())
 }
 
-fn remove_empty_subdirectories(root: &Path) -> Result<(), String> {
-    let entries = fs::read_dir(root)
-        .map_err(|error| format!("Failed to read ROM directory {}: {}", root.display(), error))?;
+fn remove_empty_subdirectories(root: &Path) -> CoreResult<()> {
+    let entries = fs::read_dir(root).map_err(|error| {
+        CoreError::new(format!(
+            "Failed to read ROM directory {}: {}",
+            root.display(),
+            error
+        ))
+    })?;
 
     for entry in entries {
-        let entry =
-            entry.map_err(|error| format!("Failed to read ROM directory entry: {}", error))?;
+        let entry = entry.map_err(|error| {
+            CoreError::new(format!("Failed to read ROM directory entry: {}", error))
+        })?;
         let path = entry.path();
 
         if !path.is_dir() {
@@ -313,20 +328,20 @@ fn remove_empty_subdirectories(root: &Path) -> Result<(), String> {
         remove_empty_subdirectories(&path)?;
 
         let mut sub_entries = fs::read_dir(&path).map_err(|error| {
-            format!(
+            CoreError::new(format!(
                 "Failed to read ROM subdirectory {}: {}",
                 path.display(),
                 error
-            )
+            ))
         })?;
 
         if sub_entries.next().is_none() {
             fs::remove_dir(&path).map_err(|error| {
-                format!(
+                CoreError::new(format!(
                     "Failed to remove empty ROM subdirectory {}: {}",
                     path.display(),
                     error
-                )
+                ))
             })?;
         }
     }
@@ -334,20 +349,24 @@ fn remove_empty_subdirectories(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn files_identical(first: &Path, second: &Path) -> Result<bool, String> {
-    let first_metadata = fs::metadata(first)
-        .map_err(|error| format!("Failed to stat {}: {}", first.display(), error))?;
-    let second_metadata = fs::metadata(second)
-        .map_err(|error| format!("Failed to stat {}: {}", second.display(), error))?;
+fn files_identical(first: &Path, second: &Path) -> CoreResult<bool> {
+    let first_metadata = fs::metadata(first).map_err(|error| {
+        CoreError::new(format!("Failed to stat {}: {}", first.display(), error))
+    })?;
+    let second_metadata = fs::metadata(second).map_err(|error| {
+        CoreError::new(format!("Failed to stat {}: {}", second.display(), error))
+    })?;
 
     if first_metadata.len() != second_metadata.len() {
         return Ok(false);
     }
 
-    let first_file = fs::File::open(first)
-        .map_err(|error| format!("Failed to open {}: {}", first.display(), error))?;
-    let second_file = fs::File::open(second)
-        .map_err(|error| format!("Failed to open {}: {}", second.display(), error))?;
+    let first_file = fs::File::open(first).map_err(|error| {
+        CoreError::new(format!("Failed to open {}: {}", first.display(), error))
+    })?;
+    let second_file = fs::File::open(second).map_err(|error| {
+        CoreError::new(format!("Failed to open {}: {}", second.display(), error))
+    })?;
 
     let mut first_reader = BufReader::new(first_file);
     let mut second_reader = BufReader::new(second_file);
@@ -356,12 +375,12 @@ fn files_identical(first: &Path, second: &Path) -> Result<bool, String> {
     let mut second_buffer = [0u8; 8192];
 
     loop {
-        let first_read = first_reader
-            .read(&mut first_buffer)
-            .map_err(|error| format!("Failed to read {}: {}", first.display(), error))?;
-        let second_read = second_reader
-            .read(&mut second_buffer)
-            .map_err(|error| format!("Failed to read {}: {}", second.display(), error))?;
+        let first_read = first_reader.read(&mut first_buffer).map_err(|error| {
+            CoreError::new(format!("Failed to read {}: {}", first.display(), error))
+        })?;
+        let second_read = second_reader.read(&mut second_buffer).map_err(|error| {
+            CoreError::new(format!("Failed to read {}: {}", second.display(), error))
+        })?;
 
         if first_read != second_read {
             return Ok(false);

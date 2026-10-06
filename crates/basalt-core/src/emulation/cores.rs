@@ -9,6 +9,21 @@ use crate::emulator_systems::EmulatorSystemSpec;
 use crate::error::{CoreError, CoreResult};
 use crate::progress::Progress;
 
+/// The installed core for `core_spec`, without downloading it. Used when launching games.
+pub(super) fn installed_core_path(core_spec: &EmulatorSystemSpec) -> CoreResult<PathBuf> {
+    let core_path = paths::retroarch_cores_dir()?.join(core_spec.core_file);
+    if core_path.is_file() {
+        Ok(core_path)
+    } else {
+        Err(CoreError::EmulatorCoreMissing {
+            system: core_spec.system_key.to_string(),
+            name: core_spec.short_name.to_string(),
+        })
+    }
+}
+
+/// The installed core for `core_spec`, downloading it when missing. Only for explicit install
+/// actions.
 pub(super) fn ensure_core_installed(
     core_spec: &EmulatorSystemSpec,
     _runtime_command: &RuntimeCommand,
@@ -32,8 +47,12 @@ pub(super) fn ensure_core_installed(
     progress.check_cancelled()?;
 
     progress.report_step(format!("Installing {} core", core_spec.short_name));
-    extract_zip(&archive_bytes, &cores_dir)
-        .map_err(|error| format!("Failed to extract {}: {}", core_spec.archive_url, error))?;
+    extract_zip(&archive_bytes, &cores_dir).map_err(|error| {
+        CoreError::new(format!(
+            "Failed to extract {}: {}",
+            core_spec.archive_url, error
+        ))
+    })?;
 
     if core_path.exists() {
         Ok(core_path)
@@ -47,13 +66,13 @@ pub(super) fn ensure_core_installed(
 
 /// Extracts every entry of an in-memory ZIP into `destination`. Entry paths that would escape
 /// `destination` are rejected by `ZipArchive::extract`.
-fn extract_zip(archive_bytes: &[u8], destination: &Path) -> Result<(), String> {
-    fs::create_dir_all(destination).map_err(|error| error.to_string())?;
-    let mut archive =
-        zip::ZipArchive::new(Cursor::new(archive_bytes)).map_err(|error| error.to_string())?;
+fn extract_zip(archive_bytes: &[u8], destination: &Path) -> CoreResult<()> {
+    fs::create_dir_all(destination).map_err(|error| CoreError::new(error.to_string()))?;
+    let mut archive = zip::ZipArchive::new(Cursor::new(archive_bytes))
+        .map_err(|error| CoreError::new(error.to_string()))?;
     archive
         .extract(destination)
-        .map_err(|error| error.to_string())
+        .map_err(|error| CoreError::new(error.to_string()))
 }
 
 #[cfg(test)]

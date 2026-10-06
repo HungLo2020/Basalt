@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::emulation;
+use crate::error::CoreError;
 use crate::playlist_service;
 use crate::registry;
 use crate::runners::RunnerKind;
@@ -74,11 +75,8 @@ pub fn discover_emulator_entries() -> CoreResult<EmulatorDiscoverReport> {
             entry.runner_kind == discovered_entry.runner_kind
                 && entry.launch_target == discovered_entry.launch_target
         }) {
-            let desired_name = allocate_unique_entry_name(
-                &entries,
-                &discovered_entry.name,
-                Some(existing_index),
-            );
+            let desired_name =
+                allocate_unique_entry_name(&entries, &discovered_entry.name, Some(existing_index));
 
             if entries[existing_index].name == desired_name {
                 report.already_exists += 1;
@@ -109,13 +107,19 @@ pub fn discover_emulator_entries() -> CoreResult<EmulatorDiscoverReport> {
     Ok(report)
 }
 
-fn collect_files_recursive(root: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
-    let entries = fs::read_dir(root)
-        .map_err(|error| format!("Failed to read ROM directory {}: {}", root.display(), error))?;
+fn collect_files_recursive(root: &Path, out: &mut Vec<PathBuf>) -> CoreResult<()> {
+    let entries = fs::read_dir(root).map_err(|error| {
+        CoreError::new(format!(
+            "Failed to read ROM directory {}: {}",
+            root.display(),
+            error
+        ))
+    })?;
 
     for entry in entries {
-        let entry =
-            entry.map_err(|error| format!("Failed to read ROM directory entry: {}", error))?;
+        let entry = entry.map_err(|error| {
+            CoreError::new(format!("Failed to read ROM directory entry: {}", error))
+        })?;
         let path = entry.path();
 
         if path.is_dir() {

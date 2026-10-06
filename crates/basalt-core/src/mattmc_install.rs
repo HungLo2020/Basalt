@@ -10,6 +10,7 @@ use zip::ZipArchive;
 use crate::platform;
 
 use super::download::download_to_writer;
+use super::mattmc::mattmc_install_dir;
 use super::progress::Progress;
 use super::{CoreError, CoreResult, DiscoverResult, DiscoverRunner};
 
@@ -34,12 +35,7 @@ impl MattmcInstallReport {
 }
 
 pub fn install_mattmc(progress: &Progress) -> CoreResult<MattmcInstallReport> {
-    let home = platform::home_dir()?;
-    let games_dir = home.join("Games");
-    let target_dir = games_dir.join("MattMC");
-
-    fs::create_dir_all(&games_dir)
-        .map_err(|err| CoreError::new(format!("Failed to create Games directory: {}", err)))?;
+    let target_dir = mattmc_install_dir()?;
 
     fs::create_dir_all(&target_dir)
         .map_err(|err| CoreError::new(format!("Failed to create MattMC directory: {}", err)))?;
@@ -85,9 +81,10 @@ pub fn install_mattmc(progress: &Progress) -> CoreResult<MattmcInstallReport> {
         Some(DiscoverResult::Added) => DiscoverResult::Added,
         Some(DiscoverResult::AlreadyExists) => DiscoverResult::AlreadyExists,
         Some(DiscoverResult::NotFound) | None => {
-            return Err(CoreError::new(
-                "MattMC install completed, but discovery did not find ~/Games/MattMC/run-mattmc.sh",
-            ));
+            return Err(CoreError::new(format!(
+                "MattMC install completed, but discovery found no launch script in {}",
+                target_dir.display()
+            )));
         }
     };
 

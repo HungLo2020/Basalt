@@ -7,6 +7,7 @@ use super::{
     encode_url_path_segment, normalize_matching_title, stable_hash_hex, strip_bracketed_segments,
     EMULATOR_ARTWORK_INDEX_TTL_SECONDS, EMULATOR_ARTWORK_USER_AGENT,
 };
+use crate::error::{CoreError, CoreResult};
 
 pub(super) fn build_emulator_boxart_title_candidates(rom_stem: &str) -> (Vec<String>, Vec<String>) {
     let base_trimmed = rom_stem.trim();
@@ -329,9 +330,11 @@ fn write_thumbnail_listing_to_disk(
     system_catalog: &str,
     artwork_set: &str,
     listing: &[String],
-) -> Result<(), String> {
+) -> CoreResult<()> {
     let Some(file_path) = thumbnail_listing_cache_file_path(system_catalog, artwork_set) else {
-        return Err("Failed to resolve thumbnail listing cache file path".to_string());
+        return Err(CoreError::new(
+            "Failed to resolve thumbnail listing cache file path".to_string(),
+        ));
     };
 
     let mut serialized = format!("#ts={}\n", cache::current_unix_timestamp_seconds());
@@ -340,8 +343,12 @@ fn write_thumbnail_listing_to_disk(
         serialized.push('\n');
     }
 
-    std::fs::write(file_path, serialized)
-        .map_err(|error| format!("Failed to write thumbnail listing cache: {}", error))
+    std::fs::write(file_path, serialized).map_err(|error| {
+        CoreError::new(format!(
+            "Failed to write thumbnail listing cache: {}",
+            error
+        ))
+    })
 }
 
 fn thumbnail_listing_cache_file_path(

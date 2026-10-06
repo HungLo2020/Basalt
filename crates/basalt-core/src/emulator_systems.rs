@@ -136,7 +136,10 @@ pub fn emulator_systems() -> Vec<EmulatorSystem> {
 }
 
 pub fn discoverable_system_keys() -> Vec<&'static str> {
-    EMULATOR_SYSTEMS.iter().map(|spec| spec.system_key).collect()
+    EMULATOR_SYSTEMS
+        .iter()
+        .map(|spec| spec.system_key)
+        .collect()
 }
 
 pub fn emulator_system(system: &str) -> Option<&'static EmulatorSystemSpec> {

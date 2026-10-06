@@ -1,6 +1,7 @@
 pub mod emulatorrunner;
 pub mod steamrunner;
 
+use crate::error::CoreResult;
 use crate::platform;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,7 +35,7 @@ impl RunnerKind {
     }
 }
 
-pub fn resolve_add_target(raw_input: &str) -> Result<ResolvedTarget, String> {
+pub fn resolve_add_target(raw_input: &str) -> CoreResult<ResolvedTarget> {
     if let Some(appid) = steamrunner::detect_appid(raw_input) {
         return Ok(ResolvedTarget {
             runner_kind: RunnerKind::Steam,
@@ -49,7 +50,7 @@ pub fn resolve_add_target(raw_input: &str) -> Result<ResolvedTarget, String> {
     })
 }
 
-pub fn launch(runner_kind: RunnerKind, launch_target: &str) -> Result<(), String> {
+pub fn launch(runner_kind: RunnerKind, launch_target: &str) -> CoreResult<()> {
     match runner_kind {
         RunnerKind::Bash => platform::launch_script(launch_target),
         RunnerKind::Steam => steamrunner::launch(launch_target),

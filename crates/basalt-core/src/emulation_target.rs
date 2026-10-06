@@ -1,3 +1,4 @@
+use crate::error::{CoreError, CoreResult};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,12 +33,12 @@ impl EmulationLaunchTarget {
         backend: EmulationBackend,
         system_key: impl Into<String>,
         rom_path: PathBuf,
-    ) -> Result<Self, String> {
+    ) -> CoreResult<Self> {
         let system_key = normalize_system_key(system_key.into())
-            .ok_or_else(|| "System key cannot be empty".to_string())?;
+            .ok_or_else(|| CoreError::new("System key cannot be empty".to_string()))?;
 
         if rom_path.as_os_str().is_empty() {
-            return Err("ROM path cannot be empty".to_string());
+            return Err(CoreError::new("ROM path cannot be empty".to_string()));
         }
 
         Ok(Self {
@@ -47,24 +48,28 @@ impl EmulationLaunchTarget {
         })
     }
 
-    pub fn new_retroarch(system_key: impl Into<String>, rom_path: PathBuf) -> Result<Self, String> {
+    pub fn new_retroarch(system_key: impl Into<String>, rom_path: PathBuf) -> CoreResult<Self> {
         Self::new(EmulationBackend::Retroarch, system_key, rom_path)
     }
 
-    pub fn decode(raw: &str) -> Result<Self, String> {
+    pub fn decode(raw: &str) -> CoreResult<Self> {
         let mut parts = raw.splitn(3, '|');
         let backend_raw = parts.next().unwrap_or_default();
         let system_raw = parts.next().unwrap_or_default();
         let rom_path_raw = parts.next().unwrap_or_default();
 
-        let backend = EmulationBackend::parse(backend_raw)
-            .ok_or_else(|| format!("Unsupported emulator backend '{}'.", backend_raw))?;
+        let backend = EmulationBackend::parse(backend_raw).ok_or_else(|| {
+            CoreError::new(format!("Unsupported emulator backend '{}'.", backend_raw))
+        })?;
 
-        let system_key = normalize_system_key(system_raw)
-            .ok_or_else(|| "Malformed emulator launch target: missing system key.".to_string())?;
+        let system_key = normalize_system_key(system_raw).ok_or_else(|| {
+            CoreError::new("Malformed emulator launch target: missing system key.".to_string())
+        })?;
 
         if rom_path_raw.trim().is_empty() {
-            return Err("Malformed emulator launch target: missing ROM path.".to_string());
+            return Err(CoreError::new(
+                "Malformed emulator launch target: missing ROM path.".to_string(),
+            ));
         }
 
         Ok(Self {
@@ -74,11 +79,11 @@ impl EmulationLaunchTarget {
         })
     }
 
-    pub fn encode(&self) -> Result<String, String> {
+    pub fn encode(&self) -> CoreResult<String> {
         let rom_path = self
             .rom_path
             .to_str()
-            .ok_or_else(|| "ROM path contains invalid UTF-8".to_string())?;
+            .ok_or_else(|| CoreError::new("ROM path contains invalid UTF-8".to_string()))?;
 
         Ok(format!(
             "{}|{}|{}",

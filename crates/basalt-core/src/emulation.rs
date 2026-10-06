@@ -121,49 +121,53 @@ pub fn is_supported_rom_for_system(system: &str, file_path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-pub fn roms_root_dir() -> Result<PathBuf, String> {
+pub fn roms_root_dir() -> CoreResult<PathBuf> {
     paths::roms_root_dir()
 }
 
-pub fn ensure_emulator_directories() -> Result<(), String> {
+pub fn ensure_emulator_directories() -> CoreResult<()> {
     paths::ensure_emulator_directories()
 }
 
-pub fn build_launch_target(system: &str, rom_path: &Path) -> Result<String, String> {
+pub fn build_launch_target(system: &str, rom_path: &Path) -> CoreResult<String> {
     let system_key = paths::normalize_system_key(system)?;
     if emulator_systems::emulator_system(&system_key).is_none() {
-        return Err(format!("Unsupported emulator system: {}", system));
+        return Err(CoreError::new(format!(
+            "Unsupported emulator system: {}",
+            system
+        )));
     }
 
     let canonical_rom_path = paths::canonicalize_or_keep(rom_path);
     EmulationLaunchTarget::new_retroarch(system_key, canonical_rom_path)?.encode()
 }
 
-pub fn launch_target(launch_target: &str) -> Result<(), String> {
+/// Launches an emulator game. Never installs or downloads anything: a missing RetroArch or core
+/// is reported with how to install it (from the Install page or the CLI).
+pub fn launch_target(launch_target: &str) -> CoreResult<()> {
     paths::ensure_emulator_directories()?;
-    let runtime_command = runtime::ensure_runtime_command()?;
-    // Normally a no-op: profiles are fetched at core install. Only reaches the network on a
-    // machine where they were never downloaded.
-    let _ = autoconfig::ensure_xbox_autoconfig_profiles();
+    let runtime_command = runtime::installed_runtime_command()?;
     let parsed_launch_target = EmulationLaunchTarget::decode(launch_target)?;
     let system = paths::normalize_system_key(parsed_launch_target.system_key())?;
     let rom_path = parsed_launch_target.rom_path().to_path_buf();
 
     if !rom_path.exists() || !rom_path.is_file() {
-        return Err(format!("ROM file does not exist: {}", rom_path.display()));
+        return Err(CoreError::new(format!(
+            "ROM file does not exist: {}",
+            rom_path.display()
+        )));
     }
 
     if !is_supported_rom_for_system(&system, &rom_path) {
-        return Err(format!(
+        return Err(CoreError::new(format!(
             "ROM extension is not supported for system '{}': {}",
             system,
             rom_path.display()
-        ));
+        )));
     }
 
-    let core_spec = emulator_systems::emulator_system(&system)
-        .ok_or_else(|| format!("Unsupported emulator system: {}", system))?;
-    let core_path = cores::ensure_core_installed(core_spec, &runtime_command, &Progress::none())?;
+    let core_spec = supported_system(&system)?;
+    let core_path = cores::installed_core_path(core_spec)?;
 
     runtime::launch_retroarch(&runtime_command, &system, &rom_path, &core_path)
 }

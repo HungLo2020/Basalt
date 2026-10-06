@@ -14,6 +14,7 @@ mod emulation_target;
 mod emulator_systems;
 mod error;
 mod game_service;
+mod mattmc;
 mod mattmc_install;
 pub mod platform;
 mod playlist_service;
@@ -44,12 +45,13 @@ pub use game_service::{
     add_game, add_game_to_playlist, launch_game, list_games, list_playlists, remove_all_games,
     remove_game, remove_game_from_playlist,
 };
+pub use mattmc::{mattmc_install_dir, MATTMC_GAME_NAME};
 pub use mattmc_install::{install_mattmc, MattmcInstallReport};
 pub use playlist_service::FAVORITES_PLAYLIST_NAME;
 pub use progress::{CancelToken, Progress, ProgressUnit, ProgressUpdate};
 pub use runners::RunnerKind;
 pub use script_service::{
-    run_game_sibling_script, sync_mattmc, sync_mattmc_down, sync_mattmc_up, update_mattmc,
+    backup_mattmc, sync_mattmc, sync_mattmc_down, sync_mattmc_up, update_mattmc,
 };
 pub use settings::{
     default_emulation_remote_paths, load_emulation_remote_paths, load_launcher_display_settings,

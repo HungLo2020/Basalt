@@ -70,7 +70,7 @@ pub(super) fn run(command: Command) -> CoreResult<()> {
         }
         Command::Launch { name } => core::launch_game(name.trim())?,
         Command::BackupMattmc => {
-            core::run_game_sibling_script("MattMC", "backup.sh")?;
+            core::backup_mattmc()?;
             println!("Ran backup script for MattMC.");
         }
         Command::SyncMattmc => {
@@ -162,7 +162,10 @@ fn discover(steam: bool, mattmc: bool, emulators: bool) -> CoreResult<()> {
             DiscoverResult::Added => println!("Discovered MattMC and added it."),
             DiscoverResult::AlreadyExists => println!("MattMC entry already exists."),
             DiscoverResult::NotFound => {
-                println!("MattMC not found at ~/Games/MattMC/run-mattmc.sh")
+                println!(
+                    "MattMC not found in {}",
+                    core::mattmc_install_dir()?.display()
+                )
             }
         }
     }

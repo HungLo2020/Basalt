@@ -59,7 +59,7 @@ fn migrate_legacy_app_dir() {
         return;
     }
 
-    let targets: [(&[&str], Result<PathBuf, String>); 2] = [
+    let targets: [(&[&str], CoreResult<PathBuf>); 2] = [
         (&LEGACY_DATA_FILES, platform::data_dir()),
         (&LEGACY_CONFIG_FILES, platform::config_dir()),
     ];

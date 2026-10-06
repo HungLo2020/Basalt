@@ -1,3 +1,4 @@
+use crate::error::{CoreError, CoreResult};
 use crate::platform;
 
 pub fn detect_appid(raw_input: &str) -> Option<String> {
@@ -37,40 +38,51 @@ pub fn detect_appid(raw_input: &str) -> Option<String> {
     None
 }
 
-pub fn launch(appid: &str) -> Result<(), String> {
+pub fn launch(appid: &str) -> CoreResult<()> {
     if appid.is_empty() || !appid.chars().all(|value| value.is_ascii_digit()) {
-        return Err(format!("Invalid Steam appid: {}", appid));
+        return Err(CoreError::new(format!("Invalid Steam appid: {}", appid)));
     }
 
     let output = if platform::command_exists("steam") {
-        platform::run_command("steam", &["-applaunch", appid])
-            .map_err(|err| format!("Failed to launch Steam app via steam command: {}", err))?
+        platform::run_command("steam", &["-applaunch", appid]).map_err(|err| {
+            CoreError::new(format!(
+                "Failed to launch Steam app via steam command: {}",
+                err
+            ))
+        })?
     } else if platform::command_exists("flatpak") && flatpak_has_steam()? {
         platform::run_command(
             "flatpak",
             &["run", "com.valvesoftware.Steam", "-applaunch", appid],
         )
-        .map_err(|err| format!("Failed to launch Steam app via flatpak: {}", err))?
+        .map_err(|err| CoreError::new(format!("Failed to launch Steam app via flatpak: {}", err)))?
     } else {
-        return Err("Steam is not installed or not on PATH.".to_string());
+        return Err(CoreError::new(
+            "Steam is not installed or not on PATH.".to_string(),
+        ));
     };
 
     if !output.status.success() {
-        return Err(format!(
+        return Err(CoreError::new(format!(
             "Steam launch exited with non-zero status: {}",
             output
                 .status
                 .code()
                 .map(|code| code.to_string())
                 .unwrap_or_else(|| "terminated by signal".to_string())
-        ));
+        )));
     }
 
     Ok(())
 }
-fn flatpak_has_steam() -> Result<bool, String> {
-    let output = platform::run_command("flatpak", &["info", "com.valvesoftware.Steam"])
-        .map_err(|err| format!("Failed to check flatpak Steam installation: {}", err))?;
+fn flatpak_has_steam() -> CoreResult<bool> {
+    let output =
+        platform::run_command("flatpak", &["info", "com.valvesoftware.Steam"]).map_err(|err| {
+            CoreError::new(format!(
+                "Failed to check flatpak Steam installation: {}",
+                err
+            ))
+        })?;
 
     Ok(output.status.success())
 }

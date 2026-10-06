@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 
+use super::mattmc::MATTMC_GAME_NAME;
 use super::runners::RunnerKind;
 use super::{emulator_artwork_catalog_path, EmulationLaunchTarget, GameEntry};
 
@@ -51,8 +52,8 @@ impl ArtworkRequest {
     /// The artwork request for a library entry, or `None` for entries without artwork
     /// (plain scripts).
     pub fn for_game(game: &GameEntry) -> Option<Self> {
-        if game.name.eq_ignore_ascii_case("MattMC") {
-            return Some(Self::mattmc_named(&game.name));
+        if game.is_mattmc() {
+            return Some(Self::mattmc());
         }
 
         match game.runner_kind {
@@ -81,14 +82,10 @@ impl ArtworkRequest {
 
     /// The MattMC artwork shown on the Install screen, independent of any library entry.
     pub fn mattmc() -> Self {
-        Self::mattmc_named("MattMC")
-    }
-
-    fn mattmc_named(display_name: &str) -> Self {
         Self {
             key: "mattmc:default".to_string(),
             kind: ArtworkKind::Mattmc,
-            display_name: display_name.to_string(),
+            display_name: MATTMC_GAME_NAME.to_string(),
             target: String::new(),
         }
     }

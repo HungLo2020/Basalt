@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use crate::error::{CoreError, CoreResult};
 use crate::platform;
 
 use super::paths;
@@ -12,7 +13,15 @@ pub(super) enum RuntimeCommand {
     RetroArchFlatpak,
 }
 
-pub(super) fn ensure_runtime_command() -> Result<RuntimeCommand, String> {
+/// The installed RetroArch, without trying to install it. Used when launching games, which must
+/// never install software.
+pub(super) fn installed_runtime_command() -> CoreResult<RuntimeCommand> {
+    detect_runtime_command().ok_or(CoreError::EmulatorRuntimeMissing)
+}
+
+/// The installed RetroArch, installing it (apt or Flatpak) when missing. Only for explicit
+/// install actions.
+pub(super) fn ensure_runtime_command() -> CoreResult<RuntimeCommand> {
     if let Some(command) = detect_runtime_command() {
         return Ok(command);
     }
@@ -20,7 +29,7 @@ pub(super) fn ensure_runtime_command() -> Result<RuntimeCommand, String> {
     attempt_runtime_install()?;
 
     detect_runtime_command().ok_or_else(|| {
-        "RetroArch is not available. Automatic installation failed; retry from Install screen or run `basalt install-emulators`.".to_string()
+        CoreError::new("RetroArch is not available. Automatic installation failed; retry from Install screen or run `basalt install-emulators`.".to_string())
     })
 }
 
@@ -29,35 +38,43 @@ pub(super) fn launch_retroarch(
     system: &str,
     rom_path: &Path,
     core_path: &Path,
-) -> Result<(), String> {
+) -> CoreResult<()> {
     let save_directory = paths::saves_root_dir()?.join(system);
-    fs::create_dir_all(&save_directory)
-        .map_err(|error| format!("Failed to create emulator save directory: {}", error))?;
+    fs::create_dir_all(&save_directory).map_err(|error| {
+        CoreError::new(format!(
+            "Failed to create emulator save directory: {}",
+            error
+        ))
+    })?;
 
     let rom_path_string = rom_path
         .to_str()
-        .ok_or_else(|| "ROM path contains invalid UTF-8".to_string())?;
+        .ok_or_else(|| CoreError::new("ROM path contains invalid UTF-8".to_string()))?;
     let core_path_string = core_path
         .to_str()
-        .ok_or_else(|| "Core path contains invalid UTF-8".to_string())?;
+        .ok_or_else(|| CoreError::new("Core path contains invalid UTF-8".to_string()))?;
     let append_config_path =
         paths::retroarch_runtime_dir()?.join(format!("basalt-{}-paths.cfg", system));
     let save_directory_string = save_directory
         .to_str()
-        .ok_or_else(|| "Save directory path contains invalid UTF-8".to_string())?;
+        .ok_or_else(|| CoreError::new("Save directory path contains invalid UTF-8".to_string()))?;
     let autoconfig_directory = paths::retroarch_autoconfig_root_dir()?;
     let autoconfig_directory_string = autoconfig_directory
         .to_str()
-        .ok_or_else(|| "Autoconfig path contains invalid UTF-8".to_string())?;
+        .ok_or_else(|| CoreError::new("Autoconfig path contains invalid UTF-8".to_string()))?;
     let append_config_contents = format!(
         "savefile_directory = \"{}\"\nsavestate_directory = \"{}\"\nsavefiles_in_content_dir = \"false\"\nsavestates_in_content_dir = \"false\"\nsort_savefiles_enable = \"false\"\nsort_savestates_enable = \"false\"\nsort_savefiles_by_content_enable = \"false\"\nsort_savestates_by_content_enable = \"false\"\nvideo_fullscreen = \"true\"\ninput_autodetect_enable = \"true\"\njoypad_autoconfig_dir = \"{}\"\n",
         save_directory_string, save_directory_string, autoconfig_directory_string
     );
-    fs::write(&append_config_path, append_config_contents)
-        .map_err(|error| format!("Failed to write RetroArch append config: {}", error))?;
-    let append_config_string = append_config_path
-        .to_str()
-        .ok_or_else(|| "RetroArch append config path contains invalid UTF-8".to_string())?;
+    fs::write(&append_config_path, append_config_contents).map_err(|error| {
+        CoreError::new(format!(
+            "Failed to write RetroArch append config: {}",
+            error
+        ))
+    })?;
+    let append_config_string = append_config_path.to_str().ok_or_else(|| {
+        CoreError::new("RetroArch append config path contains invalid UTF-8".to_string())
+    })?;
 
     let mut launch_args = vec![
         "--fullscreen",
@@ -78,7 +95,7 @@ pub(super) fn launch_retroarch(
     };
 
     let output = platform::run_command(command_name, &args)
-        .map_err(|error| format!("Failed to launch emulator runtime: {}", error))?;
+        .map_err(|error| CoreError::new(format!("Failed to launch emulator runtime: {}", error)))?;
 
     if output.status.success() {
         Ok(())
@@ -99,25 +116,25 @@ pub(super) fn launch_retroarch(
             "No additional runtime output".to_string()
         };
 
-        Err(format!(
+        Err(CoreError::new(format!(
             "Emulator launch failed (exit={}): {}",
             exit_code, details
-        ))
+        )))
     }
 }
 
-pub(super) fn run_command(command: &str, args: &[&str]) -> Result<(), String> {
+pub(super) fn run_command(command: &str, args: &[&str]) -> CoreResult<()> {
     let output = platform::run_command(command, args)?;
 
     if output.status.success() {
         Ok(())
     } else {
-        Err(format!(
+        Err(CoreError::new(format!(
             "Command failed: {} {}\n{}",
             command,
             args.join(" "),
             String::from_utf8_lossy(&output.stderr).trim()
-        ))
+        )))
     }
 }
 
@@ -137,7 +154,7 @@ fn detect_runtime_command() -> Option<RuntimeCommand> {
     None
 }
 
-fn attempt_runtime_install() -> Result<(), String> {
+fn attempt_runtime_install() -> CoreResult<()> {
     if command_exists("apt-get") {
         let _ = try_install_with_apt();
         if command_exists("retroarch") {
@@ -164,10 +181,12 @@ fn attempt_runtime_install() -> Result<(), String> {
         }
     }
 
-    Err("Failed to automatically install RetroArch runtime.".to_string())
+    Err(CoreError::new(
+        "Failed to automatically install RetroArch runtime.".to_string(),
+    ))
 }
 
-fn try_install_with_apt() -> Result<(), String> {
+fn try_install_with_apt() -> CoreResult<()> {
     if is_root_user() {
         run_command("apt-get", &["update"])?;
         run_command("apt-get", &["install", "-y", "retroarch"])?;
@@ -180,7 +199,9 @@ fn try_install_with_apt() -> Result<(), String> {
         return Ok(());
     }
 
-    Err("Apt-based RetroArch installation requires root or passwordless sudo.".to_string())
+    Err(CoreError::new(
+        "Apt-based RetroArch installation requires root or passwordless sudo.".to_string(),
+    ))
 }
 
 fn flatpak_app_is_installed() -> bool {
