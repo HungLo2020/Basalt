@@ -25,27 +25,8 @@ setup_debian() {
   require_cmd sudo
   require_cmd apt-get
 
-  log "Updating apt package index"
-  sudo apt-get update
-
   log "Installing system dependencies"
-  sudo apt-get install -y \
-    ca-certificates \
-    curl \
-    build-essential \
-    pkg-config \
-    git \
-    dpkg-dev \
-    libudev-dev \
-    qt6-base-dev \
-    qt6-base-dev-tools \
-    qt6-declarative-dev \
-    qt6-declarative-dev-tools \
-    qml6-module-org-kde-kirigami \
-    qml6-module-org-kde-desktop \
-    qml6-module-qtquick-controls \
-    qml6-module-qtquick-layouts \
-    qt6-svg-plugins
+  bash "$(dirname "${BASH_SOURCE[0]}")/InstallDependencies.sh"
 }
 
 main() {

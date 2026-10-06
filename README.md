@@ -10,9 +10,9 @@ On a system with the MattPackages apt repository configured:
 
 Basalt is then updated with the rest of the system (`sudo apt upgrade`); it has no built-in updater.
 
-Without the repository, `Install.sh` installs the latest `.deb` from GitHub releases (or builds one locally), but that install will not update itself:
+Without the repository, build and install the `.deb` from a checkout (that install will not update itself):
 
-`curl -fsSL https://raw.githubusercontent.com/HungLo2020/Basalt/main/Install.sh | bash`
+`git clone https://github.com/HungLo2020/Basalt.git && cd Basalt && ./Install.sh`
 
 ## Project Goals
 
@@ -49,10 +49,10 @@ Basalt stores its data in the platform's standard locations. On Linux these are 
 
 The GUI (`basalt-gui`, crate `basalt-gui-kirigami`) uses [CXX-Qt](https://github.com/KDAB/cxx-qt) for the Rust/Qt bridge and KDE Kirigami for the interface. It needs Qt 6.5 or newer. It is a default workspace member, so plain `cargo run` starts it and `cargo build`/`cargo test` need Qt installed.
 
-Linux (Debian/Ubuntu package names):
+On Debian/Ubuntu, `bash DevUtils/Setup.sh` installs the Rust toolchain and every package needed to build, test and package Basalt. The package list lives in `DevUtils/apt-dependencies.txt` and CI installs from the same file (`DevUtils/InstallDependencies.sh` installs just the packages):
 
 ```
-sudo apt install qt6-base-dev qt6-declarative-dev qml6-module-org-kde-kirigami qml6-module-org-kde-desktop
+bash DevUtils/Setup.sh
 cargo run
 ```
 
@@ -77,6 +77,8 @@ The offscreen renderer does not draw every KDE control (progress bars, for one);
 ## Publishing
 
 `python3 DevUtils/PublishMattOSPackage.py publish` builds the `.deb` and uploads it to MattPackages. It refuses to run unless the `[workspace.package]` version in `Cargo.toml` is newer than every published version, because apt ignores a re-uploaded version.
+
+GitHub releases are not used for distribution. The manual "Build Linux amd64 DEB" workflow builds the `.deb` in a clean Ubuntu container when you want one built off your machine. Dependabot proposes dependency and GitHub Actions updates weekly.
 
 ## Rust and Cargo Basics
 

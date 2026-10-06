@@ -48,18 +48,21 @@ fn has_xbox_profiles(backend_dir: &Path) -> bool {
 }
 
 fn download_xbox_profiles(backend: &str, backend_dir: &Path) -> CoreResult<()> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(CONNECT_TIMEOUT)
-        .timeout_read(READ_TIMEOUT)
-        .build();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_recv_response(Some(READ_TIMEOUT))
+        .timeout_recv_body(Some(READ_TIMEOUT))
+        .build()
+        .into();
 
     let backend_url = format!("{}/{}", JOYPAD_AUTOCONFIG_REPO_API_URL, backend);
     let payload = agent
         .get(&backend_url)
-        .set("User-Agent", USER_AGENT)
+        .header("User-Agent", USER_AGENT)
         .call()
         .map_err(|error| CoreError::new(format!("Failed to fetch joypad profile list: {}", error)))?
-        .into_string()
+        .body_mut()
+        .read_to_string()
         .map_err(|error| {
             CoreError::new(format!(
                 "Failed to read joypad profile list payload: {}",
@@ -109,10 +112,11 @@ fn download_xbox_profiles(backend: &str, backend_dir: &Path) -> CoreResult<()> {
 fn download_profile(agent: &ureq::Agent, url: &str, destination: &Path) -> CoreResult<()> {
     let contents = agent
         .get(url)
-        .set("User-Agent", USER_AGENT)
+        .header("User-Agent", USER_AGENT)
         .call()
         .map_err(|error| CoreError::new(format!("Failed to download {}: {}", url, error)))?
-        .into_string()
+        .body_mut()
+        .read_to_string()
         .map_err(|error| CoreError::new(format!("Failed to read {}: {}", url, error)))?;
 
     fs::write(destination, contents).map_err(|error| {

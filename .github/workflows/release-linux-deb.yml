@@ -1,15 +1,12 @@
 name: Build Linux amd64 DEB
 
+# Manual only: apt users get releases from PublishMattOSPackage.py. This builds the .deb in a clean
+# container and keeps it as a workflow artifact (and, given a tag, uploads it to that release).
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Existing release tag to upload built DEB to"
-        required: true
-        type: string
-  workflow_call:
-    inputs:
-      release_tag:
+        description: "Existing release tag to upload the built DEB to (optional)"
         required: false
         type: string
         default: ""
@@ -26,31 +23,22 @@ jobs:
     env:
       RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
-      - name: Install build and packaging dependencies
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            ca-certificates \
-            curl \
-            git \
-            build-essential \
-            dpkg-dev \
-            pkg-config \
-            libudev-dev \
-            qt6-base-dev \
-            qt6-base-dev-tools \
-            qt6-declarative-dev \
-            qt6-declarative-dev-tools
+      # git first, so checkout makes a real clone; the rest comes from the shared package list.
+      - name: Install git
+        run: apt-get update && apt-get install -y --no-install-recommends ca-certificates git
 
       - name: Checkout release tag
         if: env.RELEASE_TAG != ''
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ env.RELEASE_TAG }}
 
       - name: Checkout current ref
         if: env.RELEASE_TAG == ''
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      - name: Install build dependencies
+        run: bash DevUtils/InstallDependencies.sh
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -68,7 +56,7 @@ jobs:
 
       - name: Upload Linux DEB to GitHub release
         if: env.RELEASE_TAG != ''
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           files: ${{ steps.metadata.outputs.artifact_path }}
@@ -76,7 +64,7 @@ jobs:
           fail_on_unmatched_files: true
 
       - name: Upload Linux DEB workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: basalt-linux-amd64-deb
           path: ${{ steps.metadata.outputs.artifact_path }}

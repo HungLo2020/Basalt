@@ -265,11 +265,13 @@ fn download_url_to_file_with_user_agent(url: &str, target_path: &Path, user_agen
 
     for _ in 0..=MAX_RETRIES {
         let request = ureq::get(url)
-            .set("User-Agent", user_agent)
-            .timeout(std::time::Duration::from_secs(HTTP_TIMEOUT_SECONDS));
+            .header("User-Agent", user_agent)
+            .config()
+            .timeout_global(Some(std::time::Duration::from_secs(HTTP_TIMEOUT_SECONDS)))
+            .build();
         let response = match request.call() {
             Ok(response) => response,
-            Err(ureq::Error::Status(status, _)) => {
+            Err(ureq::Error::StatusCode(status)) => {
                 if (500..=599).contains(&status) {
                     continue;
                 }
@@ -279,12 +281,11 @@ fn download_url_to_file_with_user_agent(url: &str, target_path: &Path, user_agen
             Err(_) => continue,
         };
 
-        let status = response.status();
-        if !(200..=299).contains(&status) {
+        if !response.status().is_success() {
             continue;
         }
 
-        let mut reader = response.into_reader();
+        let mut reader = response.into_body().into_reader();
         let mut file = match std::fs::File::create(target_path) {
             Ok(file) => file,
             Err(_) => {

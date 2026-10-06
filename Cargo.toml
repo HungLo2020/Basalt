@@ -17,4 +17,3 @@ rust-version = "1.89"
 [workspace.dependencies]
 basalt-core = { path = "crates/basalt-core" }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
-resvg = "0.45"

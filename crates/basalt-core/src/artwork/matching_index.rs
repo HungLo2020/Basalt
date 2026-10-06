@@ -361,6 +361,8 @@ fn thumbnail_listing_cache_file_path(
     Some(cache_dir.join(file_name))
 }
 
+const LISTING_MAX_BYTES: u64 = 64 * 1024 * 1024;
+
 fn fetch_thumbnail_listing_from_remote(
     system_catalog: &str,
     artwork_set: &str,
@@ -371,17 +373,21 @@ fn fetch_thumbnail_listing_from_remote(
         encode_url_path_segment(artwork_set),
     );
 
-    let response = ureq::get(&directory_url)
-        .set("User-Agent", EMULATOR_ARTWORK_USER_AGENT)
-        .timeout(std::time::Duration::from_secs(18))
+    let mut response = ureq::get(&directory_url)
+        .header("User-Agent", EMULATOR_ARTWORK_USER_AGENT)
+        .config()
+        .timeout_global(Some(std::time::Duration::from_secs(18)))
+        .build()
         .call()
         .ok()?;
 
-    if !(200..=299).contains(&response.status()) {
-        return None;
-    }
-
-    let body = response.into_string().ok()?;
+    // Listings for large systems can exceed ureq's default 10 MB string limit.
+    let body = response
+        .body_mut()
+        .with_config()
+        .limit(LISTING_MAX_BYTES)
+        .read_to_string()
+        .ok()?;
     let mut listing = Vec::new();
     let mut cursor = 0usize;
 

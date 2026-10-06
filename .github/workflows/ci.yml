@@ -16,30 +16,15 @@ jobs:
     # Same distribution (and Qt) the .deb is built for.
     container: ubuntu:26.04
     steps:
-      - name: Install build dependencies
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            ca-certificates \
-            curl \
-            git \
-            build-essential \
-            pkg-config \
-            libudev-dev \
-            qt6-base-dev \
-            qt6-base-dev-tools \
-            qt6-declarative-dev \
-            qt6-declarative-dev-tools \
-            qml6-module-org-kde-kirigami \
-            qml6-module-org-kde-desktop \
-            qml6-module-qtquick-controls \
-            qml6-module-qtquick-layouts \
-            qt6-svg-plugins \
-            fonts-dejavu-core \
-            python3
+      # git first, so checkout makes a real clone; the rest comes from the shared package list.
+      - name: Install git
+        run: apt-get update && apt-get install -y --no-install-recommends ca-certificates git
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      - name: Install build dependencies
+        run: bash DevUtils/InstallDependencies.sh
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -58,7 +43,7 @@ jobs:
 
       - name: Upload GUI smoke-test screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gui-smoke-screenshots
           path: gui-smoke

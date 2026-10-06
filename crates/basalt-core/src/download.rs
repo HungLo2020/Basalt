@@ -21,14 +21,12 @@ pub(crate) fn download_to_writer(
     progress.report(message, 0, None, ProgressUnit::Bytes);
 
     let response = ureq::get(url)
-        .set("User-Agent", user_agent)
+        .header("User-Agent", user_agent)
         .call()
         .map_err(|error| CoreError::new(format!("Failed to download {}: {}", url, error)))?;
-    let total = response
-        .header("Content-Length")
-        .and_then(|value| value.trim().parse::<u64>().ok());
+    let total = response.body().content_length();
 
-    let mut reader = response.into_reader();
+    let mut reader = response.into_body().into_reader();
     let mut buffer = vec![0u8; CHUNK_SIZE];
     let mut completed = 0u64;
     let mut last_reported = 0u64;

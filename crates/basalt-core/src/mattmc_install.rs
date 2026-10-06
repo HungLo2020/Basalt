@@ -93,9 +93,9 @@ pub fn install_mattmc(progress: &Progress) -> CoreResult<MattmcInstallReport> {
 
 fn fetch_latest_release_tag_and_client_zip_url() -> CoreResult<(String, String)> {
     let platform_suffix = MATTMC_RELEASE_ZIP_SUFFIX;
-    let response = ureq::get(MATTMC_RELEASES_API_LATEST_URL)
-        .set("Accept", "application/vnd.github+json")
-        .set("User-Agent", "Basalt-MattMC-Installer")
+    let mut response = ureq::get(MATTMC_RELEASES_API_LATEST_URL)
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "Basalt-MattMC-Installer")
         .call()
         .map_err(|err| {
             CoreError::new(format!(
@@ -104,7 +104,7 @@ fn fetch_latest_release_tag_and_client_zip_url() -> CoreResult<(String, String)>
             ))
         })?;
 
-    let payload = response.into_string().map_err(|err| {
+    let payload = response.body_mut().read_to_string().map_err(|err| {
         CoreError::new(format!(
             "Failed to read latest MattMC release metadata response: {}",
             err
