@@ -20,9 +20,28 @@ permissions:
 jobs:
   build-linux-amd64-deb:
     runs-on: ubuntu-24.04
+    # Build inside the distribution the package targets: basalt-gui links that release's Qt 6
+    # (Kirigami needs Qt 6.5+), and dpkg-shlibdeps derives the package's Depends from it.
+    container: ubuntu:26.04
     env:
       RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
+      - name: Install build and packaging dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates \
+            curl \
+            git \
+            build-essential \
+            dpkg-dev \
+            pkg-config \
+            libudev-dev \
+            qt6-base-dev \
+            qt6-base-dev-tools \
+            qt6-declarative-dev \
+            qt6-declarative-dev-tools
+
       - name: Checkout release tag
         if: env.RELEASE_TAG != ''
         uses: actions/checkout@v4
@@ -32,15 +51,6 @@ jobs:
       - name: Checkout current ref
         if: env.RELEASE_TAG == ''
         uses: actions/checkout@v4
-
-      - name: Install Linux packaging dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            dpkg-dev \
-            pkg-config \
-            libudev-dev \
-            libasound2-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

@@ -13,23 +13,32 @@ permissions:
 jobs:
   rust:
     runs-on: ubuntu-24.04
+    # Same distribution (and Qt) the .deb is built for.
+    container: ubuntu:26.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Linux dependencies
+      - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates \
+            curl \
+            git \
+            build-essential \
             pkg-config \
             libudev-dev \
-            libasound2-dev
+            qt6-base-dev \
+            qt6-base-dev-tools \
+            qt6-declarative-dev \
+            qt6-declarative-dev-tools
+
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Check
-        run: cargo check --locked
+        run: cargo check --locked --workspace
 
       - name: Test
-        run: cargo test --locked
+        run: cargo test --locked --workspace

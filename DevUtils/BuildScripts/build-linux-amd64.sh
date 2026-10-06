@@ -41,6 +41,7 @@ main() {
 
   require_cmd cargo
   require_cmd dpkg-deb
+  require_cmd dpkg-shlibdeps
 
   version="$(read_cargo_package_version "$cargo_toml")"
   if [[ -z "$version" ]]; then
@@ -59,7 +60,8 @@ main() {
   fi
 
   log "Building Rust release binaries"
-  cargo build --manifest-path "$cargo_toml" --release --workspace
+  # basalt-gui is the Kirigami GUI (crate basalt-gui-kirigami); it needs Qt 6 development files.
+  cargo build --manifest-path "$cargo_toml" --release -p basalt-cli -p basalt-gui-kirigami
 
   package_root="$builds_dir/pkgroot"
   mkdir -p \
@@ -92,7 +94,33 @@ main() {
   fi
   install -m 644 "$icon_file" "$package_root/usr/share/icons/hicolor/scalable/apps/basalt.svg"
 
+  log "Computing package dependencies"
+  local shlibs_dir shlib_depends
+  shlibs_dir="$(mktemp -d)"
+  mkdir -p "$shlibs_dir/debian"
+  printf 'Source: basalt\n\nPackage: basalt\nArchitecture: amd64\n' > "$shlibs_dir/debian/control"
+  shlib_depends="$(
+    cd "$shlibs_dir" &&
+      dpkg-shlibdeps -O "$package_root/usr/bin/basalt" "$package_root/usr/bin/basalt-gui" 2>/dev/null |
+      sed -n 's/^shlibs:Depends=//p'
+  )"
+  rm -rf "$shlibs_dir"
+  if [[ -z "$shlib_depends" ]]; then
+    echo "[build-linux-amd64] dpkg-shlibdeps did not report any dependencies" >&2
+    exit 1
+  fi
+  # Qt's private ABI would pin the package to one exact Qt version, so the next distribution Qt
+  # update would hold Qt back or remove Basalt. The QML is deliberately not compiled
+  # ahead-of-time (see crates/basalt-gui-kirigami/build.rs) to avoid it.
+  if [[ "$shlib_depends" == *private-abi* ]]; then
+    echo "[build-linux-amd64] basalt-gui depends on Qt's private ABI: $shlib_depends" >&2
+    echo "[build-linux-amd64] Check that no QML is compiled with qmlcachegen." >&2
+    exit 1
+  fi
+
   control_file="$package_root/DEBIAN/control"
+  # Shared libraries come from dpkg-shlibdeps; QML modules and image plugins are loaded at
+  # runtime, so they are listed by hand.
   cat > "$control_file" <<EOF
 Package: basalt
 Version: $version
@@ -100,6 +128,8 @@ Section: utils
 Priority: optional
 Architecture: amd64
 Maintainer: Basalt Maintainers
+Depends: $shlib_depends, qml6-module-org-kde-kirigami, qml6-module-qtquick-controls, qml6-module-qtquick-layouts, qt6-svg-plugins
+Recommends: qml6-module-org-kde-desktop, breeze-icon-theme, rsync
 Description: Basalt game launcher (basalt CLI and basalt-gui)
 EOF
 

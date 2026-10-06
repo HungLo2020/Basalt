@@ -1,0 +1,25 @@
+[package]
+name = "basalt-gui-kirigami"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Basalt launcher desktop GUI built with Qt Quick and KDE Kirigami"
+
+# The default GUI: `basalt` (no command), the desktop entry, and the self-updater all run this name.
+[[bin]]
+name = "basalt-gui"
+path = "src/main.rs"
+
+[dependencies]
+basalt-core.workspace = true
+crossbeam-channel = "0.5"
+cxx = "1"
+cxx-qt = "0.10"
+cxx-qt-lib = { version = "0.10", features = ["qt_full"] }
+gilrs = "0.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[build-dependencies]
+cxx-qt-build = "0.10"
+qt-build-utils = "0.10"

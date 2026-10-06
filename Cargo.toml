@@ -1,6 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["crates/basalt-core", "crates/basalt-cli", "crates/basalt-gui"]
+members = [
+    "crates/basalt-core",
+    "crates/basalt-cli",
+    "crates/basalt-gui-kirigami",
+]
+# Plain `cargo run` starts the GUI, and `cargo build/test` cover it plus the core.
+# The CLI needs `-p basalt-cli` (or `--workspace`).
+default-members = ["crates/basalt-core", "crates/basalt-gui-kirigami"]
 
 [workspace.package]
 version = "0.2.0"

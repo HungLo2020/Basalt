@@ -21,10 +21,6 @@ is_debian_based() {
   [[ "${ID:-}" == "debian" || "${ID_LIKE:-}" == *"debian"* || "${ID:-}" == "ubuntu" ]]
 }
 
-is_macos() {
-  [[ "$(uname -s)" == "Darwin" ]]
-}
-
 setup_debian() {
   require_cmd sudo
   require_cmd apt-get
@@ -39,62 +35,24 @@ setup_debian() {
     build-essential \
     pkg-config \
     git \
-    cmake \
-    clang \
-    libssl-dev \
-    libasound2-dev \
+    dpkg-dev \
     libudev-dev \
-    libx11-dev \
-    libxrandr-dev \
-    libxi-dev \
-    libxcursor-dev \
-    libxinerama-dev \
-    libwayland-dev \
-    libxkbcommon-dev
-}
-
-ensure_homebrew() {
-  if command -v brew >/dev/null 2>&1; then
-    return 0
-  fi
-
-  log "Homebrew not found; installing Homebrew"
-  require_cmd curl
-
-  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-  if [[ -x /opt/homebrew/bin/brew ]]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-  elif [[ -x /usr/local/bin/brew ]]; then
-    eval "$(/usr/local/bin/brew shellenv)"
-  fi
-
-  require_cmd brew
-}
-
-setup_macos() {
-  ensure_homebrew
-
-  log "Updating Homebrew"
-  brew update
-
-  log "Installing system dependencies"
-  brew install \
-    ca-certificates \
-    curl \
-    pkg-config \
-    git \
-    cmake \
-    llvm
+    qt6-base-dev \
+    qt6-base-dev-tools \
+    qt6-declarative-dev \
+    qt6-declarative-dev-tools \
+    qml6-module-org-kde-kirigami \
+    qml6-module-org-kde-desktop \
+    qml6-module-qtquick-controls \
+    qml6-module-qtquick-layouts \
+    qt6-svg-plugins
 }
 
 main() {
   if is_debian_based; then
     setup_debian
-  elif is_macos; then
-    setup_macos
   else
-    echo "[setup] This script currently supports Debian-based Linux distributions and macOS only." >&2
+    echo "[setup] This script currently supports Debian-based Linux distributions only." >&2
     exit 1
   fi
 

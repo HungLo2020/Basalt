@@ -13,20 +13,22 @@ require_cmd() {
 }
 
 run_platform_boundary_clippy() {
-  local repo_root
+  local repo_root scope
   repo_root="$1"
 
   require_cmd cargo
 
+  scope=(--workspace)
+
   log "Running platform-boundary clippy checks"
   if ! (
     cd "$repo_root"
-    cargo clippy --all-targets -- -D clippy::disallowed_methods -D clippy::disallowed_types
+    cargo clippy "${scope[@]}" --all-targets -- -D clippy::disallowed_methods -D clippy::disallowed_types
   ); then
     echo "[build-dispatch] ERROR: Platform-boundary lint check failed." >&2
     echo "[build-dispatch] Build aborted to prevent non-platform OS-specific calls from shipping." >&2
     echo "[build-dispatch] Re-run locally to inspect issues:" >&2
-    echo "[build-dispatch]   cargo clippy --all-targets -- -D clippy::disallowed_methods -D clippy::disallowed_types" >&2
+    echo "[build-dispatch]   cargo clippy ${scope[*]} --all-targets -- -D clippy::disallowed_methods -D clippy::disallowed_types" >&2
     echo "[build-dispatch] If clippy is missing, install it with: rustup component add clippy" >&2
     exit 1
   fi
@@ -42,12 +44,6 @@ detect_platform() {
     Linux/x86_64)
       echo "linux-amd64"
       ;;
-    Darwin/arm64|Darwin/aarch64)
-      echo "macos-arm64"
-      ;;
-    MINGW64_NT-*/x86_64|MSYS_NT-*/x86_64|CYGWIN_NT-*/x86_64)
-      echo "windows-amd64"
-      ;;
     *)
       return 1
       ;;
@@ -55,7 +51,7 @@ detect_platform() {
 }
 
 main() {
-  local script_dir repo_root builds_dir platform build_script build_meta powershell_cmd
+  local script_dir repo_root builds_dir platform build_script build_meta
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   repo_root="$(cd "$script_dir/.." && pwd)"
@@ -63,7 +59,6 @@ main() {
   build_meta="$builds_dir/latest-build.env"
 
   require_cmd uname
-  run_platform_boundary_clippy "$repo_root"
 
   platform="$(detect_platform || true)"
   if [[ -z "$platform" ]]; then
@@ -72,35 +67,17 @@ main() {
     exit 1
   fi
 
+  run_platform_boundary_clippy "$repo_root"
+
   log "Detected platform: $platform"
-  if [[ "$platform" == "windows-amd64" ]]; then
-    build_script="$repo_root/DevUtils/BuildScripts/build-${platform}.ps1"
-    if [[ ! -f "$build_script" ]]; then
-      echo "[build-dispatch] Missing build script for platform '$platform': $build_script" >&2
-      exit 1
-    fi
-
-    if command -v pwsh >/dev/null 2>&1; then
-      powershell_cmd="pwsh"
-    elif command -v powershell >/dev/null 2>&1; then
-      powershell_cmd="powershell"
-    else
-      echo "[build-dispatch] Missing required command for Windows build: pwsh or powershell" >&2
-      exit 1
-    fi
-
-    log "Delegating to: $build_script"
-    BASALT_BUILD_META="$build_meta" "$powershell_cmd" -NoProfile -ExecutionPolicy Bypass -File "$build_script"
-  else
-    build_script="$repo_root/DevUtils/BuildScripts/build-${platform}.sh"
-    if [[ ! -f "$build_script" ]]; then
-      echo "[build-dispatch] Missing build script for platform '$platform': $build_script" >&2
-      exit 1
-    fi
-
-    log "Delegating to: $build_script"
-    BASALT_BUILD_META="$build_meta" bash "$build_script"
+  build_script="$repo_root/DevUtils/BuildScripts/build-${platform}.sh"
+  if [[ ! -f "$build_script" ]]; then
+    echo "[build-dispatch] Missing build script for platform '$platform': $build_script" >&2
+    exit 1
   fi
+
+  log "Delegating to: $build_script"
+  BASALT_BUILD_META="$build_meta" bash "$build_script"
 
   if [[ ! -f "$build_meta" ]]; then
     echo "[build-dispatch] Build metadata not generated: $build_meta" >&2

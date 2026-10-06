@@ -1,0 +1,11 @@
+module org.basalt.ui
+Main 1.0 Main.qml
+CategorizedTiles 1.0 CategorizedTiles.qml
+GameTile 1.0 GameTile.qml
+StatusSection 1.0 StatusSection.qml
+LibraryPage 1.0 LibraryPage.qml
+GameDetailsPage 1.0 GameDetailsPage.qml
+InstallPage 1.0 InstallPage.qml
+InstallDetailsPage 1.0 InstallDetailsPage.qml
+SettingsPage 1.0 SettingsPage.qml
+ScreenshotTour 1.0 ScreenshotTour.qml
