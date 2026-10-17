@@ -29,6 +29,8 @@ Without the repository, build and install the `.deb` from a checkout (that insta
 
 MattMC is fully independent and can run without a launcher, but Basalt is designed to provide a unified flow to manage and launch it alongside other games.
 
+Basalt installs MattMC to `~/Games/MattMC` with the same rules as MattMC's own updater: `lib/`, `natives/` and the bundled JDK in `run/jdk/` are replaced, while the rest of `run/` (worlds, settings, the dedicated server in `run/server/`) is kept and only the files the release ships there are overwritten. Update, Sync Up/Down and Backup run the scripts that ship with MattMC (`update-mattmc.sh`, `SyncGameData.sh`, `backup.sh`); sync covers only `MattMC/run/`, excluding `run/jdk/`. MattMC's [packaging guide](https://github.com/HungLo2020/MattMC/blob/master/docs/development/tooling/PACKAGING.md) describes the full layout.
+
 ## Design Principles
 
 - Minimal UI and minimal configuration complexity.

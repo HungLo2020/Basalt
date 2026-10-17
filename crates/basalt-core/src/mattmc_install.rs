@@ -55,7 +55,7 @@ pub fn install_mattmc(progress: &Progress) -> CoreResult<MattmcInstallReport> {
 
     progress.report_step(format!("Installing MattMC {}", latest_tag));
     let installed = staged_source_root(&extraction_root)
-        .and_then(|source_root| copy_directory_contents(&source_root, &target_dir));
+        .and_then(|source_root| install_release_payload(&source_root, &target_dir));
     if let Err(error) = fs::remove_dir_all(&extraction_root) {
         crate::warnings::warn(format!(
             "Failed to remove temporary extraction directory at {}: {}",
@@ -319,6 +319,31 @@ fn extract_zip_archive(
     Ok(())
 }
 
+/// Release directories replaced wholesale, as MattMC's `update-mattmc.sh` does: application files
+/// (the launchers put every `lib/*.jar` on the classpath, so a dropped jar must not linger) and the
+/// bundled JDK.
+const REPLACED_RELEASE_DIRS: &[&str] = &["lib", "natives", "run/jdk"];
+
+/// Applies a staged MattMC release to an install with the same rules as its updater. The
+/// directories in [`REPLACED_RELEASE_DIRS`] are replaced when the release ships them; everything
+/// else is merged, so the rest of `run/` (worlds, settings, `run/server/`) is kept while the files
+/// the release ships there (bundled shader pack, server launchers) are overwritten.
+fn install_release_payload(source_root: &Path, target_dir: &Path) -> CoreResult<()> {
+    for relative in REPLACED_RELEASE_DIRS {
+        let destination = target_dir.join(relative);
+        if source_root.join(relative).is_dir() && destination.exists() {
+            fs::remove_dir_all(&destination).map_err(|err| {
+                CoreError::new(format!(
+                    "Failed to remove {} before installing the new release: {}",
+                    destination.display(),
+                    err
+                ))
+            })?;
+        }
+    }
+    copy_directory_contents(source_root, target_dir)
+}
+
 fn copy_directory_contents(source_root: &Path, target_root: &Path) -> CoreResult<()> {
     fs::create_dir_all(target_root).map_err(|err| {
         CoreError::new(format!(
@@ -393,4 +418,108 @@ fn unix_timestamp() -> CoreResult<u64> {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .map_err(|err| CoreError::new(format!("Failed to read system clock: {}", err)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write(path: &Path, text: &str) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+
+    fn read(path: &Path) -> String {
+        fs::read_to_string(path).unwrap()
+    }
+
+    fn unique_temp_dir(prefix: &str) -> PathBuf {
+        let path = env::temp_dir().join(format!(
+            "{}-{}-{}",
+            prefix,
+            std::process::id(),
+            unix_timestamp().unwrap()
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn release_replaces_application_dirs_and_jdk_and_keeps_run_data() {
+        let root = unique_temp_dir("basalt-mattmc-install-test");
+        let install = root.join("MattMC");
+        let release = root.join("release");
+        write(&install.join("lib/dependency-1.0.jar"), "old dependency");
+        write(&install.join("natives/old.so"), "old native");
+        write(&install.join("run/jdk/linux-x64/removed"), "old jdk file");
+        write(&install.join("run/saves/World/level.dat"), "save");
+        write(&install.join("run/shaderpacks/Bundled.zip"), "old pack");
+        write(&install.join("run/shaderpacks/UserPack.zip"), "user pack");
+        write(&install.join("run/server/world/level.dat"), "server world");
+        write(
+            &install.join("run/server/run-server.sh"),
+            "old server launcher",
+        );
+        write(&install.join("run-mattmc.sh"), "old launcher");
+        write(&release.join("lib/dependency-2.0.jar"), "new dependency");
+        write(&release.join("natives/new.so"), "new native");
+        write(&release.join("run/jdk/linux-x64/bin/java"), "new jdk");
+        write(&release.join("run/shaderpacks/Bundled.zip"), "new pack");
+        write(
+            &release.join("run/server/run-server.sh"),
+            "new server launcher",
+        );
+        write(&release.join("run-mattmc.sh"), "new launcher");
+
+        install_release_payload(&release, &install).unwrap();
+
+        assert!(!install.join("lib/dependency-1.0.jar").exists());
+        assert_eq!(
+            read(&install.join("lib/dependency-2.0.jar")),
+            "new dependency"
+        );
+        assert!(!install.join("natives/old.so").exists());
+        assert!(!install.join("run/jdk/linux-x64/removed").exists());
+        assert_eq!(read(&install.join("run/jdk/linux-x64/bin/java")), "new jdk");
+        assert_eq!(read(&install.join("run/saves/World/level.dat")), "save");
+        assert_eq!(
+            read(&install.join("run/shaderpacks/Bundled.zip")),
+            "new pack"
+        );
+        assert_eq!(
+            read(&install.join("run/shaderpacks/UserPack.zip")),
+            "user pack"
+        );
+        assert_eq!(
+            read(&install.join("run/server/world/level.dat")),
+            "server world"
+        );
+        assert_eq!(
+            read(&install.join("run/server/run-server.sh")),
+            "new server launcher"
+        );
+        assert_eq!(read(&install.join("run-mattmc.sh")), "new launcher");
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn directories_the_release_does_not_ship_are_left_alone() {
+        let root = unique_temp_dir("basalt-mattmc-install-partial-test");
+        let install = root.join("MattMC");
+        let release = root.join("release");
+        write(&install.join("lib/MattMC.jar"), "kept");
+        write(&install.join("run/jdk/linux-x64/bin/java"), "kept jdk");
+        write(&release.join("run-mattmc.sh"), "launcher");
+
+        install_release_payload(&release, &install).unwrap();
+
+        assert_eq!(read(&install.join("lib/MattMC.jar")), "kept");
+        assert_eq!(
+            read(&install.join("run/jdk/linux-x64/bin/java")),
+            "kept jdk"
+        );
+
+        fs::remove_dir_all(&root).unwrap();
+    }
 }
