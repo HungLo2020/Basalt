@@ -33,10 +33,11 @@ launch it, and what Basalt can do with it. Games that follow [STANDARDS.md](STAN
 replace on update, what to back up and what to sync, and provides update, backup, restore, sync,
 sync up, sync down and clear cache for them. Their entries can relabel, disable or reconfigure any
 of these, replace one with a script that ships in the release, or add their own script actions.
-The bundled catalog contains MattMC and MicroMages, which follow the standard (MattMC's release zip
-wraps `app/` in a `MattMC/` folder, named by `source.archive_root`; MicroMages ships `app/` at the
-zip root), and Jackal, still on the original `schema_version: 1` format, which keeps working
-unchanged (see STANDARDS.md, section 11).
+The bundled catalog contains MattMC, MicroMages and Jackal, all following the standard. MattMC's
+release zip wraps `app/` in a `MattMC/` folder, named by `source.archive_root`; MicroMages and
+Jackal ship `app/` at the zip root, and Jackal links its cover for the Install page with
+`artwork.cover_url`. Entries in the original `schema_version: 1` format keep working unchanged (see
+STANDARDS.md, section 11).
 
 ```sh
 basalt catalog

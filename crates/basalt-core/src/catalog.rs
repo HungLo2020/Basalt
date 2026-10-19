@@ -539,8 +539,8 @@ mod tests {
             assert!(error.contains("archive_root"), "{invalid:?}: {error}");
         }
         // Schema 1 keeps its automatic wrapper detection and has no archive_root.
-        let mut legacy = find_game("Jackal").unwrap();
-        legacy.source.archive_root = Some("Jackal".into());
+        let mut legacy = legacy_mattmc();
+        legacy.source.archive_root = Some("MattMC".into());
         assert!(legacy.validate().unwrap_err().to_string().contains("schema_version 2"));
     }
     #[test]
@@ -580,7 +580,7 @@ mod tests {
         }
         assert!(try_standard_game(json!({"artwork": {"icon_url": "https://x"}})).is_err());
         // Schema 1 entries may link a cover too.
-        let mut legacy = find_game("Jackal").unwrap();
+        let mut legacy = legacy_mattmc();
         legacy.artwork = Some(ArtworkDefinition {
             cover_url: Some("https://example.com/cover.png".into()),
         });
