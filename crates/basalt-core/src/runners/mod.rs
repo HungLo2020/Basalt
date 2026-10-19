@@ -1,4 +1,3 @@
-mod emulator;
 mod steam;
 
 use crate::error::CoreResult;
@@ -9,7 +8,6 @@ pub enum RunnerKind {
     Bash,
     Catalog,
     Steam,
-    Emulator,
 }
 
 pub struct ResolvedTarget {
@@ -23,7 +21,6 @@ impl RunnerKind {
             RunnerKind::Bash => "bash",
             RunnerKind::Catalog => "catalog",
             RunnerKind::Steam => "steam",
-            RunnerKind::Emulator => "emulator",
         }
     }
 
@@ -32,7 +29,6 @@ impl RunnerKind {
             "bash" => Some(RunnerKind::Bash),
             "catalog" => Some(RunnerKind::Catalog),
             "steam" => Some(RunnerKind::Steam),
-            "emulator" => Some(RunnerKind::Emulator),
             _ => None,
         }
     }
@@ -58,6 +54,5 @@ pub fn launch(runner_kind: RunnerKind, launch_target: &str) -> CoreResult<()> {
         RunnerKind::Bash => platform::launch_script(launch_target),
         RunnerKind::Catalog => crate::catalog_launch::launch(launch_target),
         RunnerKind::Steam => steam::launch(launch_target),
-        RunnerKind::Emulator => emulator::launch(launch_target),
     }
 }
