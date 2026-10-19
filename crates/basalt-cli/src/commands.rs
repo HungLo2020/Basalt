@@ -1,7 +1,7 @@
 use basalt_core::{self as core, CoreResult, DiscoverResult, DiscoverRunner};
 
 use super::progress_printer::ProgressPrinter;
-use super::{Command, SettingsCommand, SyncDirection};
+use super::{Command, SettingsCommand};
 
 pub(super) fn run(command: Command) -> CoreResult<()> {
     match command {
@@ -53,40 +53,11 @@ pub(super) fn run(command: Command) -> CoreResult<()> {
             );
             print_emulator_folders()?;
         }
-        Command::InstallMattmc => {
-            let printer = ProgressPrinter::new();
-            let report = core::install_mattmc(&printer.progress())?;
-            printer.finish();
-            println!(
-                "Installed MattMC release '{}' into {}",
-                report.release_tag,
-                report.install_dir.display()
-            );
-            println!("{}", report.discovery_message());
+        Command::Maintain { game, action } => {
+            core::run_game_maintenance(game.trim(), action.trim())?;
+            println!("Completed '{}' for '{}'.", action, game);
         }
         Command::Launch { name } => core::launch_game(name.trim())?,
-        Command::BackupMattmc => {
-            core::backup_mattmc()?;
-            println!("Ran backup script for MattMC.");
-        }
-        Command::SyncMattmc { direction } => match direction {
-            Some(SyncDirection::Up) => {
-                core::sync_mattmc_up()?;
-                println!("Ran sync-up script for MattMC.");
-            }
-            Some(SyncDirection::Down) => {
-                core::sync_mattmc_down()?;
-                println!("Ran sync-down script for MattMC.");
-            }
-            None => {
-                core::sync_mattmc_interactive()?;
-                println!("Ran sync script for MattMC.");
-            }
-        },
-        Command::UpdateMattmc => {
-            core::update_mattmc()?;
-            println!("Ran update script for MattMC.");
-        }
         Command::SyncUp { platform } => sync_roms(required(&platform, "platform")?, true)?,
         Command::SyncDown { platform } => sync_roms(required(&platform, "platform")?, false)?,
         Command::SyncSavesUp { system } => sync_saves(required(&system, "system")?, true)?,

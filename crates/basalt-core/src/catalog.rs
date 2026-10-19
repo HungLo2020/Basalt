@@ -51,7 +51,7 @@ impl GameDefinition {
             || self.id.contains('/') || self.id.contains('\\')
             || !safe_relative(&self.persistent_directory)
             || !safe_relative(&self.launch.executable)
-            || (!self.launch.working_directory.is_empty() && !safe_relative(&self.launch.working_directory))
+            || (!self.launch.working_directory.is_empty() && self.launch.working_directory != "." && !safe_relative(&self.launch.working_directory))
             || self.source.kind != "github_release"
             || self.source.repository.split('/').count() != 2
             || !self.source.repository.bytes().all(|b| b.is_ascii_alphanumeric() || b"_-./".contains(&b))

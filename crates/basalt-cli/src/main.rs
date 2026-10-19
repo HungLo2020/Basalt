@@ -6,7 +6,7 @@ mod progress_printer;
 use std::process::ExitCode;
 
 use basalt_core as core;
-use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Parser, Subcommand};
 
 const GUI_EXECUTABLE_NAME: &str = "basalt-gui";
 
@@ -62,24 +62,11 @@ enum Command {
     /// Install RetroArch runtime plus built-in emulator cores
     InstallEmulators,
 
-    /// Download latest MattMC release into ~/Games/MattMC
-    InstallMattmc,
-
     /// Launch a saved game by name
     Launch { name: String },
 
-    /// Run backup.sh from the MattMC launch script directory
-    BackupMattmc,
-
-    /// Sync MattMC's game data with its remote copy (without a direction, the script asks)
-    SyncMattmc {
-        /// Which way to sync: `up` (local to remote) or `down` (remote to local)
-        #[arg(value_enum)]
-        direction: Option<SyncDirection>,
-    },
-
-    /// Run update-mattmc from the MattMC launch script directory
-    UpdateMattmc,
+    /// Execute a manifest-defined maintenance action for an installed game.
+    Maintain { game: String, action: String },
 
     /// Sync up for a platform: mattmc or an emulator system key (e.g. nes, gba)
     SyncUp { platform: String },
@@ -101,12 +88,6 @@ enum Command {
 
     /// Clear cached artwork metadata and images
     RefreshMetadata,
-}
-
-#[derive(Clone, Copy, ValueEnum)]
-enum SyncDirection {
-    Up,
-    Down,
 }
 
 #[derive(Subcommand)]
@@ -195,18 +176,12 @@ mod tests {
     }
 
     #[test]
-    fn sync_mattmc_takes_an_optional_direction() {
-        let parse = |args: &[&str]| match Cli::try_parse_from(args).unwrap().command {
-            Some(Command::SyncMattmc { direction }) => {
-                direction.map(|d| matches!(d, SyncDirection::Up))
-            }
-            _ => panic!("expected sync-mattmc"),
-        };
-
-        assert_eq!(parse(&["basalt", "sync-mattmc"]), None);
-        assert_eq!(parse(&["basalt", "sync-mattmc", "up"]), Some(true));
-        assert_eq!(parse(&["basalt", "sync-mattmc", "down"]), Some(false));
-        assert!(Cli::try_parse_from(["basalt", "sync-mattmc", "sideways"]).is_err());
+    fn maintenance_is_generic_and_old_commands_are_rejected() {
+        let cli = Cli::try_parse_from(["basalt", "maintain", "MattMC", "sync_up"]).unwrap();
+        assert!(matches!(cli.command, Some(Command::Maintain { .. })));
+        for obsolete in ["sync-mattmc", "backup-mattmc", "update-mattmc", "install-mattmc"] {
+            assert!(Cli::try_parse_from(["basalt", obsolete]).is_err());
+        }
     }
 
     #[test]
