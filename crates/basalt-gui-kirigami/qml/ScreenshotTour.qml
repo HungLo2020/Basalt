@@ -22,8 +22,8 @@ QtObject {
         { name: "03-library-mattmc", run: () => selectFirst(window.libraryPage, item => item.isMattmc) },
         { name: "04-install", run: () => window.showSection("install") },
         { name: "05-install-mattmc", run: () => selectFirst(window.installPage, item => item.kind === "game" && item.key === "MattMC") },
-        { name: "06-install-core", run: () => selectFirst(window.installPage, item => item.system === "gba") },
-        { name: "07-install-core-no-saves", run: () => selectFirst(window.installPage, item => item.system === "atari2600") },
+        { name: "06-install-micromages", run: () => selectFirst(window.installPage, item => item.key === "MicroMages") },
+        { name: "07-install-jackal", run: () => selectFirst(window.installPage, item => item.key === "Jackal") },
         { name: "08-settings", run: () => window.showSection("settings") },
         { name: "09-library-again", run: () => window.showSection("library") },
         { name: "10-narrow", run: () => { window.width = window.minimumWidth; } },
@@ -36,8 +36,8 @@ QtObject {
         { name: "12-navigate-right", run: () => window.libraryPage.navigate(1, 0) },
         { name: "13-job-progress", waitForProgress: true, run: () => {
             window.showSection("install");
-            selectFirst(window.installPage, item => item.system === "gba");
-            Backend.syncRoms("gba", true);
+            selectFirst(window.installPage, item => item.key === "Jackal");
+            Backend.installGame("Jackal", "default");
         } },
         { name: "14-job-cancelled", run: () => Backend.cancelJob() },
     ]

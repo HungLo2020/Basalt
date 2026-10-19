@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Offscreen smoke test of the GUI.
 #
-# Builds the CLI and GUI, creates a throwaway home with offline fixtures (games, ROMs, a sync
-# target, and local artwork so nothing is downloaded), then runs the GUI's screenshot tour
+# Builds the CLI and GUI, creates a throwaway home with offline fixtures (games, a legacy MattMC
+# install, and local artwork so nothing is downloaded), then runs the GUI's screenshot tour
 # (ScreenshotTour.qml) offscreen. Fails if the app does not exit cleanly, the tour does not
 # finish, or the log shows any QML error. Catches problems the compiler and qmllint cannot,
 # such as QML type cycles that stop the app from loading.
@@ -40,9 +40,8 @@ make_script() {
 
 log "Creating fixtures in $home"
 art_dir="$home/.local/share/basalt/artwork"
-roms="$home/Games/Emulators/roms"
 sample_art="$repo_root/resources/gameartwork/Pokemon Radical Red.jpeg"
-mkdir -p "$home/Games/MattMC" "$roms/gba/bulk" "$roms/snes" "$art_dir" "$home/remote/roms" "$home/remote/saves"
+mkdir -p "$home/Games/MattMC" "$art_dir"
 
 # The tour launches Celeste and expects it to be running for a moment.
 basalt add "Celeste" "$(make_script celeste 'sleep 2')"
@@ -50,17 +49,10 @@ basalt add "Hollow Knight" "$(make_script hollow_knight)"
 basalt add "Stardew Valley" "$(make_script stardew_valley)"
 basalt add "Portal 2" 620
 printf '#!/bin/bash\nexit 0\n' > "$home/Games/MattMC/run-mattmc.sh"
-head -c 512 /dev/zero > "$roms/gba/Pokemon Radical Red.gba"
-head -c 512 /dev/zero > "$roms/snes/Chrono Trigger.sfc"
-# Enough files for the tour's ROM sync to report progress before finishing.
-for i in $(seq 1 200); do head -c 65536 /dev/zero > "$roms/gba/bulk/file$i.bin"; done
-basalt discover --mattmc --emulators
+basalt discover --catalog
 basalt add-to-playlist Favorites Celeste
-basalt settings set --roms-root "$home/remote/roms" --saves-root "$home/remote/saves"
-# Local artwork overrides, so the run needs no network.
-for game in "Pokemon Radical Red" "Chrono Trigger" "Portal 2"; do
-  cp "$sample_art" "$art_dir/$game.jpeg"
-done
+# Local artwork override, so the run needs no network.
+cp "$sample_art" "$art_dir/Portal 2.jpeg"
 
 # Without network where the system allows it (unprivileged user namespaces).
 isolate=()
