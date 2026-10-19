@@ -12,46 +12,6 @@ Kirigami.ScrollablePage {
     Kirigami.FormLayout {
         Kirigami.Separator {
             Kirigami.FormData.isSection: true
-            Kirigami.FormData.label: "Emulation Remote Paths"
-        }
-
-        Controls.Label {
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 24
-            text: "Global remote defaults used by Sync Roms Up/Down and Sync Saves Up/Down."
-            wrapMode: Text.Wrap
-            opacity: 0.7
-        }
-
-        Controls.TextField {
-            id: romsField
-
-            Kirigami.FormData.label: "Remote ROMs root:"
-            Layout.preferredWidth: Kirigami.Units.gridUnit * 24
-            text: Backend.remoteRomsRoot
-        }
-
-        Controls.TextField {
-            id: savesField
-
-            Kirigami.FormData.label: "Remote Saves root:"
-            Layout.preferredWidth: Kirigami.Units.gridUnit * 24
-            text: Backend.remoteSavesRoot
-        }
-
-        Controls.Button {
-            text: "Save Remote Paths"
-            icon.name: "document-save"
-            enabled: romsField.text !== Backend.remoteRomsRoot || savesField.text !== Backend.remoteSavesRoot
-            onClicked: {
-                Backend.saveRemotePaths(romsField.text, savesField.text);
-                // Show what was actually stored (trimmed), and follow future changes again.
-                romsField.text = Qt.binding(() => Backend.remoteRomsRoot);
-                savesField.text = Qt.binding(() => Backend.remoteSavesRoot);
-            }
-        }
-
-        Kirigami.Separator {
-            Kirigami.FormData.isSection: true
             Kirigami.FormData.label: "Launcher Display"
         }
 

@@ -24,7 +24,6 @@ pub mod qobject {
         #[qproperty(bool, loading)]
         // Bumped when artwork URLs or installed-core state change, so QML bindings re-evaluate.
         #[qproperty(i32, artwork_revision)]
-        #[qproperty(i32, core_status_revision)]
         // Status lines, one per screen.
         #[qproperty(QString, library_status)]
         #[qproperty(QString, install_status)]
@@ -36,8 +35,6 @@ pub mod qobject {
         #[qproperty(bool, job_cancellable)]
         #[qproperty(bool, job_cancelling)]
         // Settings.
-        #[qproperty(QString, remote_roms_root)]
-        #[qproperty(QString, remote_saves_root)]
         #[qproperty(bool, fullscreen)]
         #[qproperty(bool, maximized)]
         // Basalt itself is updated by the system package manager; shown in Settings.
@@ -77,29 +74,14 @@ pub mod qobject {
         #[qinvokable]
         fn refresh_game_libraries(self: Pin<&mut Backend>);
         #[qinvokable]
-        fn install_core(self: Pin<&mut Backend>, system: &QString);
-        #[qinvokable]
-        fn sync_roms(self: Pin<&mut Backend>, system: &QString, up: bool);
-        #[qinvokable]
-        fn sync_saves(self: Pin<&mut Backend>, system: &QString, up: bool);
-        #[qinvokable]
         fn cancel_job(self: Pin<&mut Backend>);
 
-        #[qinvokable]
-        fn save_remote_paths(self: Pin<&mut Backend>, roms_root: &QString, saves_root: &QString);
         #[qinvokable]
         fn set_display_mode(self: Pin<&mut Backend>, fullscreen: bool, maximized: bool);
 
         /// Image URL for an artwork key, or "" while unresolved.
         #[qinvokable]
         fn artwork_url(self: &Backend, key: &QString) -> QString;
-        #[qinvokable]
-        fn is_core_installed(self: &Backend, system: &QString) -> bool;
-        /// A system's ROM / save folder, or "" for an unknown system.
-        #[qinvokable]
-        fn emulator_rom_dir(self: &Backend, system: &QString) -> QString;
-        #[qinvokable]
-        fn emulator_save_dir(self: &Backend, system: &QString) -> QString;
 
         /// Gamepad navigation: move the library selection by (columns, rows).
         #[qsignal]
@@ -151,7 +133,6 @@ pub struct BackendRust {
     running_games_json: QString,
     loading: bool,
     artwork_revision: i32,
-    core_status_revision: i32,
     library_status: QString,
     install_status: QString,
     settings_status: QString,
@@ -160,8 +141,6 @@ pub struct BackendRust {
     job_fraction: f64,
     job_cancellable: bool,
     job_cancelling: bool,
-    remote_roms_root: QString,
-    remote_saves_root: QString,
     fullscreen: bool,
     maximized: bool,
     app_version: QString,
@@ -187,7 +166,6 @@ impl Default for BackendRust {
             running_games_json: QString::from("[]"),
             loading: true,
             artwork_revision: 0,
-            core_status_revision: 0,
             library_status: QString::from("Loading games..."),
             install_status: QString::default(),
             settings_status: QString::default(),
@@ -196,8 +174,6 @@ impl Default for BackendRust {
             job_fraction: -1.0,
             job_cancellable: false,
             job_cancelling: false,
-            remote_roms_root: QString::default(),
-            remote_saves_root: QString::default(),
             fullscreen: false,
             maximized: false,
             app_version: QString::from(env!("CARGO_PKG_VERSION")),
@@ -237,13 +213,6 @@ impl qobject::Backend {
     fn load_settings(mut self: Pin<&mut Self>) {
         let mut warnings = Vec::new();
 
-        let paths = basalt_core::load_emulation_remote_paths().unwrap_or_else(|error| {
-            warnings.push(format!("Settings load warning: {}", error));
-            basalt_core::default_emulation_remote_paths()
-        });
-        self.as_mut().set_remote_roms_root(qs(&paths.roms_root_dir));
-        self.as_mut()
-            .set_remote_saves_root(qs(&paths.saves_root_dir));
 
         let display = basalt_core::load_launcher_display_settings().unwrap_or_else(|error| {
             warnings.push(format!("Display setting load warning: {}", error));
@@ -593,108 +562,6 @@ impl qobject::Backend {
         );
     }
 
-    fn install_core(mut self: Pin<&mut Self>, system: &QString) {
-        let system = system.to_string();
-        let label = system.to_uppercase();
-        self.as_mut().start_job(
-            StatusTarget::Install,
-            format!("Installing {} emulator core...", label),
-            move |progress| basalt_core::install_emulator_core(&system, &progress),
-            move |mut backend, result| {
-                let message = match result {
-                    Ok(()) => format!("Installed {} emulator core", label),
-                    Err(error) => failure_message(&format!("{} core install", label), &error),
-                };
-                backend.as_mut().set_install_status(qs(message));
-            },
-        );
-    }
-
-    fn sync_roms(mut self: Pin<&mut Self>, system: &QString, up: bool) {
-        let system = system.to_string();
-        let label = format!(
-            "Sync Roms {} ({})",
-            if up { "Up" } else { "Down" },
-            system.to_uppercase()
-        );
-
-        if up {
-            self.as_mut().start_job(
-                StatusTarget::Install,
-                format!("{} started", label),
-                move |progress| basalt_core::sync_roms_up(&system, &progress),
-                move |mut backend, result| {
-                    let message = match result {
-                        Ok(report) => format!(
-                            "{} completed: copied {}, unchanged {}, deleted {}",
-                            label, report.copied, report.unchanged, report.deleted
-                        ),
-                        Err(error) => failure_message(&label, &error),
-                    };
-                    backend.as_mut().set_install_status(qs(message));
-                },
-            );
-        } else {
-            self.as_mut().start_job(
-                StatusTarget::Install,
-                format!("{} started", label),
-                move |progress| {
-                    basalt_core::sync_roms_down(&system, &progress)
-                },
-                move |mut backend, result| {
-                    let message = match result {
-                        Ok((sync, discovered)) => {
-                            backend.as_mut().reload_library();
-                            format!(
-                                "{} completed: copied {}, unchanged {}, deleted {} | Emulator discover: found {}, added {}, updated {}, existing {}",
-                                label,
-                                sync.copied,
-                                sync.unchanged,
-                                sync.deleted,
-                                discovered.found,
-                                discovered.added,
-                                discovered.updated,
-                                discovered.already_exists
-                            )
-                        }
-                        Err(error) => failure_message(&label, &error),
-                    };
-                    backend.as_mut().set_install_status(qs(message));
-                },
-            );
-        }
-    }
-
-    fn sync_saves(mut self: Pin<&mut Self>, system: &QString, up: bool) {
-        let system = system.to_string();
-        let label = format!(
-            "Sync Saves {} ({})",
-            if up { "Up" } else { "Down" },
-            system.to_uppercase()
-        );
-        self.as_mut().start_job(
-            StatusTarget::Install,
-            format!("{} started", label),
-            move |progress| {
-                if up {
-                    basalt_core::sync_saves_up(&system, &progress)
-                } else {
-                    basalt_core::sync_saves_down(&system, &progress)
-                }
-            },
-            move |mut backend, result| {
-                let message = match result {
-                    Ok(report) => format!(
-                        "{} completed: copied {}, unchanged {}, deleted {}",
-                        label, report.copied, report.unchanged, report.deleted
-                    ),
-                    Err(error) => failure_message(&label, &error),
-                };
-                backend.as_mut().set_install_status(qs(message));
-            },
-        );
-    }
-
     fn cancel_job(mut self: Pin<&mut Self>) {
         if let Some(cancel) = &self.rust().job_cancel {
             cancel.cancel();
@@ -761,8 +628,6 @@ impl qobject::Backend {
                 backend.as_mut().set_job_message(QString::default());
                 finish(backend.as_mut(), result);
                 backend.as_mut().show_core_warnings(target);
-                let revision = *backend.core_status_revision() + 1;
-                backend.as_mut().set_core_status_revision(revision);
             });
         });
     }
@@ -797,22 +662,6 @@ impl qobject::Backend {
 
     // ----- settings --------------------------------------------------------------------------
 
-    fn save_remote_paths(mut self: Pin<&mut Self>, roms_root: &QString, saves_root: &QString) {
-        let message = match basalt_core::save_emulation_remote_paths(
-            &roms_root.to_string(),
-            &saves_root.to_string(),
-        ) {
-            Ok(saved) => {
-                self.as_mut().set_remote_roms_root(qs(&saved.roms_root_dir));
-                self.as_mut()
-                    .set_remote_saves_root(qs(&saved.saves_root_dir));
-                "Saved remote ROM/Saves default paths".to_string()
-            }
-            Err(error) => format!("Save failed: {}", error),
-        };
-        self.as_mut().set_settings_status(qs(message));
-    }
-
     fn set_display_mode(mut self: Pin<&mut Self>, fullscreen: bool, maximized: bool) {
         let maximized = maximized && !fullscreen;
         let message = match basalt_core::save_launcher_display_settings(fullscreen, maximized) {
@@ -844,21 +693,7 @@ impl qobject::Backend {
             .unwrap_or_default()
     }
 
-    fn emulator_rom_dir(&self, system: &QString) -> QString {
-        basalt_core::emulator_rom_dir(&system.to_string())
-            .map(|dir| qs(dir.display().to_string()))
-            .unwrap_or_default()
-    }
 
-    fn emulator_save_dir(&self, system: &QString) -> QString {
-        basalt_core::emulator_save_dir(&system.to_string())
-            .map(|dir| qs(dir.display().to_string()))
-            .unwrap_or_default()
-    }
-
-    fn is_core_installed(&self, system: &QString) -> bool {
-        basalt_core::is_emulator_core_installed(&system.to_string()).unwrap_or(false)
-    }
 }
 
 /// "<what> failed: <error>", or "<what> cancelled" when the user cancelled it.
@@ -871,7 +706,7 @@ fn failure_message(what: &str, error: &CoreError) -> String {
 }
 
 fn discover_summary(report: &DiscoverReport) -> String {
-    let mattmc = match report.mattmc {
+    let mattmc = match report.catalog {
         Some(DiscoverResult::Added) => "MattMC added".to_string(),
         Some(DiscoverResult::AlreadyExists) => "MattMC already exists".to_string(),
         Some(DiscoverResult::NotFound) => "MattMC not found".to_string(),
@@ -884,13 +719,5 @@ fn discover_summary(report: &DiscoverReport) -> String {
         ),
         None => "Steam skipped".to_string(),
     };
-    let emulators = match &report.emulators {
-        Some(emulators) => format!(
-            "Emulators: found {}, added {}, updated {}, existing {}",
-            emulators.found, emulators.added, emulators.updated, emulators.already_exists
-        ),
-        None => "Emulators skipped".to_string(),
-    };
-
-    format!("Discover complete | {} | {} | {}", mattmc, steam, emulators)
+    format!("Discover complete | {} | {}", mattmc, steam)
 }

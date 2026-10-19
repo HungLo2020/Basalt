@@ -4,13 +4,11 @@
 
 use std::collections::HashSet;
 
-use basalt_core::{self as core, EmulatorLaunchTarget, GameEntry, Playlist, RunnerKind};
+use basalt_core::{self as core, GameEntry, Playlist, RunnerKind};
 use serde::Serialize;
 
 const STEAM_CATEGORY: &str = "Steam";
 const MY_GAMES_CATEGORY: &str = "My Games";
-const EMULATION_CATEGORY: &str = "Emulation";
-const EMULATORS_CATEGORY: &str = "Emulators";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,7 +106,7 @@ pub fn playlists_json(playlists: &[Playlist]) -> String {
 }
 
 pub fn install_tiles_json() -> String {
-    let mut tiles: Vec<InstallTileView> = core::bundled_games()
+    let tiles: Vec<InstallTileView> = core::bundled_games()
         .unwrap_or_default()
         .into_iter()
         .map(|game| InstallTileView {
@@ -130,25 +128,6 @@ pub fn install_tiles_json() -> String {
         })
         .collect();
 
-    let mut core_tiles: Vec<InstallTileView> = core::emulator_systems()
-        .into_iter()
-        .map(|system| InstallTileView {
-            key: format!("core-{}", system.key),
-            title: format!("{} Core", system.short_name),
-            description: format!(
-                "RetroArch {} core for {} ROMs.",
-                system.core_name, system.full_name
-            ),
-            kind: "core",
-            system: system.key.to_string(),
-            supports_save_sync: system.supports_save_sync,
-            category: EMULATORS_CATEGORY,
-            artwork_key: String::new(),
-        })
-        .collect();
-    core_tiles.sort_by(|left, right| left.title.cmp(&right.title));
-    tiles.extend(core_tiles);
-
     to_json(&tiles)
 }
 
@@ -157,15 +136,6 @@ fn game_category(game: &GameEntry) -> (String, String) {
     match game.runner_kind {
         RunnerKind::Steam => (STEAM_CATEGORY.to_string(), "0".to_string()),
         RunnerKind::Bash | RunnerKind::Catalog => (MY_GAMES_CATEGORY.to_string(), "1".to_string()),
-        RunnerKind::Emulator => {
-            let system = EmulatorLaunchTarget::decode(&game.launch_target)
-                .ok()
-                .map(|target| target.system_key().trim().to_uppercase())
-                .filter(|system| !system.is_empty())
-                .unwrap_or_else(|| EMULATION_CATEGORY.to_string());
-            let order = format!("2-{}", system);
-            (system, order)
-        }
     }
 }
 
@@ -175,7 +145,6 @@ fn to_json<T: Serialize>(value: &T) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
 
     use serde_json::Value;
 
@@ -191,14 +160,9 @@ mod tests {
 
     #[test]
     fn games_json_categorizes_and_marks_favorites() {
-        let rom_target = EmulatorLaunchTarget::new_retroarch("gba", PathBuf::from("/r/a.gba"))
-            .unwrap()
-            .encode()
-            .unwrap();
         let games = vec![
             game("Doom", RunnerKind::Steam, "2280"),
             game(core::MATTMC_GAME_NAME, RunnerKind::Bash, "/g/run-mattmc.sh"),
-            game("Pokemon", RunnerKind::Emulator, &rom_target),
         ];
         let playlists = vec![Playlist {
             name: core::FAVORITES_PLAYLIST_NAME.to_string(),
