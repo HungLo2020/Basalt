@@ -26,7 +26,7 @@ pub enum DiscoverRunner {
     Steam,
 }
 
-pub const ALL_DISCOVER_RUNNERS: [DiscoverRunner; 3] = [
+pub const ALL_DISCOVER_RUNNERS: [DiscoverRunner; 2] = [
     DiscoverRunner::Catalog,
     DiscoverRunner::Steam,
 ];

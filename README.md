@@ -66,7 +66,7 @@ run the scripts declared by its JSON entry. The `update` maintenance action foll
 own data and runtime replacement rules; it is distinct from Basalt's catalog reinstall. The GUI
 shows noninteractive maintenance actions from the catalog. Steam support is unchanged.
 
-This branch remains under review: complete regression validation and release packaging remain separate
+This branch remains under review: regression validation and game release packaging remain separate
 unfinished work. Installed catalog games are registered immediately and survive ordinary refresh.
 
 ## Design Principles

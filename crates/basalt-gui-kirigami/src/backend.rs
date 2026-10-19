@@ -486,7 +486,7 @@ impl qobject::Backend {
         self.as_mut().set_library_status(qs(message));
     }
 
-    // ----- Catalog and emulation jobs ---------------------------------------------------------
+    // ----- Catalog installation and maintenance jobs ---------------------------------------------------------
 
     fn maintain_game(mut self: Pin<&mut Self>, game: &QString, action: &QString, target: &QString) {
         let game = game.to_string();
@@ -706,11 +706,11 @@ fn failure_message(what: &str, error: &CoreError) -> String {
 }
 
 fn discover_summary(report: &DiscoverReport) -> String {
-    let mattmc = match report.catalog {
-        Some(DiscoverResult::Added) => "MattMC added".to_string(),
-        Some(DiscoverResult::AlreadyExists) => "MattMC already exists".to_string(),
-        Some(DiscoverResult::NotFound) => "MattMC not found".to_string(),
-        None => "MattMC skipped".to_string(),
+    let catalog = match report.catalog {
+        Some(DiscoverResult::Added) => "Catalog games discovered".to_string(),
+        Some(DiscoverResult::AlreadyExists) => "Catalog already registered".to_string(),
+        Some(DiscoverResult::NotFound) => "No new catalog games found".to_string(),
+        None => "Catalog skipped".to_string(),
     };
     let steam = match &report.steam {
         Some(steam) => format!(
@@ -719,5 +719,5 @@ fn discover_summary(report: &DiscoverReport) -> String {
         ),
         None => "Steam skipped".to_string(),
     };
-    format!("Discover complete | {} | {}", mattmc, steam)
+    format!("Discover complete | {} | {}", catalog, steam)
 }
