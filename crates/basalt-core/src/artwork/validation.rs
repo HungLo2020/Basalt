@@ -15,6 +15,11 @@ pub(super) fn is_valid_portrait_artwork(path: &Path) -> bool {
     (0.60..=0.74).contains(&aspect_ratio)
 }
 
+/// Any image the front end can show: a PNG or JPEG whose header reads.
+pub(super) fn is_readable_image(path: &Path) -> bool {
+    image_dimensions(path).is_some_and(|(width, height)| width > 0 && height > 0)
+}
+
 /// Reads only the image header, not the pixel data.
 fn image_dimensions(path: &Path) -> Option<(u32, u32)> {
     image::ImageReader::open(path)

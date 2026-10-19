@@ -324,11 +324,7 @@ impl qobject::Backend {
             }
         };
 
-        let requests: Vec<ArtworkRequest> = games
-            .iter()
-            .filter_map(ArtworkRequest::for_game)
-            .chain(std::iter::once(ArtworkRequest::mattmc()))
-            .collect();
+        let requests = artwork_requests(&games);
 
         self.as_mut()
             .set_games_json(qs(view_model::games_json(&games, &playlists)));
@@ -429,13 +425,7 @@ impl qobject::Backend {
         let revision = *self.artwork_revision() + 1;
         self.as_mut().set_artwork_revision(revision);
 
-        let requests: Vec<ArtworkRequest> = self
-            .rust()
-            .games
-            .iter()
-            .filter_map(ArtworkRequest::for_game)
-            .chain(std::iter::once(ArtworkRequest::mattmc()))
-            .collect();
+        let requests = artwork_requests(&self.rust().games);
         self.as_mut().resolve_artwork(requests);
         self.as_mut().set_library_status(qs(
             "Metadata refresh started: caches cleared, artwork requeued",
@@ -785,6 +775,17 @@ impl qobject::Backend {
     }
 
 
+}
+
+/// Steam art for Steam games, plus one request per catalog game (installed or not), shared by
+/// Library and Install tiles.
+fn artwork_requests(games: &[GameEntry]) -> Vec<ArtworkRequest> {
+    games
+        .iter()
+        .filter(|game| game.runner_kind == basalt_core::RunnerKind::Steam)
+        .filter_map(ArtworkRequest::for_game)
+        .chain(ArtworkRequest::for_catalog_games(games))
+        .collect()
 }
 
 /// "<what> failed: <error>", or "<what> cancelled" when the user cancelled it.

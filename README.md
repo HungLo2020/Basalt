@@ -61,6 +61,9 @@ buttons; the sync folder (default `/mnt/storage/Storage/Sync`, one subfolder per
 Settings → Game Sync. Sync and backup are incremental: Basalt caches file hashes, keeps a file list
 in the sync folder, copies only files that changed, and stores each file content once across backups.
 MattMC's Distant Horizons databases are treated as cache, so they are not synced or backed up.
+Catalog games show the artwork they ship in `app/basalt/` (cover, else icon), or the cover their
+catalog entry links to before they are installed; see STANDARDS.md, "Artwork". Your own image in
+`~/.local/share/basalt/artwork/` named after the game always wins.
 
 Downloads and extraction happen in a staging directory inside the chosen library. The installer
 validates the launch target, preserves executable permissions, and refuses unsafe archive paths.

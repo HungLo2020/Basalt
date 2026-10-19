@@ -10,11 +10,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 
-use basalt_core::{ArtworkKind, ArtworkRequest};
+use basalt_core::ArtworkRequest;
 use crossbeam_channel::{Sender, unbounded};
 
-/// Bundled with the QML module (see build.rs).
-pub const MATTMC_ARTWORK_URL: &str = "qrc:/qt/qml/org/basalt/app/assets/MattMC.svg";
+/// Icons bundled with the QML module (see build.rs), named after the catalog game ID.
+fn bundled_icon_url(request: &ArtworkRequest) -> Option<String> {
+    request
+        .has_bundled_icon()
+        .then(|| format!("qrc:/qt/qml/org/basalt/app/assets/{}.svg", request.target()))
+}
 const DOWNLOAD_WORKERS: usize = 4;
 
 /// Called with (generation, artwork key, image URL) from a background thread.
@@ -41,8 +45,12 @@ impl ArtworkResolver {
                     if batch != generation.load(Ordering::Relaxed) {
                         continue;
                     }
-                    if let Some(path) = request.fetch() {
-                        on_resolved(batch, request.key, file_url(&path));
+                    if let Some(url) = request
+                        .fetch()
+                        .map(|path| file_url(&path))
+                        .or_else(|| bundled_icon_url(&request))
+                    {
+                        on_resolved(batch, request.key, url);
                     }
                 }
             });
@@ -69,14 +77,20 @@ impl ArtworkResolver {
                     return;
                 }
 
-                if let Some(path) = request.local_override_path() {
+                // Override, then anything local; only a needed download goes to the workers.
+                if let Some(path) = request
+                    .local_override_path()
+                    .or_else(|| request.cached_path())
+                {
                     on_resolved(batch, request.key, file_url(&path));
-                } else if request.kind == ArtworkKind::Mattmc {
-                    on_resolved(batch, request.key, MATTMC_ARTWORK_URL.to_string());
-                } else if let Some(path) = request.cached_path() {
-                    on_resolved(batch, request.key, file_url(&path));
-                } else {
+                } else if request.needs_download() {
                     let _ = download_tx.send((batch, request));
+                } else if let Some(url) = request
+                    .fetch()
+                    .map(|path| file_url(&path))
+                    .or_else(|| bundled_icon_url(&request))
+                {
+                    on_resolved(batch, request.key, url);
                 }
             }
         });

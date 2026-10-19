@@ -119,6 +119,39 @@ So that saves survive syncing between machines, crashes and updates:
 - Executables MUST have their execute bit set in the archive.
 - A game MUST NOT include its own updater. Basalt owns installation and updates.
 
+### Artwork
+
+Basalt shows every game as a portrait tile, and the same picture on the game's details page. A game
+provides that picture by shipping a **cover**, and optionally an **icon**, in its release:
+
+```
+app/
+└── basalt/
+    ├── cover.png      (or cover.jpg)   portrait box art, 3:4
+    └── icon.png       (or icon.svg)    square emblem
+```
+
+| File | Required | What it is | Format |
+|---|---|---|---|
+| `app/basalt/cover.png` or `.jpg` | SHOULD | Box art that fills the tile: key art and the game's title, readable at tile size. | Exactly 3:4 portrait; **900×1200** recommended, at least 600×800. PNG or JPEG, opaque, under 2 MB. |
+| `app/basalt/icon.png` or `.svg` | MAY | A simple emblem that still reads at 32×32: no small text. | Square; **512×512** recommended, at least 256×256. PNG with transparency, or SVG. |
+
+- A game SHOULD ship a cover. A cover in another shape still shows, scaled to fit with empty
+  bands, so 3:4 matters; Steam-style 2:3 art shows thin bands at the top and bottom.
+- The icon is a fallback: Basalt shows it centered in the tile when there is no cover, and may use it
+  where a small square image fits (window, shortcuts, compact lists). A game with neither shows a
+  generic placeholder.
+- Artwork lives in `app/`, so it is replaced on update like any other release file and is never
+  synced or backed up. If both `.png` and the alternative exist, Basalt uses the `.png`.
+- Before a game is installed, Basalt cannot see its `app/`. To show the cover on the Install page,
+  the catalog entry MAY name a copy with `artwork.cover_url` ([section 6](#6-catalog-entry)),
+  normally the same file in the game's repository. It SHOULD match the shipped cover.
+- An image the user puts in Basalt's artwork folder (`~/.local/share/basalt/artwork/<Game name>.png`
+  or `.jpg`) always wins over the game's own artwork.
+- In full, Basalt shows the first of: the user's image, the shipped cover, the cover from
+  `artwork.cover_url` (downloaded once and cached), the shipped icon, an icon bundled with Basalt
+  (MattMC only), and finally the placeholder. Files that are not readable images are skipped.
+
 ## 4. Launch environment
 
 Basalt launches the configured executable with the working directory set to the install root (unless
@@ -228,6 +261,7 @@ Each game has one JSON file in [`resources/games/`](resources/games/). A complia
 | `launch.executable` | Yes | Path relative to the install root. |
 | `launch.arguments` | No | Fixed arguments, passed directly with no shell interpretation. Default `[]`. |
 | `launch.working_directory` | No | Relative to the install root. Default `.` (the install root). |
+| `artwork.cover_url` | No | HTTPS URL of the game's cover (see [Artwork](#artwork)), for showing it before the game is installed. Basalt downloads and caches it. |
 | `layout` | No | Remaps data categories ([section 7](#7-overriding-defaults)). |
 | `actions` | No | Configures, disables, replaces or adds actions ([section 7](#7-overriding-defaults)). |
 
@@ -401,6 +435,11 @@ minimal catalog entry in [section 6](#6-catalog-entry).
 - [ ] There is no built-in updater.
 - [ ] The game starts without arguments, terminal input or network access.
 - [ ] The game exits with 0 on a normal quit.
+
+**Artwork**
+- [ ] The release ships `app/basalt/cover.png` (or `.jpg`): 3:4 portrait, 900×1200 recommended, under 2 MB.
+- [ ] Optionally, `app/basalt/icon.png` (512×512, transparent) or `app/basalt/icon.svg`.
+- [ ] Optionally, the catalog entry's `artwork.cover_url` points at the same cover.
 
 **Catalog**
 - [ ] A catalog entry with `schema_version: 2` and `standard_version: 1` exists in `resources/games/`,

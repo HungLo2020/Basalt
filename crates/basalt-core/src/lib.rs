@@ -30,7 +30,7 @@ mod warnings;
 
 pub use artwork::{ArtworkKind, ArtworkRequest, clear_artwork_cache};
 pub use catalog::{
-    ActionConfig, ActionOptions, ActionSetting, GameDefinition, LaunchDefinition,
+    ActionConfig, ActionOptions, ActionSetting, ArtworkDefinition, GameDefinition, LaunchDefinition,
     LayoutDefinition, MaintenanceCommand, ReleaseSource, STANDARD_VERSION, catalog_games,
     find_game,
 };

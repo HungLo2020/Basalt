@@ -107,7 +107,11 @@ fn download_url_to_file(url: &str, target_path: &Path) -> bool {
     download_url_to_file_with_user_agent(url, target_path, "Basalt-Steam-Artwork")
 }
 
-fn download_url_to_file_with_user_agent(url: &str, target_path: &Path, user_agent: &str) -> bool {
+pub(super) fn download_url_to_file_with_user_agent(
+    url: &str,
+    target_path: &Path,
+    user_agent: &str,
+) -> bool {
     const MAX_RETRIES: usize = 2;
     const HTTP_TIMEOUT_SECONDS: u64 = 12;
 

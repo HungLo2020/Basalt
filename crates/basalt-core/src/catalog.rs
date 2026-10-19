@@ -31,6 +31,17 @@ pub struct GameDefinition {
     /// Schema 2 only: per-action overrides and additional script actions.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub actions: BTreeMap<String, ActionSetting>,
+    /// Optional artwork links; the artwork itself ships in `app/basalt/`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artwork: Option<ArtworkDefinition>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArtworkDefinition {
+    /// HTTPS URL of the game's cover, shown before the game is installed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -202,6 +213,16 @@ impl GameDefinition {
             || !self.source.asset_suffix.ends_with(".zip")
         {
             return Err(invalid());
+        }
+        if let Some(url) = self.artwork.as_ref().and_then(|a| a.cover_url.as_deref())
+            && (!url.starts_with("https://")
+                || url.len() <= "https://".len()
+                || url.chars().any(|c| c.is_whitespace() || c.is_control()))
+        {
+            return Err(CoreError::InvalidInput(format!(
+                "Invalid catalog entry {}: artwork.cover_url must be an https:// URL",
+                self.id
+            )));
         }
         if let Some(archive_root) = &self.source.archive_root {
             if !self.follows_standard() {
@@ -547,6 +568,23 @@ mod tests {
         assert_eq!(category("data/save/saves/Redstone!/level.dat"), Some(Save));
         assert_eq!(category("data/config/shared/DistantHorizons.toml"), Some(crate::game_layout::DataCategory::SharedConfig));
         assert_eq!(layout.primary(Cache), Some(std::path::Path::new("data/cache")));
+    }
+    #[test]
+    fn artwork_cover_url_must_be_https() {
+        let with_url = |url: &str| standard_game(json!({"artwork": {"cover_url": url}}));
+        with_url("https://raw.githubusercontent.com/o/r/main/app/basalt/cover.png")
+            .validate()
+            .unwrap();
+        for invalid in ["http://example.com/c.png", "https://", "file:///c.png", "https://a b"] {
+            assert!(with_url(invalid).validate().is_err(), "{invalid}");
+        }
+        assert!(try_standard_game(json!({"artwork": {"icon_url": "https://x"}})).is_err());
+        // Schema 1 entries may link a cover too.
+        let mut legacy = find_game("Jackal").unwrap();
+        legacy.artwork = Some(ArtworkDefinition {
+            cover_url: Some("https://example.com/cover.png".into()),
+        });
+        legacy.validate().unwrap();
     }
     #[test]
     fn unknown_option_fields_are_rejected_at_parse_time() {

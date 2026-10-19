@@ -58,6 +58,9 @@ mkdir -p "$home/.config/basalt/games" "$home/Games/Sample/app/bin" "$home/Games/
 printf '%s\n' "$sample_entry" > "$home/.config/basalt/games/sample.json"
 printf '%s\n' "$sample_entry" > "$home/Games/Sample/.basalt-game.json"
 printf '#!/bin/bash\nexit 0\n' > "$home/Games/Sample/app/bin/sample.sh"
+# Its artwork ships in the release (STANDARDS.md, "Artwork").
+mkdir -p "$home/Games/Sample/app/basalt"
+cp "$sample_art" "$home/Games/Sample/app/basalt/cover.jpg"
 basalt discover --catalog
 basalt add-to-playlist Favorites Celeste
 # Local artwork override, so the run needs no network.

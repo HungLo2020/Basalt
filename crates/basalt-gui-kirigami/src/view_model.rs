@@ -147,11 +147,8 @@ pub fn install_tiles_json() -> String {
             system: String::new(),
             supports_save_sync: false,
             category: MY_GAMES_CATEGORY,
-            artwork_key: if game.id == "MattMC" {
-                core::ArtworkRequest::mattmc().key
-            } else {
-                String::new()
-            },
+            // Same key as the installed game's tile (see ArtworkRequest::for_catalog).
+            artwork_key: format!("catalog:{}", game.id),
         })
         .collect();
 
@@ -217,6 +214,7 @@ mod tests {
         assert_eq!(json[0]["artworkKey"], "steam:2280");
         assert_eq!(json[1]["category"], "My Games");
         assert_eq!(json[1]["isMattmc"], true);
+        assert_eq!(json[1]["artworkKey"], "catalog:MattMC");
         // MattMC follows the standard, but this old run-mattmc.sh registration offers no
         // actions until it is reinstalled.
         assert_eq!(json[1]["actions"].as_array().unwrap().len(), 0);
@@ -249,6 +247,10 @@ mod tests {
         let tiles = json.as_array().unwrap();
 
         assert_eq!(tiles[0]["key"], "MattMC");
+        // Install tiles share artwork keys with installed games' library tiles.
+        for tile in tiles {
+            assert_eq!(tile["artworkKey"], format!("catalog:{}", tile["key"].as_str().unwrap()));
+        }
         assert_eq!(tiles.len(), 3);
     }
 }

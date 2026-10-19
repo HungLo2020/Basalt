@@ -5,6 +5,7 @@ use crate::error::{CoreError, CoreResult};
 use crate::storage;
 
 const STEAM_ARTWORK_DIR_NAME: &str = "steam_artwork";
+const CATALOG_ARTWORK_DIR_NAME: &str = "catalog_artwork";
 
 /// Deletes all downloaded artwork and artwork metadata so it is fetched again.
 pub fn clear_artwork_cache() -> CoreResult<()> {
@@ -12,6 +13,7 @@ pub fn clear_artwork_cache() -> CoreResult<()> {
     let steam_dir = cache_root.join(STEAM_ARTWORK_DIR_NAME);
 
     let _ = fs::remove_dir_all(&steam_dir);
+    let _ = fs::remove_dir_all(cache_root.join(CATALOG_ARTWORK_DIR_NAME));
 
     fs::create_dir_all(&steam_dir).map_err(|error| CoreError::io("Create artwork cache", &steam_dir, error))?;
 
@@ -20,6 +22,10 @@ pub fn clear_artwork_cache() -> CoreResult<()> {
 
 pub(super) fn steam_artwork_cache_dir() -> Option<PathBuf> {
     ensure_cache_subdir(&[STEAM_ARTWORK_DIR_NAME])
+}
+
+pub(super) fn catalog_artwork_cache_dir() -> Option<PathBuf> {
+    ensure_cache_subdir(&[CATALOG_ARTWORK_DIR_NAME])
 }
 
 pub(super) fn current_unix_timestamp_seconds() -> u64 {
