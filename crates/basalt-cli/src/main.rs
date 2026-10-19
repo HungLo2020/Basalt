@@ -67,8 +67,29 @@ enum Command {
     /// Launch a saved game by name
     Launch { name: String },
 
-    /// Execute a manifest-defined maintenance action for an installed game.
-    Maintain { game: String, action: String },
+    /// Run an action for an installed catalog game (see `basalt actions <game>`)
+    Maintain {
+        game: String,
+        action: String,
+        /// Backup to restore, for the restore action (see `basalt backups <game>`)
+        #[arg(long)]
+        snapshot: Option<String>,
+    },
+
+    /// List the actions a catalog game supports
+    Actions { game: String },
+
+    /// List a catalog game's backups, newest first
+    Backups { game: String },
+
+    /// Show or set the folder game data is synced to
+    SyncRemote {
+        /// Absolute folder path, e.g. a mounted network share
+        path: Option<std::path::PathBuf>,
+        /// Go back to the default sync folder (/mnt/storage/Storage/Sync)
+        #[arg(long, conflicts_with = "path")]
+        clear: bool,
+    },
 
     /// Clear cached artwork metadata and images
     RefreshMetadata,
@@ -153,7 +174,13 @@ mod tests {
     #[test]
     fn maintenance_is_generic_and_old_commands_are_rejected() {
         let cli = Cli::try_parse_from(["basalt", "maintain", "MattMC", "sync_up"]).unwrap();
-        assert!(matches!(cli.command, Some(Command::Maintain { .. })));
+        assert!(matches!(cli.command, Some(Command::Maintain { snapshot: None, .. })));
+        let cli = Cli::try_parse_from([
+            "basalt", "maintain", "Jackal", "restore", "--snapshot", "20260101T000000.000Z-manual",
+        ])
+        .unwrap();
+        assert!(matches!(cli.command, Some(Command::Maintain { snapshot: Some(_), .. })));
+        assert!(Cli::try_parse_from(["basalt", "sync-remote", "/mnt/x", "--clear"]).is_err());
         for obsolete in [
             "sync-mattmc",
             "backup-mattmc",

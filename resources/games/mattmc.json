@@ -1,37 +1,15 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "standard_version": 1,
   "id": "MattMC",
   "name": "MattMC",
   "source": {
     "kind": "github_release",
     "repository": "HungLo2020/MattMC",
-    "asset_prefix": "MattMC-Client",
+    "asset_prefix": "MattMC-Client-",
     "asset_suffix": ".zip",
-    "asset_contains": ["linux-x64"]
+    "asset_contains": ["linux-x64"],
+    "archive_root": "MattMC"
   },
-  "launch": {
-    "executable": "run-mattmc.sh",
-    "arguments": [],
-    "working_directory": "."
-  },
-  "persistent_directory": "run",
-  "maintenance": {
-    "backup": {
-      "path": "backup.sh"
-    },
-    "update": {
-      "path": "update-mattmc.sh"
-    },
-    "sync_up": {
-      "path": "SyncGameData.sh",
-      "stdin": "up\n"
-    },
-    "sync_down": {
-      "path": "SyncGameData.sh",
-      "stdin": "down\n"
-    },
-    "sync": {
-      "path": "SyncGameData.sh"
-    }
-  }
+  "launch": { "executable": "app/bin/mattmc" }
 }

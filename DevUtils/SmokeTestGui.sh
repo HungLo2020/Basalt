@@ -49,6 +49,15 @@ basalt add "Hollow Knight" "$(make_script hollow_knight)"
 basalt add "Stardew Valley" "$(make_script stardew_valley)"
 basalt add "Portal 2" 620
 printf '#!/bin/bash\nexit 0\n' > "$home/Games/MattMC/run-mattmc.sh"
+# A game following STANDARDS.md, from a local catalog entry, so its built-in actions render.
+sample_entry='{"schema_version": 2, "standard_version": 1, "id": "Sample", "name": "Sample Quest",
+  "source": {"kind": "github_release", "repository": "example/Sample", "asset_prefix": "Sample-",
+  "asset_suffix": ".zip"}, "launch": {"executable": "app/bin/sample.sh"},
+  "actions": {"repair": {"label": "Repair install", "script": {"path": "app/repair.sh"}}}}'
+mkdir -p "$home/.config/basalt/games" "$home/Games/Sample/app/bin" "$home/Games/Sample/data/save"
+printf '%s\n' "$sample_entry" > "$home/.config/basalt/games/sample.json"
+printf '%s\n' "$sample_entry" > "$home/Games/Sample/.basalt-game.json"
+printf '#!/bin/bash\nexit 0\n' > "$home/Games/Sample/app/bin/sample.sh"
 basalt discover --catalog
 basalt add-to-playlist Favorites Celeste
 # Local artwork override, so the run needs no network.

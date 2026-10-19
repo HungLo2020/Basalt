@@ -44,9 +44,28 @@ pub(crate) fn launch(target: &str) -> CoreResult<()> {
         serde_json::from_slice(&bytes).map_err(|e| CoreError::new(e.to_string()))?;
     game.validate()?;
     validate_launch(root, &game)?;
+    let root = root
+        .canonicalize()
+        .map_err(|e| CoreError::io("Resolve installation", root, e))?;
+    let marker = if game.follows_standard() {
+        if crate::game_data::is_running(&root) {
+            return Err(CoreError::InvalidInput(format!("{} is already running", game.name)));
+        }
+        if crate::game_data::operation_in_progress(&root) {
+            return Err(CoreError::InvalidInput(format!(
+                "{} is busy (an update, sync, backup or restore is running)",
+                game.name
+            )));
+        }
+        Some(crate::game_data::running_marker(&root))
+    } else {
+        None
+    };
     crate::platform::launch_catalog_game(
-        &contained_path(root, &game.launch.executable)?,
-        &contained_path(root, &game.launch.working_directory)?,
+        &contained_path(&root, &game.launch.executable)?,
+        &contained_path(&root, &game.launch.working_directory)?,
         &game.launch.arguments,
+        &crate::game_data::environment(&game, &root, None)?,
+        marker.as_deref(),
     )
 }

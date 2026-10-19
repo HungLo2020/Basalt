@@ -10,6 +10,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 static NEXT_HOME: AtomicU32 = AtomicU32::new(0);
 
+/// MattMC's schema 1 catalog entry from before it adopted STANDARDS.md (preserved `run/`,
+/// game-owned scripts): the reference for how legacy entries behave.
+pub const LEGACY_MATTMC: &str = include_str!("../../../basalt-core/src/testdata/legacy_mattmc.json");
+
 /// A throwaway home directory, removed when dropped.
 pub struct TestHome {
     pub path: PathBuf,
@@ -50,6 +54,13 @@ impl TestHome {
             .stderr(Stdio::null())
             .spawn()
             .unwrap()
+    }
+
+    /// Replaces the bundled MattMC entry with the legacy one via a local catalog override.
+    pub fn use_legacy_mattmc(&self) {
+        let catalog = self.config_dir().join("games");
+        fs::create_dir_all(&catalog).unwrap();
+        fs::write(catalog.join("mattmc.json"), LEGACY_MATTMC).unwrap();
     }
 
     pub fn data_dir(&self) -> PathBuf {

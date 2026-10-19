@@ -23,7 +23,25 @@ pub struct GameView {
     pub favorite: bool,
     pub is_mattmc: bool,
     pub catalog_id: String,
-    pub maintenance_actions: Vec<String>,
+    pub actions: Vec<ActionView>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionView {
+    pub name: String,
+    pub label: String,
+    /// Restore: the page asks which backup first.
+    pub needs_snapshot: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupView {
+    pub id: String,
+    pub reason: String,
+    pub files: usize,
+    pub created_unix: u64,
 }
 
 #[derive(Serialize)]
@@ -54,7 +72,7 @@ pub fn games_json(games: &[GameEntry], playlists: &[Playlist]) -> String {
         .map(|playlist| playlist.game_names.iter().map(String::as_str).collect())
         .unwrap_or_default();
 
-    let catalog = core::bundled_games().unwrap_or_default();
+    let catalog = core::catalog_games().unwrap_or_default();
     let views: Vec<GameView> = games
         .iter()
         .map(|game| {
@@ -75,14 +93,23 @@ pub fn games_json(games: &[GameEntry], playlists: &[Playlist]) -> String {
                     .find(|g| g.name == game.name)
                     .map(|g| g.id.clone())
                     .unwrap_or_default(),
-                maintenance_actions: catalog
+                actions: catalog
                     .iter()
                     .find(|g| g.name == game.name)
+                    // A standard game still registered from an older installation has no
+                    // actions until it is reinstalled.
+                    .filter(|g| !g.follows_standard() || game.runner_kind == RunnerKind::Catalog)
                     .map(|g| {
-                        g.maintenance
-                            .keys()
-                            .filter(|a| a.as_str() != "sync")
-                            .cloned()
+                        core::game_actions(g)
+                            .into_iter()
+                            // A schema 1 "sync" script prompts for its direction, which the GUI
+                            // cannot answer; sync_up and sync_down cover it.
+                            .filter(|a| !(a.legacy && a.name == "sync"))
+                            .map(|a| ActionView {
+                                needs_snapshot: a.needs_snapshot(),
+                                name: a.name,
+                                label: a.label,
+                            })
                             .collect()
                     })
                     .unwrap_or_default(),
@@ -106,7 +133,7 @@ pub fn playlists_json(playlists: &[Playlist]) -> String {
 }
 
 pub fn install_tiles_json() -> String {
-    let tiles: Vec<InstallTileView> = core::bundled_games()
+    let tiles: Vec<InstallTileView> = core::catalog_games()
         .unwrap_or_default()
         .into_iter()
         .map(|game| InstallTileView {
@@ -129,6 +156,20 @@ pub fn install_tiles_json() -> String {
         .collect();
 
     to_json(&tiles)
+}
+
+pub fn backups_json(game_id: &str) -> String {
+    let views: Vec<BackupView> = core::list_backups(game_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|backup| BackupView {
+            id: backup.id,
+            reason: backup.reason.replace('-', " "),
+            files: backup.files,
+            created_unix: backup.created_unix,
+        })
+        .collect();
+    to_json(&views)
 }
 
 /// Category name and sort key.
@@ -176,6 +217,30 @@ mod tests {
         assert_eq!(json[0]["artworkKey"], "steam:2280");
         assert_eq!(json[1]["category"], "My Games");
         assert_eq!(json[1]["isMattmc"], true);
+        // MattMC follows the standard, but this old run-mattmc.sh registration offers no
+        // actions until it is reinstalled.
+        assert_eq!(json[1]["actions"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn standard_games_installed_by_basalt_list_their_actions() {
+        let games = vec![game(
+            "MattMC",
+            RunnerKind::Catalog,
+            "/g/MattMC/.basalt-game.json",
+        )];
+        let json: Value = serde_json::from_str(&games_json(&games, &[])).unwrap();
+        let actions: Vec<&str> = json[0]["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            actions,
+            ["update", "backup", "restore", "sync", "sync_up", "sync_down", "clear_cache"]
+        );
+        assert_eq!(json[0]["actions"][2]["needsSnapshot"], true);
     }
 
     #[test]

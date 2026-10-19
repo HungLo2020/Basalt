@@ -29,6 +29,7 @@ fn library_configuration_and_noninteractive_install_selection() {
 #[test]
 fn catalog_launch_honors_arguments_cwd_and_generic_maintenance_in_another_library() {
     let home = TestHome::new("catalog-launch");
+    home.use_legacy_mattmc();
     let root = home.path.join("second disk/Games/MattMC");
     fs::create_dir_all(root.join("run")).unwrap();
     fs::write(
@@ -42,7 +43,7 @@ fn catalog_launch_honors_arguments_cwd_and_generic_maintenance_in_another_librar
     )
     .unwrap();
     let mut manifest: serde_json::Value =
-        serde_json::from_str(include_str!("../../../resources/games/mattmc.json")).unwrap();
+        serde_json::from_str(common::LEGACY_MATTMC).unwrap();
     manifest["launch"]["arguments"] = serde_json::json!(["argument with spaces; $(not a command)"]);
     manifest["launch"]["working_directory"] = serde_json::json!("run");
     let target = root.join(".basalt-game.json");

@@ -9,7 +9,7 @@ pub fn discover_with_runners(runners: &[DiscoverRunner]) -> CoreResult<DiscoverR
         if runners.contains(&DiscoverRunner::Catalog) {
             let mut found = false;
             let mut entries = registry::load_entries()?;
-            for game in catalog::bundled_games()? {
+            for game in catalog::catalog_games()? {
                 if entries.iter().any(|e| e.name == game.name) { found = true; continue; }
                 for library in libraries::list_libraries()? {
                     let root = library.path.join(&game.id);

@@ -28,6 +28,13 @@ pub enum CoreError {
     #[error("Cancelled")]
     Cancelled,
 
+    /// Both this machine and the sync folder changed since the last sync.
+    #[error(
+        "{0} changed both here and in the sync folder since the last sync. Run sync_up to keep \
+         this computer's data or sync_down to keep the sync folder's (the other copy is backed up)."
+    )]
+    SyncConflict(String),
+
     #[error(
         "RetroArch is not installed. Install an emulator core from the Install page \
          (or run `basalt install-emulators`) to set it up."
@@ -80,6 +87,10 @@ impl CoreError {
     /// True when the game being added is already in the registry (by name or by target).
     pub fn is_duplicate_game(&self) -> bool {
         matches!(self, Self::GameNameExists(_) | Self::GameTargetExists(_))
+    }
+
+    pub fn is_sync_conflict(&self) -> bool {
+        matches!(self, Self::SyncConflict(_))
     }
 
     pub fn is_blacklisted(&self) -> bool {

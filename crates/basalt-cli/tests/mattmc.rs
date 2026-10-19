@@ -11,6 +11,7 @@ use common::{TestHome, stdout};
 
 /// A fake MattMC install with recording stand-ins for its scripts. Returns the record file.
 fn stub_mattmc(home: &TestHome) -> PathBuf {
+    home.use_legacy_mattmc();
     let dir = home.path.join("Games/MattMC");
     fs::create_dir_all(&dir).unwrap();
     let record = home.path.join("mattmc-record.txt");

@@ -235,8 +235,16 @@ pub fn run_maintenance_script(
     )
 }
 
-/// Run a catalog executable with its declared arguments and working directory.
-pub(crate) fn launch_catalog_game(path: &Path, cwd: &Path, arguments: &[String]) -> CoreResult<()> {
+/// Run a catalog executable with its declared arguments, working directory and environment,
+/// waiting for it to exit. While it runs, `running_marker` (if any) holds its process ID so
+/// other Basalt processes can tell the game is open.
+pub(crate) fn launch_catalog_game(
+    path: &Path,
+    cwd: &Path,
+    arguments: &[String],
+    environment: &[(String, String)],
+    running_marker: Option<&Path>,
+) -> CoreResult<()> {
     let mut command = if path.extension().is_some_and(|ext| ext == "sh") {
         let mut command = Command::new("bash");
         command.arg(path);
@@ -244,10 +252,151 @@ pub(crate) fn launch_catalog_game(path: &Path, cwd: &Path, arguments: &[String])
     } else {
         Command::new(path)
     };
-    let status = command
+    let mut child = command
         .args(arguments)
         .current_dir(cwd)
-        .status()
+        .envs(environment.iter().map(|(key, value)| (key, value)))
+        .spawn()
         .map_err(|e| CoreError::new(format!("Cannot launch game: {e}")))?;
-    check_script_status(status)
+    if let Some(marker) = running_marker {
+        let written = marker
+            .parent()
+            .map(std::fs::create_dir_all)
+            .unwrap_or(Ok(()))
+            .and_then(|()| std::fs::write(marker, child.id().to_string()));
+        if let Err(error) = written {
+            crate::warnings::warn(format!(
+                "Could not record that the game is running ({}): {error}",
+                marker.display()
+            ));
+        }
+    }
+    let status = child
+        .wait()
+        .map_err(|e| CoreError::new(format!("Game process failed: {e}")));
+    if let Some(marker) = running_marker {
+        let _ = std::fs::remove_file(marker);
+    }
+    check_script_status(status?)
+}
+
+/// True if a process with this ID exists.
+pub(crate) fn process_alive(pid: u32) -> bool {
+    Path::new("/proc").join(pid.to_string()).exists()
+}
+
+/// Standard input for a game script.
+pub(crate) enum ScriptInput<'a> {
+    None,
+    Text(&'a str),
+}
+
+/// Runs a STANDARDS.md game script: `.sh` files with bash, anything else directly. Output lines
+/// are echoed and reported as progress; on failure the last line written to standard error
+/// becomes the error message. Cancellation kills the script.
+pub(crate) fn run_game_script(
+    path: &Path,
+    cwd: &Path,
+    arguments: &[String],
+    input: ScriptInput<'_>,
+    environment: &[(String, String)],
+    progress: &crate::progress::Progress,
+) -> CoreResult<()> {
+    use std::io::{BufRead, BufReader};
+    use std::sync::{Arc, Mutex, mpsc};
+    use std::time::Duration;
+
+    if !path.is_file() || !cwd.is_dir() {
+        return Err(CoreError::new(format!(
+            "Game script or directory missing: {}",
+            path.display()
+        )));
+    }
+    let mut command = if path.extension().is_some_and(|ext| ext == "sh") {
+        let mut command = Command::new("bash");
+        command.arg(path);
+        command
+    } else {
+        Command::new(path)
+    };
+    command
+        .args(arguments)
+        .current_dir(cwd)
+        .envs(environment.iter().map(|(key, value)| (key, value)))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .stdin(match input {
+            ScriptInput::None => Stdio::null(),
+            ScriptInput::Text(_) => Stdio::piped(),
+        });
+    let mut child = command
+        .spawn()
+        .map_err(|err| CoreError::new(format!("Cannot start game script: {err}")))?;
+    if let ScriptInput::Text(text) = input
+        && let Some(mut stdin) = child.stdin.take()
+    {
+        // A script that exits without reading its input is not an error.
+        let _ = stdin.write_all(text.as_bytes());
+    }
+
+    let (lines, received) = mpsc::channel::<String>();
+    let stdout = child.stdout.take().map(|stdout| {
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                println!("{line}");
+                let _ = lines.send(line);
+            }
+        })
+    });
+    let last_error = Arc::new(Mutex::new(String::new()));
+    let stderr = child.stderr.take().map(|stderr| {
+        let last_error = Arc::clone(&last_error);
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                eprintln!("{line}");
+                if !line.trim().is_empty()
+                    && let Ok(mut last) = last_error.lock()
+                {
+                    *last = line.trim().to_string();
+                }
+            }
+        })
+    });
+
+    let mut cancelled = false;
+    let status = loop {
+        match received.recv_timeout(Duration::from_millis(100)) {
+            Ok(line) if !line.trim().is_empty() => progress.report_step(line.trim()),
+            _ => {}
+        }
+        if !cancelled && progress.check_cancelled().is_err() {
+            cancelled = true;
+            let _ = child.kill();
+        }
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|err| CoreError::new(format!("Game script failed: {err}")))?
+        {
+            break status;
+        }
+    };
+    for handle in [stdout, stderr].into_iter().flatten() {
+        let _ = handle.join();
+    }
+    while let Ok(line) = received.try_recv() {
+        if !line.trim().is_empty() {
+            progress.report_step(line.trim());
+        }
+    }
+    if cancelled {
+        return Err(CoreError::Cancelled);
+    }
+    if status.success() {
+        return Ok(());
+    }
+    let reason = last_error.lock().map(|line| line.clone()).unwrap_or_default();
+    match check_script_status(status) {
+        Err(_) if !reason.is_empty() => Err(CoreError::new(reason)),
+        other => other,
+    }
 }

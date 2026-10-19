@@ -37,6 +37,11 @@ pub mod qobject {
         // Settings.
         #[qproperty(bool, fullscreen)]
         #[qproperty(bool, maximized)]
+        // The configured sync folder, or "" when the default is used.
+        #[qproperty(QString, sync_remote)]
+        #[qproperty(QString, default_sync_remote)]
+        // Catalog id of a game whose last sync found changes on both sides, or "".
+        #[qproperty(QString, sync_conflict_game)]
         // Basalt itself is updated by the system package manager; shown in Settings.
         #[qproperty(QString, app_version)]
         #[qproperty(bool, controller_connected)]
@@ -68,6 +73,13 @@ pub mod qobject {
             target: &QString,
         );
         #[qinvokable]
+        fn restore_backup(self: Pin<&mut Backend>, game: &QString, snapshot: &QString);
+        /// JSON list of a game's backups, newest first.
+        #[qinvokable]
+        fn backups_json(self: &Backend, game: &QString) -> QString;
+        #[qinvokable]
+        fn clear_sync_conflict(self: Pin<&mut Backend>);
+        #[qinvokable]
         fn install_game(self: Pin<&mut Backend>, game: &QString, library: &QString);
         #[qinvokable]
         fn add_game_library(self: Pin<&mut Backend>, id: &QString, path: &QString);
@@ -78,6 +90,9 @@ pub mod qobject {
 
         #[qinvokable]
         fn set_display_mode(self: Pin<&mut Backend>, fullscreen: bool, maximized: bool);
+        /// Sets the sync folder; an empty path clears it.
+        #[qinvokable]
+        fn save_sync_remote(self: Pin<&mut Backend>, path: &QString);
 
         /// Image URL for an artwork key, or "" while unresolved.
         #[qinvokable]
@@ -143,6 +158,9 @@ pub struct BackendRust {
     job_cancelling: bool,
     fullscreen: bool,
     maximized: bool,
+    sync_remote: QString,
+    default_sync_remote: QString,
+    sync_conflict_game: QString,
     app_version: QString,
     controller_connected: bool,
 
@@ -176,6 +194,9 @@ impl Default for BackendRust {
             job_cancelling: false,
             fullscreen: false,
             maximized: false,
+            sync_remote: QString::default(),
+            default_sync_remote: QString::from(basalt_core::DEFAULT_SYNC_REMOTE),
+            sync_conflict_game: QString::default(),
             app_version: QString::from(env!("CARGO_PKG_VERSION")),
             controller_connected: false,
 
@@ -223,6 +244,13 @@ impl qobject::Backend {
         });
         self.as_mut().set_fullscreen(display.fullscreen_enabled);
         self.as_mut().set_maximized(display.maximized_enabled);
+        match basalt_core::load_sync_remote() {
+            Ok(remote) if remote.is_default => self.as_mut().set_sync_remote(QString::default()),
+            Ok(remote) => self
+                .as_mut()
+                .set_sync_remote(qs(remote.path.to_string_lossy())),
+            Err(error) => warnings.push(format!("Sync setting load warning: {}", error)),
+        }
         self.as_mut().set_settings_status(qs(warnings.join(" | ")));
     }
 
@@ -492,21 +520,56 @@ impl qobject::Backend {
         let game = game.to_string();
         let action = action.to_string();
         let target = StatusTarget::parse(&target.to_string());
+        self.as_mut().set_sync_conflict_game(QString::default());
+        self.as_mut().run_action_job(target, game, action, None);
+    }
+
+    fn restore_backup(mut self: Pin<&mut Self>, game: &QString, snapshot: &QString) {
+        let game = game.to_string();
+        let snapshot = snapshot.to_string();
+        self.as_mut()
+            .run_action_job(StatusTarget::Library, game, "restore".to_string(), Some(snapshot));
+    }
+
+    fn run_action_job(
+        mut self: Pin<&mut Self>,
+        target: StatusTarget,
+        game: String,
+        action: String,
+        snapshot: Option<String>,
+    ) {
         self.as_mut().start_job(
             target,
-            format!("{action} started for {game}"),
-            move |_| basalt_core::run_game_maintenance(&game, &action),
-            move |mut backend, result| {
+            format!("Running {} for {game}...", action.replace('_', " ")),
+            move |progress| {
+                let result =
+                    basalt_core::run_game_action(&game, &action, snapshot.as_deref(), &progress);
+                (game, action, result)
+            },
+            move |mut backend, (game, action, result)| {
                 let message = match result {
-                    Ok(()) => {
+                    Ok(message) => {
                         backend.as_mut().reload_library();
-                        "Maintenance completed".to_string()
+                        message
                     }
-                    Err(error) => failure_message("Maintenance", &error),
+                    Err(error) => {
+                        if error.is_sync_conflict() {
+                            backend.as_mut().set_sync_conflict_game(qs(&game));
+                        }
+                        failure_message(&action.replace('_', " "), &error)
+                    }
                 };
                 backend.as_mut().set_status(target, message);
             },
         );
+    }
+
+    fn backups_json(&self, game: &QString) -> QString {
+        qs(view_model::backups_json(&game.to_string()))
+    }
+
+    fn clear_sync_conflict(mut self: Pin<&mut Self>) {
+        self.as_mut().set_sync_conflict_game(QString::default());
     }
 
     fn refresh_game_libraries(mut self: Pin<&mut Self>) {
@@ -678,6 +741,31 @@ impl qobject::Backend {
                 .to_string()
             }
             // The QML checkboxes re-bind to fullscreen/maximized, so they show the stored values.
+            Err(error) => format!("Save failed: {}", error),
+        };
+        self.as_mut().set_settings_status(qs(message));
+    }
+
+    fn save_sync_remote(mut self: Pin<&mut Self>, path: &QString) {
+        let path = path.to_string();
+        let path = path.trim();
+        let remote = (!path.is_empty()).then(|| std::path::PathBuf::from(path));
+        let message = match basalt_core::save_sync_remote(remote.as_deref()) {
+            Ok(()) => {
+                self.as_mut().set_sync_remote(qs(path));
+                let (folder, what) = match &remote {
+                    None => (
+                        std::path::PathBuf::from(basalt_core::DEFAULT_SYNC_REMOTE),
+                        format!("Using the default sync folder, {}", basalt_core::DEFAULT_SYNC_REMOTE),
+                    ),
+                    Some(folder) => (folder.clone(), format!("Sync folder set to {path}")),
+                };
+                if folder.is_dir() {
+                    what
+                } else {
+                    format!("{what}, but it is not available right now (is it mounted?)")
+                }
+            }
             Err(error) => format!("Save failed: {}", error),
         };
         self.as_mut().set_settings_status(qs(message));

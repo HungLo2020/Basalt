@@ -20,6 +20,7 @@ QtObject {
         { name: "01-library", run: () => window.showSection("library") },
         { name: "02-library-details", run: () => selectFirst(window.libraryPage, item => item.artworkKey !== "") },
         { name: "03-library-mattmc", run: () => selectFirst(window.libraryPage, item => item.isMattmc) },
+        { name: "03b-library-standard-game", run: () => selectFirst(window.libraryPage, item => item.name === "Sample Quest") },
         { name: "04-install", run: () => window.showSection("install") },
         { name: "05-install-mattmc", run: () => selectFirst(window.installPage, item => item.kind === "game" && item.key === "MattMC") },
         { name: "06-install-micromages", run: () => selectFirst(window.installPage, item => item.key === "MicroMages") },

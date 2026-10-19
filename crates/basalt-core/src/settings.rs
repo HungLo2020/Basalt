@@ -15,6 +15,17 @@ const SETTINGS_FILE_NAME: &str = "settings.json";
 struct SettingsFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     launcher: Option<LauncherSection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sync: Option<SyncSection>,
+    #[serde(flatten)]
+    extra: Map<String, Value>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct SyncSection {
+    /// Folder that game data is synced to (a local disk or a mounted network/cloud folder).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    remote: Option<PathBuf>,
     #[serde(flatten)]
     extra: Map<String, Value>,
 }
@@ -56,6 +67,48 @@ pub fn save_launcher_display_settings(fullscreen_enabled: bool, maximized_enable
     })?;
     Ok(LauncherDisplaySettings { fullscreen_enabled, maximized_enabled })
 }
+/// Where games sync to when no folder is configured.
+pub const DEFAULT_SYNC_REMOTE: &str = "/mnt/storage/Storage/Sync";
+
+/// The folder games sync to, and whether it is the default (nothing configured).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SyncRemote {
+    pub path: PathBuf,
+    pub is_default: bool,
+}
+
+pub fn load_sync_remote() -> CoreResult<SyncRemote> {
+    Ok(sync_remote_from(read_settings_file()?))
+}
+
+fn sync_remote_from(settings: SettingsFile) -> SyncRemote {
+    match settings.sync.and_then(|sync| sync.remote) {
+        Some(path) => SyncRemote {
+            path,
+            is_default: false,
+        },
+        None => SyncRemote {
+            path: PathBuf::from(DEFAULT_SYNC_REMOTE),
+            is_default: true,
+        },
+    }
+}
+
+/// Sets the sync folder, or with `None` returns to the default. It must be an absolute path; it does not have
+/// to exist yet, since network folders may be unmounted while configuring.
+pub fn save_sync_remote(remote: Option<&std::path::Path>) -> CoreResult<()> {
+    if let Some(path) = remote
+        && !path.is_absolute()
+    {
+        return Err(CoreError::InvalidInput(
+            "The sync folder must be an absolute path".to_string(),
+        ));
+    }
+    update_settings_file(|settings| {
+        settings.sync.get_or_insert_with(Default::default).remote = remote.map(PathBuf::from);
+    })
+}
+
 fn settings_file_path() -> CoreResult<PathBuf> {
     Ok(storage::config_dir()?.join(SETTINGS_FILE_NAME))
 }
@@ -114,6 +167,18 @@ mod tests {
         assert_eq!(reparsed["launcher"]["fullscreen"], true);
         assert_eq!(reparsed["launcher"]["maximized"], false);
         assert_eq!(reparsed["some_new_section"]["enabled"], true);
+    }
+
+    #[test]
+    fn sync_folder_defaults_until_configured() {
+        let unset = sync_remote_from(parse_settings("{}").unwrap());
+        assert_eq!(unset.path, PathBuf::from(DEFAULT_SYNC_REMOTE));
+        assert!(unset.is_default);
+        let set = sync_remote_from(
+            parse_settings(r#"{"sync": {"remote": "/media/usb/Sync"}}"#).unwrap(),
+        );
+        assert_eq!(set.path, PathBuf::from("/media/usb/Sync"));
+        assert!(!set.is_default);
     }
 
 }

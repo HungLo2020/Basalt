@@ -102,6 +102,14 @@ impl Progress {
         }
     }
 
+    /// Keeps reporting but can no longer be cancelled; for steps that must not stop halfway.
+    pub(crate) fn uncancellable(&self) -> Self {
+        Self {
+            callback: self.callback.clone(),
+            cancel: CancelToken::new(),
+        }
+    }
+
     pub(crate) fn report(
         &self,
         message: impl Into<String>,

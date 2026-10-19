@@ -40,6 +40,49 @@ Kirigami.ScrollablePage {
 
         Kirigami.Separator {
             Kirigami.FormData.isSection: true
+            Kirigami.FormData.label: "Game Sync"
+        }
+
+        Controls.TextField {
+            id: syncRemoteField
+
+            Kirigami.FormData.label: "Sync folder:"
+            Layout.preferredWidth: Kirigami.Units.gridUnit * 20
+            placeholderText: Backend.defaultSyncRemote + " (default)"
+            text: Backend.syncRemote
+            onAccepted: Backend.saveSyncRemote(text)
+        }
+
+        RowLayout {
+            Controls.Button {
+                text: "Save"
+                icon.name: "document-save"
+                enabled: syncRemoteField.text.trim() !== Backend.syncRemote
+                onClicked: Backend.saveSyncRemote(syncRemoteField.text)
+            }
+
+            Controls.Button {
+                text: "Use default"
+                icon.name: "edit-undo"
+                enabled: Backend.syncRemote !== ""
+                onClicked: {
+                    syncRemoteField.text = "";
+                    Backend.saveSyncRemote("");
+                }
+            }
+        }
+
+        Controls.Label {
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 24
+            text: "Games that follow the Basalt game standard sync their saves and shared settings into a folder "
+                + "per game inside this one. Leave it empty to use " + Backend.defaultSyncRemote + ". "
+                + "Use a local disk or a mounted network or cloud folder; it must exist before syncing."
+            wrapMode: Text.Wrap
+            opacity: 0.7
+        }
+
+        Kirigami.Separator {
+            Kirigami.FormData.isSection: true
             Kirigami.FormData.label: "About"
         }
 

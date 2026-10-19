@@ -6,7 +6,7 @@ use super::{Command, LibraryCommand};
 pub(super) fn run(command: Command) -> CoreResult<()> {
     match command {
         Command::Catalog => {
-            for game in core::bundled_games()? {
+            for game in core::catalog_games()? {
                 println!("{}\t{}\t{}", game.id, game.name, game.source.repository);
             }
         }
@@ -63,9 +63,67 @@ pub(super) fn run(command: Command) -> CoreResult<()> {
         }
         Command::List => list()?,
         Command::Discover { steam, catalog } => discover(steam, catalog)?,
-        Command::Maintain { game, action } => {
-            core::run_game_maintenance(game.trim(), action.trim())?;
-            println!("Completed '{}' for '{}'.", action, game);
+        Command::Maintain {
+            game,
+            action,
+            snapshot,
+        } => {
+            let printer = ProgressPrinter::new();
+            let result = core::run_game_action(
+                game.trim(),
+                action.trim(),
+                snapshot.as_deref().map(str::trim),
+                &printer.progress(),
+            );
+            printer.finish();
+            println!("{}", result?);
+        }
+        Command::Actions { game } => {
+            for action in core::list_game_actions(game.trim())? {
+                let kind = match (&action.script, action.builtin) {
+                    (Some(script), _) => format!("script {}", script.path),
+                    (None, Some(_)) => "built-in".to_string(),
+                    (None, None) => String::new(),
+                };
+                println!("{}\t{}\t{}", action.name, action.label, kind);
+            }
+        }
+        Command::Backups { game } => {
+            let backups = core::list_backups(game.trim())?;
+            if backups.is_empty() {
+                println!("No backups of {}.", game.trim());
+            }
+            for backup in backups {
+                println!(
+                    "{}\t{}\t{} files\t{}",
+                    backup.id,
+                    backup.reason,
+                    backup.files,
+                    backup.categories.join(",")
+                );
+            }
+        }
+        Command::SyncRemote { path, clear } => {
+            if clear {
+                core::save_sync_remote(None)?;
+                println!("Sync folder reset to the default, {}", core::DEFAULT_SYNC_REMOTE);
+            } else if let Some(path) = path {
+                core::save_sync_remote(Some(&path))?;
+                println!("Sync folder set to {}", path.display());
+                if !path.is_dir() {
+                    eprintln!(
+                        "Warning: {} does not exist yet; syncing needs it to be present (mounted).",
+                        path.display()
+                    );
+                }
+            } else {
+                let remote = core::load_sync_remote()?;
+                if remote.is_default {
+                    println!("{} (default)", remote.path.display());
+                } else {
+                    println!("{}", remote.path.display());
+                }
+            }
         }
         Command::Launch { name } => core::launch_game(name.trim())?,
         Command::RefreshMetadata => {

@@ -90,12 +90,20 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             spacing: Kirigami.Units.smallSpacing
             Repeater {
-                model: details.game ? details.game.maintenanceActions : []
+                model: details.game ? details.game.actions : []
                 Controls.Button {
-                    required property string modelData
-                    text: modelData.replace(/_/g, " ")
-                    enabled: !Backend.jobActive && !details.running
-                    onClicked: Backend.maintainGame(details.game.catalogId, modelData, "library")
+                    required property var modelData
+                    text: modelData.label
+                    // Clearing the cache is safe while the game runs; everything else waits.
+                    enabled: !Backend.jobActive && (!details.running || modelData.name === "clear_cache")
+                    onClicked: {
+                        if (modelData.needsSnapshot) {
+                            restoreDialog.backups = JSON.parse(Backend.backupsJson(details.game.catalogId));
+                            restoreDialog.open();
+                        } else {
+                            Backend.maintainGame(details.game.catalogId, modelData.name, "library");
+                        }
+                    }
                 }
             }
         }
@@ -107,6 +115,80 @@ Kirigami.ScrollablePage {
         StatusSection {
             Layout.fillWidth: true
             message: Backend.libraryStatus
+        }
+    }
+
+    Kirigami.Dialog {
+        id: restoreDialog
+
+        property var backups: []
+
+        title: "Restore a backup of " + details.gameName
+        standardButtons: Kirigami.Dialog.Cancel
+        preferredWidth: Kirigami.Units.gridUnit * 24
+
+        ColumnLayout {
+            spacing: Kirigami.Units.smallSpacing
+
+            Controls.Label {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                text: restoreDialog.backups.length === 0
+                    ? "There are no backups yet."
+                    : "Your current data is backed up before it is replaced."
+            }
+
+            Repeater {
+                model: restoreDialog.backups
+                Controls.Button {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    text: new Date(modelData.createdUnix * 1000).toLocaleString(Qt.locale(), Locale.ShortFormat)
+                        + " · " + modelData.reason + " · " + modelData.files + " files"
+                    onClicked: {
+                        Backend.restoreBackup(details.game.catalogId, modelData.id);
+                        restoreDialog.close();
+                    }
+                }
+            }
+        }
+    }
+
+    Kirigami.PromptDialog {
+        id: conflictDialog
+
+        title: "Sync conflict"
+        subtitle: details.gameName + " changed on this computer and in the sync folder since it was last synced. "
+            + "Which copy do you want to keep? The other one is backed up first."
+        standardButtons: Kirigami.Dialog.Cancel
+        onRejected: Backend.clearSyncConflict()
+        customFooterActions: [
+            Kirigami.Action {
+                text: "Keep this computer's"
+                icon.name: "go-up"
+                onTriggered: {
+                    Backend.maintainGame(details.game.catalogId, "sync_up", "library");
+                    conflictDialog.close();
+                }
+            },
+            Kirigami.Action {
+                text: "Keep the sync folder's"
+                icon.name: "go-down"
+                onTriggered: {
+                    Backend.maintainGame(details.game.catalogId, "sync_down", "library");
+                    conflictDialog.close();
+                }
+            }
+        ]
+    }
+
+    Connections {
+        target: Backend
+
+        function onSyncConflictGameChanged() {
+            if (details.game && Backend.syncConflictGame !== "" && Backend.syncConflictGame === details.game.catalogId) {
+                conflictDialog.open();
+            }
         }
     }
 

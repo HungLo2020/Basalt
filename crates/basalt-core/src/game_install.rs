@@ -4,6 +4,8 @@ use crate::{
     CoreError, CoreResult, GameEntry, RunnerKind,
     catalog::GameDefinition,
     catalog_launch::{MANIFEST, validate_launch},
+    game_data::{self, Installation, OperationGuard},
+    game_layout::{DataCategory, GameLayout},
     progress::Progress,
 };
 use serde_json::Value;
@@ -22,8 +24,10 @@ pub struct GameInstallReport {
     pub install_dir: PathBuf,
 }
 
-/// Install the latest matching release into a registered library. Existing persistent data
-/// wins over the archive in its entirety; application files are replaced, not merged.
+/// Install the latest matching release into a registered library. Existing user data wins
+/// over the archive; application files are replaced, not merged. For schema 1 entries the user
+/// data is the persistent directory; for schema 2 it is everything outside the layout's `app`
+/// paths, and it is backed up first.
 pub fn install_game(
     game_id: &str,
     library_id: &str,
@@ -33,7 +37,52 @@ pub fn install_game(
     let target = crate::libraries::install_directory(library_id, &game.id)?;
     let library = target
         .parent()
-        .ok_or_else(|| CoreError::new("Missing library root"))?;
+        .ok_or_else(|| CoreError::new("Missing library root"))?
+        .to_path_buf();
+    // Reinstalling a standard game over itself is an update: same guards and backup.
+    let existing = game.follows_standard() && target.join(MANIFEST).is_file();
+    let _guard = if existing {
+        let installation = Installation {
+            definition: game.clone(),
+            root: target.canonicalize().map_err(|e| CoreError::io("Resolve installation", &target, e))?,
+        };
+        Some(OperationGuard::acquire(&installation, true)?)
+    } else {
+        None
+    };
+    install_into(&game, &library, existing, progress)
+}
+
+/// The built-in `update` action: reinstall the latest release into the library the game is
+/// already in. The caller holds the installation's operation guard.
+pub(crate) fn update_installation(
+    installation: &Installation,
+    backup_first: bool,
+    progress: &Progress,
+) -> CoreResult<GameInstallReport> {
+    let game = &installation.definition;
+    let library = installation
+        .root
+        .parent()
+        .ok_or_else(|| CoreError::new("Installation has no library"))?;
+    if installation.root.file_name() != Some(std::ffi::OsStr::new(&game.id)) {
+        return Err(CoreError::new(format!(
+            "{} is installed at {}, not in a folder named {}; reinstall it from the Install page",
+            game.name,
+            installation.root.display(),
+            game.id
+        )));
+    }
+    install_into(game, library, backup_first, progress)
+}
+
+fn install_into(
+    game: &GameDefinition,
+    library: &Path,
+    backup_first: bool,
+    progress: &Progress,
+) -> CoreResult<GameInstallReport> {
+    let game = game.clone();
     fs::create_dir_all(library).map_err(|e| CoreError::io("Create library", library, e))?;
     let library = library
         .canonicalize()
@@ -76,24 +125,34 @@ pub fn install_game(
         &format!("Downloading {} {tag}", game.name),
     )?;
     drop(file);
-    let extracted = stage.0.join("extracted");
-    extract_archive(&archive, &extracted, progress)?;
-    let source = payload_root(&extracted, &game)?;
-    validate_launch(&source, &game)?;
+    let source = prepare_release(&archive, &stage.0.join("extracted"), &game, progress)?;
     progress.check_cancelled()?;
+    if backup_first && game.follows_standard() && target.join(MANIFEST).is_file() {
+        progress.report_step(format!("Backing up {} before updating", game.name));
+        let (categories, keep) = crate::maintenance::backup_settings(&game);
+        let installation = Installation {
+            definition: game.clone(),
+            root: target.clone(),
+        };
+        game_data::backup_installation(&installation, &categories, keep, "before-update", progress)?;
+    }
     // Serializes competing installs and registry changes. Cancellation stops before commit.
     crate::storage::with_data_lock(|| {
         let mut entries = crate::registry::load_entries()?;
         let launch_target = target.join(MANIFEST).to_string_lossy().into_owned();
         if let Some(existing) = entries.iter().find(|entry| entry.name == game.name) {
-            // Permit replacing the old bash entry only for this exact installation.
+            // Permit replacing an old bash entry only for this exact installation: its script is
+            // the catalog executable, or (for a game whose layout changed) a script directly in
+            // the installation folder, such as MattMC's run-mattmc.sh.
             let legacy = target
                 .join(&game.launch.executable)
                 .to_string_lossy()
                 .into_owned();
+            let bash_in_target = Path::new(&existing.launch_target).parent() == Some(&target);
             if !(existing.runner_kind == RunnerKind::Catalog
                 && existing.launch_target == launch_target
-                || existing.runner_kind == RunnerKind::Bash && existing.launch_target == legacy)
+                || existing.runner_kind == RunnerKind::Bash
+                    && (existing.launch_target == legacy || bash_in_target))
             {
                 return Err(CoreError::InvalidInput(format!(
                     "{} is registered at another location. Remove its Basalt entry before installing elsewhere; files will be retained.",
@@ -240,6 +299,74 @@ fn extract_archive(archive: &Path, root: &Path, progress: &Progress) -> CoreResu
     Ok(())
 }
 
+/// Unpacks a downloaded release and returns its validated release root, before anything in the
+/// installation is touched.
+fn prepare_release(
+    archive: &Path,
+    extracted: &Path,
+    game: &GameDefinition,
+    progress: &Progress,
+) -> CoreResult<PathBuf> {
+    extract_archive(archive, extracted, progress)?;
+    let source = if game.follows_standard() {
+        let source = standard_release_root(extracted, game)?;
+        validate_standard_payload(&source, &GameLayout::for_game(game))?;
+        source
+    } else {
+        payload_root(extracted, game)?
+    };
+    validate_launch(&source, game)?;
+    Ok(source)
+}
+
+/// Schema 2: the archive root is the release root, unless `source.archive_root` names the one
+/// folder the archive must consist of.
+fn standard_release_root(extracted: &Path, game: &GameDefinition) -> CoreResult<PathBuf> {
+    let mut entries: Vec<(String, bool)> = fs::read_dir(extracted)
+        .map_err(|e| CoreError::io("Read extraction", extracted, e))?
+        .map(|entry| {
+            let entry = entry.map_err(|e| CoreError::io("Read extraction", extracted, e))?;
+            let is_dir = fs::symlink_metadata(entry.path())
+                .map_err(|e| CoreError::io("Inspect extraction", entry.path(), e))?
+                .is_dir();
+            Ok((entry.file_name().to_string_lossy().into_owned(), is_dir))
+        })
+        .collect::<CoreResult<_>>()?;
+    entries.sort();
+    let listing = || {
+        entries
+            .iter()
+            .map(|(name, is_dir)| if *is_dir { format!("{name}/") } else { name.clone() })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let Some(wrapper) = &game.source.archive_root else {
+        if let [(name, true)] = entries.as_slice()
+            && name != "app"
+            && extracted.join(name).join("app").is_dir()
+        {
+            return Err(CoreError::new(format!(
+                "Release wraps its files in {name}/, but the catalog entry does not set \
+                 source.archive_root"
+            )));
+        }
+        return Ok(extracted.to_path_buf());
+    };
+    match entries.as_slice() {
+        [(name, true)] if name == wrapper => Ok(extracted.join(wrapper)),
+        [] => Err(CoreError::new("Release archive is empty")),
+        _ if entries.iter().any(|(name, _)| name == "app") => Err(CoreError::new(format!(
+            "Release is not wrapped in a {wrapper}/ folder (source.archive_root); its top level \
+             contains {}",
+            listing()
+        ))),
+        _ => Err(CoreError::new(format!(
+            "Release must contain only the folder {wrapper}/ at its top level, but contains {}",
+            listing()
+        ))),
+    }
+}
+
 fn payload_root(extracted: &Path, game: &GameDefinition) -> CoreResult<PathBuf> {
     if extracted.join(&game.launch.executable).is_file() {
         return Ok(extracted.into());
@@ -274,23 +401,10 @@ fn commit_payload(
             "Installation destination must be a real directory",
         ));
     }
-    let persistent = target.join(&game.persistent_directory);
-    if fs::symlink_metadata(&persistent).is_ok() {
-        // Refuse a symlink at the persistent root; nested user symlinks are copied, never followed.
-        if !fs::symlink_metadata(&persistent)
-            .map_err(|e| CoreError::io("Inspect game data", &persistent, e))?
-            .is_dir()
-        {
-            return Err(CoreError::new(
-                "Persistent data root must be a real directory",
-            ));
-        }
-        let staged = source.join(&game.persistent_directory);
-        if staged.exists() {
-            fs::remove_dir_all(&staged)
-                .map_err(|e| CoreError::io("Replace staged data", &staged, e))?;
-        }
-        copy_data(&persistent, &staged, progress)?;
+    if game.follows_standard() {
+        preserve_user_data(source, target, &GameLayout::for_game(game), progress)?;
+    } else {
+        preserve_legacy_data(source, target, game.legacy_persistent_directory(), progress)?;
     }
     validate_launch(source, game)?;
     let manifest = serde_json::to_vec_pretty(game).map_err(|e| CoreError::new(e.to_string()))?;
@@ -325,6 +439,107 @@ fn commit_payload(
         ));
     }
     Ok(())
+}
+
+/// Schema 1: the existing persistent directory replaces whatever the release shipped there.
+fn preserve_legacy_data(
+    source: &Path,
+    target: &Path,
+    persistent_directory: &str,
+    progress: &Progress,
+) -> CoreResult<()> {
+    let persistent = target.join(persistent_directory);
+    if fs::symlink_metadata(&persistent).is_ok() {
+        // Refuse a symlink at the persistent root; nested user symlinks are copied, never followed.
+        if !fs::symlink_metadata(&persistent)
+            .map_err(|e| CoreError::io("Inspect game data", &persistent, e))?
+            .is_dir()
+        {
+            return Err(CoreError::new(
+                "Persistent data root must be a real directory",
+            ));
+        }
+        let staged = source.join(persistent_directory);
+        if staged.exists() {
+            fs::remove_dir_all(&staged)
+                .map_err(|e| CoreError::io("Replace staged data", &staged, e))?;
+        }
+        copy_data(&persistent, &staged, progress)?;
+    }
+    Ok(())
+}
+
+/// Schema 2: everything in the existing installation outside the `app` paths carries over
+/// unchanged (user data, uncategorized files and Basalt's `.basalt/` state), and the standard
+/// data folders exist afterwards.
+fn preserve_user_data(
+    source: &Path,
+    target: &Path,
+    layout: &GameLayout,
+    progress: &Progress,
+) -> CoreResult<()> {
+    if target.is_dir() {
+        for relative in layout.non_app_entries(target)? {
+            let staged = source.join(&relative);
+            if let Some(parent) = staged.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| CoreError::io("Create data directory", parent, e))?;
+            }
+            copy_data(&target.join(&relative), &staged, progress)?;
+        }
+    }
+    for category in [
+        DataCategory::Save,
+        DataCategory::SharedConfig,
+        DataCategory::Config,
+        DataCategory::Cache,
+    ] {
+        if let Some(path) = layout.primary(category) {
+            let directory = source.join(path);
+            if fs::symlink_metadata(&directory).is_err() {
+                fs::create_dir_all(&directory)
+                    .map_err(|e| CoreError::io("Create data directory", &directory, e))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A standard release contains only application paths, so installing it can never overwrite
+/// user data.
+fn validate_standard_payload(source: &Path, layout: &GameLayout) -> CoreResult<()> {
+    for reserved in ["data", crate::game_layout::BASALT_DIR] {
+        if fs::symlink_metadata(source.join(reserved)).is_ok() {
+            return Err(CoreError::new(format!(
+                "Release contains {reserved}/, which is reserved for user data and Basalt; \
+                 releases may only ship application files"
+            )));
+        }
+    }
+    fn visit(root: &Path, relative: &Path, layout: &GameLayout) -> CoreResult<()> {
+        let path = root.join(relative);
+        let metadata =
+            fs::symlink_metadata(&path).map_err(|e| CoreError::io("Inspect release", &path, e))?;
+        if !relative.as_os_str().is_empty()
+            && layout.category_of(relative) == Some(DataCategory::App)
+        {
+            return Ok(());
+        }
+        if metadata.is_dir() {
+            for entry in fs::read_dir(&path).map_err(|e| CoreError::io("Read release", &path, e))? {
+                let entry = entry.map_err(|e| CoreError::io("Read release", &path, e))?;
+                visit(root, &relative.join(entry.file_name()), layout)?;
+            }
+            Ok(())
+        } else {
+            Err(CoreError::new(format!(
+                "Release contains {}, which is outside the game's app folder. Releases may only \
+                 ship application files (see STANDARDS.md).",
+                relative.display()
+            )))
+        }
+    }
+    visit(source, Path::new(""), layout)
 }
 
 fn copy_data(source: &Path, target: &Path, progress: &Progress) -> CoreResult<()> {
@@ -365,7 +580,7 @@ mod tests {
     }
     fn fixture() -> (Stage, GameDefinition, PathBuf, PathBuf) {
         let stage = Stage::new(&std::env::temp_dir()).unwrap();
-        let game = crate::catalog::find_game("MattMC").unwrap();
+        let game = crate::catalog::legacy_mattmc();
         let source = stage.0.join("release");
         let target = stage.0.join("installed");
         write(&source.join("run-mattmc.sh"), "new");
@@ -514,7 +729,7 @@ mod tests {
     }
     #[test]
     fn release_selection_filters_platform_and_rejects_ambiguity() {
-        let game = crate::catalog::find_game("MattMC").unwrap();
+        let game = crate::catalog::legacy_mattmc();
         let asset = |name| serde_json::json!({"name": name, "browser_download_url": "https://github.com/example/game.zip"});
         let release = serde_json::json!({"tag_name": "v1", "assets": [
             asset("MattMC-Client-v1-windows-x64.zip"), asset("MattMC-Client-v1-linux-x64.zip")]});
@@ -541,5 +756,241 @@ mod tests {
             payload_root(&wrapped, &game).unwrap(),
             wrapped.join("Jackal-v1")
         );
+    }
+    #[test]
+    fn standard_reinstall_replaces_app_and_keeps_everything_else() {
+        let stage = Stage::new(&std::env::temp_dir()).unwrap();
+        let game = crate::catalog::standard_game(serde_json::json!({}));
+        let source = stage.0.join("release");
+        let target = stage.0.join("installed");
+        write(&source.join("app/bin/sample"), "new binary");
+        write(&source.join("app/defaults/settings.ini"), "defaults");
+        write(&target.join("app/bin/sample"), "old binary");
+        write(&target.join("app/obsolete.so"), "old");
+        write(&target.join("data/save/slot1"), "progress");
+        write(&target.join("data/config/video.ini"), "1080p");
+        write(&target.join(".basalt/sync-state.json"), "{}");
+        write(&target.join("notes.txt"), "uncategorized");
+        commit_payload(
+            &source,
+            &target,
+            &stage.0.join("previous"),
+            &game,
+            &Progress::none(),
+            || Ok(()),
+        )
+        .unwrap();
+        let read = |path: &str| fs::read_to_string(target.join(path)).unwrap();
+        assert_eq!(read("app/bin/sample"), "new binary");
+        assert!(!target.join("app/obsolete.so").exists());
+        assert_eq!(read("data/save/slot1"), "progress");
+        assert_eq!(read("data/config/video.ini"), "1080p");
+        assert_eq!(read(".basalt/sync-state.json"), "{}");
+        assert_eq!(read("notes.txt"), "uncategorized");
+        assert!(target.join("data/config/shared").is_dir());
+        assert!(target.join("data/cache").is_dir());
+    }
+    #[test]
+    fn standard_fresh_install_creates_data_folders() {
+        let stage = Stage::new(&std::env::temp_dir()).unwrap();
+        let game = crate::catalog::standard_game(serde_json::json!({}));
+        let source = stage.0.join("release");
+        let target = stage.0.join("installed");
+        write(&source.join("app/bin/sample"), "binary");
+        commit_payload(
+            &source,
+            &target,
+            &stage.0.join("previous"),
+            &game,
+            &Progress::none(),
+            || Ok(()),
+        )
+        .unwrap();
+        for folder in ["data/save", "data/config", "data/config/shared", "data/cache"] {
+            assert!(target.join(folder).is_dir(), "{folder}");
+        }
+    }
+    #[test]
+    fn standard_releases_may_only_ship_app_paths() {
+        let stage = Stage::new(&std::env::temp_dir()).unwrap();
+        let game = crate::catalog::standard_game(serde_json::json!({}));
+        let layout = GameLayout::for_game(&game);
+        let release = stage.0.join("release");
+        write(&release.join("app/bin/sample"), "binary");
+        validate_standard_payload(&release, &layout).unwrap();
+        write(&release.join("data/save/default.sav"), "would overwrite saves");
+        assert!(validate_standard_payload(&release, &layout).is_err());
+        let custom = crate::catalog::standard_game(
+            serde_json::json!({"layout": {"app": ["app", "run-sample.sh"]}}),
+        );
+        let release = stage.0.join("custom");
+        write(&release.join("app/bin/sample"), "binary");
+        write(&release.join("run-sample.sh"), "launcher");
+        validate_standard_payload(&release, &GameLayout::for_game(&custom)).unwrap();
+    }
+    /// The bundled MattMC entry (schema 2, wrapped in MattMC/).
+    fn mattmc() -> GameDefinition {
+        serde_json::from_str(include_str!("../../../resources/games/mattmc.json")).unwrap()
+    }
+    /// Builds a zip from (path, contents) pairs; entries ending in '/' are directories.
+    fn zip(stage: &Stage, name: &str, entries: &[(&str, &str)]) -> PathBuf {
+        let archive = stage.0.join(format!("{name}.zip"));
+        let mut writer = zip::ZipWriter::new(fs::File::create(&archive).unwrap());
+        for (path, contents) in entries {
+            if path.ends_with('/') {
+                writer
+                    .add_directory(*path, zip::write::SimpleFileOptions::default())
+                    .unwrap();
+            } else {
+                writer
+                    .start_file(
+                        *path,
+                        zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+                    )
+                    .unwrap();
+                writer.write_all(contents.as_bytes()).unwrap();
+            }
+        }
+        writer.finish().unwrap();
+        archive
+    }
+    /// Unpacks and validates `entries` as a release, then installs it over `target`.
+    fn install_release(
+        stage: &Stage,
+        game: &GameDefinition,
+        name: &str,
+        entries: &[(&str, &str)],
+        target: &Path,
+    ) -> CoreResult<()> {
+        // install_into creates the library before this point.
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let archive = zip(stage, name, entries);
+        let source = prepare_release(
+            &archive,
+            &stage.0.join(format!("extracted-{name}")),
+            game,
+            &Progress::none(),
+        )?;
+        commit_payload(
+            &source,
+            target,
+            &stage.0.join(format!("previous-{name}")),
+            game,
+            &Progress::none(),
+            || Ok(()),
+        )
+    }
+    const MATTMC_V2: &[(&str, &str)] = &[
+        ("MattMC/app/bin/mattmc", "launcher v2"),
+        ("MattMC/app/lib/client.jar", "jar v2"),
+        ("MattMC/app/scripts/backup.sh", "standalone script"),
+    ];
+    #[test]
+    fn wrapped_archive_installs_the_wrapper_contents_as_the_install_root() {
+        let stage = Stage::new(&std::env::temp_dir()).unwrap();
+        let target = stage.0.join("Games/MattMC");
+        install_release(&stage, &mattmc(), "v2", MATTMC_V2, &target).unwrap();
+        assert_eq!(fs::read_to_string(target.join("app/bin/mattmc")).unwrap(), "launcher v2");
+        assert!(target.join("app/scripts/backup.sh").is_file());
+        assert!(!target.join("MattMC").exists());
+        assert!(target.join(MANIFEST).is_file());
+        assert!(target.join("data/save").is_dir());
+    }
+    #[test]
+    fn wrapped_archive_update_replaces_app_and_leaves_data_untouched() {
+        let stage = Stage::new(&std::env::temp_dir()).unwrap();
+        let game = mattmc();
+        let target = stage.0.join("Games/MattMC");
+        let v1 = [
+            ("MattMC/app/bin/mattmc", "launcher v1"),
+            ("MattMC/app/lib/old.jar", "jar v1"),
+        ];
+        install_release(&stage, &game, "v1", &v1, &target).unwrap();
+        write(&target.join("data/save/world/level.dat"), "world");
+        write(&target.join("data/config/shared/options.txt"), "fov:90");
+        write(&target.join("data/cache/logs/latest.log"), "log");
+        install_release(&stage, &game, "v2", MATTMC_V2, &target).unwrap();
+        let read = |path: &str| fs::read_to_string(target.join(path)).unwrap();
+        assert_eq!(read("app/bin/mattmc"), "launcher v2");
+        assert!(!target.join("app/lib/old.jar").exists());
+        assert_eq!(read("data/save/world/level.dat"), "world");
+        assert_eq!(read("data/config/shared/options.txt"), "fov:90");
+        assert_eq!(read("data/cache/logs/latest.log"), "log");
+    }
+    #[test]
+    fn unwrapped_archive_still_installs_without_archive_root() {
+        let stage = Stage::new(&std::env::temp_dir()).unwrap();
+        let game = crate::catalog::standard_game(serde_json::json!({}));
+        let target = stage.0.join("Games/Sample");
+        install_release(&stage, &game, "flat", &[("app/bin/sample", "binary")], &target).unwrap();
+        assert_eq!(fs::read_to_string(target.join("app/bin/sample")).unwrap(), "binary");
+        // Without archive_root a wrapper is a mistake, with a hint at the fix.
+        let error = install_release(
+            &stage,
+            &game,
+            "wrapped",
+            &[("Sample/app/bin/sample", "binary")],
+            &target,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("source.archive_root"), "{error}");
+    }
+    #[test]
+    fn mismatched_wrapped_archives_fail_before_touching_the_installation() {
+        let stage = Stage::new(&std::env::temp_dir()).unwrap();
+        let game = mattmc();
+        let target = stage.0.join("Games/MattMC");
+        install_release(&stage, &game, "good", MATTMC_V2, &target).unwrap();
+        write(&target.join("data/save/world/level.dat"), "world");
+        let cases: &[(&str, &[(&str, &str)], &str)] = &[
+            (
+                "wrong-name",
+                &[("MattMC-1.0/app/bin/mattmc", "x")],
+                "only the folder MattMC/",
+            ),
+            (
+                "extra-entry",
+                &[("MattMC/app/bin/mattmc", "x"), ("README.txt", "x")],
+                "README.txt",
+            ),
+            (
+                "data-in-wrapper",
+                &[("MattMC/app/bin/mattmc", "x"), ("MattMC/data/save/default", "x")],
+                "data/",
+            ),
+            (
+                "basalt-in-wrapper",
+                &[("MattMC/app/bin/mattmc", "x"), ("MattMC/.basalt/state", "x")],
+                ".basalt/",
+            ),
+            (
+                "unwrapped",
+                &[("app/bin/mattmc", "x")],
+                "not wrapped in a MattMC/ folder",
+            ),
+            (
+                "wrapper-holds-more-than-app",
+                &[("MattMC/app/bin/mattmc", "x"), ("MattMC/run-mattmc.sh", "x")],
+                "run-mattmc.sh",
+            ),
+            ("wrapper-is-a-file", &[("MattMC", "x")], "only the folder MattMC/"),
+            ("empty", &[], "empty"),
+        ];
+        for (name, entries, reason) in cases {
+            let error = install_release(&stage, &game, name, entries, &target)
+                .expect_err(name)
+                .to_string();
+            assert!(error.contains(reason), "{name}: {error}");
+            assert_eq!(
+                fs::read_to_string(target.join("app/bin/mattmc")).unwrap(),
+                "launcher v2",
+                "{name} touched app/"
+            );
+            assert_eq!(
+                fs::read_to_string(target.join("data/save/world/level.dat")).unwrap(),
+                "world"
+            );
+        }
     }
 }
