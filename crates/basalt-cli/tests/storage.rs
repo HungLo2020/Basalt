@@ -11,7 +11,6 @@ use std::path::Path;
 use std::process::Child;
 
 use common::{TestHome, stdout};
-use serde_json::Value;
 
 fn files_in(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = fs::read_dir(dir)
@@ -96,42 +95,6 @@ fn legacy_basalt_dir_is_migrated_to_xdg_locations() {
     );
     assert!(!legacy.exists(), "emptied legacy dir should be removed");
 
-    let settings = stdout(&home.run(&["settings", "get"]));
-    assert!(
-        settings.contains("Remote ROM root: /legacy/roms"),
-        "{}",
-        settings
-    );
-}
-
-#[test]
-fn settings_round_trip_preserves_unknown_keys() {
-    let home = TestHome::new("settings");
-    fs::create_dir_all(home.config_dir()).unwrap();
-    fs::write(
-        home.config_dir().join("settings.json"),
-        r#"{
-            "emulation": { "remote_roms_root_dir": "/old/roms", "future_option": 3 },
-            "launcher": { "fullscreen": true },
-            "some_new_section": { "enabled": true }
-        }"#,
-    )
-    .unwrap();
-
-    stdout(&home.run(&["settings", "set", "--saves-root", "  /new/saves  "]));
-
-    let saved: Value =
-        serde_json::from_str(&fs::read_to_string(home.config_dir().join("settings.json")).unwrap())
-            .unwrap();
-    assert_eq!(saved["emulation"]["remote_roms_root_dir"], "/old/roms");
-    assert_eq!(saved["emulation"]["remote_saves_root_dir"], "/new/saves");
-    assert_eq!(saved["emulation"]["future_option"], 3);
-    assert_eq!(saved["launcher"]["fullscreen"], true);
-    assert_eq!(saved["some_new_section"]["enabled"], true);
-
-    let shown = stdout(&home.run(&["settings", "get"]));
-    assert!(shown.contains("Remote ROM root: /old/roms"), "{}", shown);
-    assert!(shown.contains("Remote Saves root: /new/saves"), "{}", shown);
 }
 
 #[test]

@@ -47,6 +47,15 @@ pub fn load_launcher_display_settings() -> CoreResult<LauncherDisplaySettings> {
     })
 }
 
+pub fn save_launcher_display_settings(fullscreen_enabled: bool, maximized_enabled: bool) -> CoreResult<LauncherDisplaySettings> {
+    let maximized_enabled = maximized_enabled && !fullscreen_enabled;
+    update_settings_file(|settings| {
+        let launcher = settings.launcher.get_or_insert_with(Default::default);
+        launcher.fullscreen = Some(fullscreen_enabled);
+        launcher.maximized = Some(maximized_enabled);
+    })?;
+    Ok(LauncherDisplaySettings { fullscreen_enabled, maximized_enabled })
+}
 fn settings_file_path() -> CoreResult<PathBuf> {
     Ok(storage::config_dir()?.join(SETTINGS_FILE_NAME))
 }
