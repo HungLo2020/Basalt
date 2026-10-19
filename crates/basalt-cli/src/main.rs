@@ -6,7 +6,7 @@ mod progress_printer;
 use std::process::ExitCode;
 
 use basalt_core as core;
-use clap::{ArgGroup, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 
 const GUI_EXECUTABLE_NAME: &str = "basalt-gui";
 
@@ -22,7 +22,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Add a game via script file, Steam appid/URL, or emulator launch target
+    /// Add a game via script file, Steam appid/URL, or catalog launch target
     Add { name: String, target: String },
 
     /// Remove a saved game by name
@@ -40,27 +40,13 @@ enum Command {
     /// List all added games and playlists
     List,
 
-    /// Discover games and add new entries (no flags = all discover runners)
+    /// Discover catalog installations and Steam games.
     Discover {
-        /// Discover Steam games
         #[arg(long)]
         steam: bool,
-        /// Discover MattMC
         #[arg(long)]
-        mattmc: bool,
-        /// Discover emulator ROM entries
-        #[arg(long)]
-        emulators: bool,
+        catalog: bool,
     },
-
-    /// Install a RetroArch core for one system key (e.g. nes, gba, snes, atari2600, nds, 3ds)
-    InstallCore { system: String },
-
-    /// Show whether a system core is installed and if save sync is supported
-    CoreStatus { system: String },
-
-    /// Install RetroArch runtime plus built-in emulator cores
-    InstallEmulators,
 
     /// List games available from the bundled catalog
     Catalog,
@@ -84,24 +70,6 @@ enum Command {
     /// Execute a manifest-defined maintenance action for an installed game.
     Maintain { game: String, action: String },
 
-    /// Sync up for a platform: mattmc or an emulator system key (e.g. nes, gba)
-    SyncUp { platform: String },
-
-    /// Sync down for a platform: mattmc or an emulator system key (emulators also run discover)
-    SyncDown { platform: String },
-
-    /// Sync local save files to remote for a system key
-    SyncSavesUp { system: String },
-
-    /// Sync remote save files to local for a system key
-    SyncSavesDown { system: String },
-
-    /// Show or change the remote ROM/Saves root directories used by sync commands
-    Settings {
-        #[command(subcommand)]
-        action: SettingsCommand,
-    },
-
     /// Clear cached artwork metadata and images
     RefreshMetadata,
 }
@@ -112,23 +80,6 @@ enum LibraryCommand {
     Add {
         id: String,
         path: std::path::PathBuf,
-    },
-}
-
-#[derive(Subcommand)]
-enum SettingsCommand {
-    /// Show remote ROM/Saves root directories
-    Get,
-
-    /// Update remote ROM/Saves root directories
-    #[command(group(ArgGroup::new("paths").required(true).multiple(true)))]
-    Set {
-        /// Remote ROMs root directory
-        #[arg(long, group = "paths", value_name = "PATH")]
-        roms_root: Option<String>,
-        /// Remote saves root directory
-        #[arg(long, group = "paths", value_name = "PATH")]
-        saves_root: Option<String>,
     },
 }
 
@@ -189,13 +140,12 @@ mod tests {
                 if playlist == "Favorites" && name == "Doom"
         ));
 
-        let cli = Cli::try_parse_from(["basalt", "discover", "--steam", "--emulators"]).unwrap();
+        let cli = Cli::try_parse_from(["basalt", "discover", "--steam", "--catalog"]).unwrap();
         assert!(matches!(
             cli.command,
             Some(Command::Discover {
                 steam: true,
-                mattmc: false,
-                emulators: true
+                catalog: true
             })
         ));
     }
@@ -212,12 +162,6 @@ mod tests {
         ] {
             assert!(Cli::try_parse_from(["basalt", obsolete]).is_err());
         }
-    }
-
-    #[test]
-    fn settings_set_requires_at_least_one_path() {
-        assert!(Cli::try_parse_from(["basalt", "settings", "set"]).is_err());
-        assert!(Cli::try_parse_from(["basalt", "settings", "set", "--roms-root", "/r"]).is_ok());
     }
 
     #[test]
