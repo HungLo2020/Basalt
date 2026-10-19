@@ -99,7 +99,7 @@ Kirigami.ScrollablePage {
         Kirigami.Action {
             text: "Discover"
             icon.name: "edit-find"
-            tooltip: "Find Steam games, MattMC, and emulator ROMs"
+            tooltip: "Find Steam and installed native games"
             enabled: !Backend.jobActive
             onTriggered: Backend.discover()
         },
@@ -174,7 +174,7 @@ Kirigami.ScrollablePage {
             Backend.artworkRevision; // re-evaluate when artwork arrives
             return game.artworkKey === "" ? "" : Backend.artworkUrl(game.artworkKey);
         }
-        iconOf: game => game.runner === "steam" ? "steam" : game.runner === "emulator" ? "input-gaming" : "applications-games"
+        iconOf: game => game.runner === "steam" ? "steam" : "applications-games"
         badgeOf: game => page.isRunning(game.name) ? "Running" : ""
         emptyText: Backend.loading
             ? "Loading games..."

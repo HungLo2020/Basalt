@@ -120,7 +120,7 @@ pub fn install_tiles_json() -> String {
             system: String::new(),
             supports_save_sync: false,
             category: MY_GAMES_CATEGORY,
-            artwork_key: if game.id == core::MATTMC_GAME_NAME {
+            artwork_key: if game.id == "MattMC" {
                 core::ArtworkRequest::mattmc().key
             } else {
                 String::new()
@@ -176,9 +176,6 @@ mod tests {
         assert_eq!(json[0]["artworkKey"], "steam:2280");
         assert_eq!(json[1]["category"], "My Games");
         assert_eq!(json[1]["isMattmc"], true);
-        assert_eq!(json[2]["category"], "GBA");
-        assert_eq!(json[2]["categoryOrder"], "2-GBA");
-        assert_eq!(json[2]["favorite"], false);
     }
 
     #[test]
@@ -187,15 +184,6 @@ mod tests {
         let tiles = json.as_array().unwrap();
 
         assert_eq!(tiles[0]["key"], "MattMC");
-        let atari = tiles
-            .iter()
-            .find(|tile| tile["system"] == "atari2600")
-            .unwrap();
-        assert_eq!(atari["title"], "Atari 2600 Core");
-        assert_eq!(
-            atari["description"],
-            "RetroArch Stella core for Atari 2600 ROMs."
-        );
-        assert_eq!(atari["supportsSaveSync"], false);
+        assert_eq!(tiles.len(), 3);
     }
 }
