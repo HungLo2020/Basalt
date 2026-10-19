@@ -213,17 +213,6 @@ fn core_status(system: &str) -> CoreResult<()> {
 }
 
 fn sync_roms(platform: &str, up: bool) -> CoreResult<()> {
-    if platform.eq_ignore_ascii_case("mattmc") {
-        if up {
-            core::sync_mattmc_up()?;
-            println!("Ran sync-up script for MattMC.");
-        } else {
-            core::sync_mattmc_down()?;
-            println!("Ran sync-down script for MattMC.");
-        }
-        return Ok(());
-    }
-
     if up {
         let printer = ProgressPrinter::new();
         let report = core::sync_roms_up(platform, &printer.progress())?;
