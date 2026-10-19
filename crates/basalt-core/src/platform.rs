@@ -199,3 +199,21 @@ fn check_script_status(status: ExitStatus) -> CoreResult<()> {
             .unwrap_or_else(|| "terminated by signal".to_string())
     )))
 }
+
+
+/// Execute a catalog-specified maintenance script without a shell command string.
+pub fn run_maintenance_script(path: &Path, cwd: &Path, arguments: &[String], input: Option<&str>) -> CoreResult<()> {
+    if !path.is_file() || !cwd.is_dir() {
+        return Err(CoreError::new(format!("Maintenance script or directory missing: {}", path.display())));
+    }
+    let mut command = Command::new("bash");
+    command.arg(path).args(arguments).current_dir(cwd);
+    if input.is_some() { command.stdin(Stdio::piped()); }
+    let mut child = command.spawn().map_err(|err| CoreError::new(format!("Cannot launch maintenance script: {err}")))?;
+    if let Some(input) = input {
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(input.as_bytes()).map_err(|err| CoreError::new(format!("Cannot supply maintenance input: {err}")))?;
+        }
+    }
+    check_script_status(child.wait().map_err(|err| CoreError::new(format!("Maintenance script failed: {err}")))?)
+}

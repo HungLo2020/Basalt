@@ -13,5 +13,24 @@
     "arguments": [],
     "working_directory": "."
   },
-  "persistent_directory": "run"
+  "persistent_directory": "run",
+  "maintenance": {
+    "backup": {
+      "path": "backup.sh"
+    },
+    "update": {
+      "path": "update-mattmc.sh"
+    },
+    "sync_up": {
+      "path": "SyncGameData.sh",
+      "stdin": "up\n"
+    },
+    "sync_down": {
+      "path": "SyncGameData.sh",
+      "stdin": "down\n"
+    },
+    "sync": {
+      "path": "SyncGameData.sh"
+    }
+  }
 }

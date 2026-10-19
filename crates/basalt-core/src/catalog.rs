@@ -9,6 +9,8 @@ pub struct GameDefinition {
     pub name: String,
     pub source: ReleaseSource,
     pub launch: LaunchDefinition,
+    #[serde(default)]
+    pub maintenance: std::collections::BTreeMap<String, MaintenanceCommand>,
     #[serde(default = "default_persistent")]
     pub persistent_directory: String,
 }
@@ -29,6 +31,16 @@ pub struct LaunchDefinition {
     #[serde(default)]
     pub working_directory: String,
 }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MaintenanceCommand {
+    /// Script path relative to installation root.
+    pub path: String,
+    #[serde(default)]
+    pub arguments: Vec<String>,
+    /// Optional input for scripts that prompt for a direction.
+    #[serde(default)]
+    pub stdin: Option<String>,
+}
 fn safe_relative(value: &str) -> bool {
     use std::path::{Component, Path};
     !value.is_empty() && Path::new(value).components().all(|c| matches!(c, Component::Normal(_)))
@@ -45,6 +57,12 @@ impl GameDefinition {
             || !self.source.repository.bytes().all(|b| b.is_ascii_alphanumeric() || b"_-./".contains(&b))
             || self.source.asset_prefix.is_empty() || self.source.asset_suffix != ".zip" {
             return Err(CoreError::InvalidInput(format!("Invalid game catalog entry: {}", self.id)));
+        }
+        for (action, command) in &self.maintenance {
+            if action.is_empty() || !action.bytes().all(|c| c.is_ascii_lowercase() || c == b'_' || c == b'-')
+                || !safe_relative(&command.path) || !command.path.ends_with(".sh") {
+                return Err(CoreError::InvalidInput(format!("Invalid maintenance action {action} for {}", self.id)));
+            }
         }
         Ok(())
     }
@@ -74,6 +92,12 @@ mod tests {
         let list = bundled_games().unwrap();
         let mut ids = std::collections::HashSet::new();
         for item in list { assert!(ids.insert(item.id)); }
+    }
+    #[test]
+    fn rejects_escaping_maintenance_path() {
+        let mut game = find_game("MattMC").unwrap();
+        game.maintenance.get_mut("backup").unwrap().path = "../evil.sh".into();
+        assert!(game.validate().is_err());
     }
     #[test]
     fn rejects_escaping_executables() {
