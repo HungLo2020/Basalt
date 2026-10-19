@@ -17,7 +17,7 @@ pub struct GameView {
     pub runner: &'static str,
     pub target: String,
     pub category: String,
-    /// Sorts categories: Steam, My Games, then emulator systems.
+    /// Sorts categories: Steam, My Games, then catalog games.
     pub category_order: String,
     pub artwork_key: String,
     pub favorite: bool,
@@ -69,7 +69,7 @@ pub fn games_json(games: &[GameEntry], playlists: &[Playlist]) -> String {
                     .map(|request| request.key)
                     .unwrap_or_default(),
                 favorite: favorites.contains(game.name.as_str()),
-                is_mattmc: game.is_mattmc(),
+                is_mattmc: game.name == "MattMC",
                 catalog_id: catalog
                     .iter()
                     .find(|g| g.name == game.name)
@@ -162,7 +162,7 @@ mod tests {
     fn games_json_categorizes_and_marks_favorites() {
         let games = vec![
             game("Doom", RunnerKind::Steam, "2280"),
-            game(core::MATTMC_GAME_NAME, RunnerKind::Bash, "/g/run-mattmc.sh"),
+            game("MattMC", RunnerKind::Bash, "/g/run-mattmc.sh"),
         ];
         let playlists = vec![Playlist {
             name: core::FAVORITES_PLAYLIST_NAME.to_string(),

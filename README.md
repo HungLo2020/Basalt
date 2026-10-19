@@ -66,7 +66,7 @@ run the scripts declared by its JSON entry. The `update` maintenance action foll
 own data and runtime replacement rules; it is distinct from Basalt's catalog reinstall. The GUI
 shows noninteractive maintenance actions from the catalog. Steam support is unchanged.
 
-This branch is still a draft: ROM/emulator removal and full generic rediscovery remain separate
+This branch remains under review: complete regression validation and release packaging remain separate
 unfinished work. Installed catalog games are registered immediately and survive ordinary refresh.
 
 ## Design Principles
@@ -79,7 +79,7 @@ unfinished work. Installed catalog games are registered immediately and survive 
 
 Basalt is a Cargo workspace with three crates:
 
-- `crates/basalt-core` — library with all launcher logic (library, discovery, launching, emulation, sync). No UI dependencies.
+- `crates/basalt-core` — library with all launcher logic (library, discovery, launching, installation, maintenance). No UI dependencies.
 - `crates/basalt-cli` — the `basalt` command-line tool. Running `basalt` with no command opens the GUI.
 - `crates/basalt-gui-kirigami` — the `basalt-gui` desktop app, built with Qt Quick and KDE Kirigami. This is the default GUI.
 

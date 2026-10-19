@@ -35,7 +35,7 @@ fn stub_mattmc(home: &TestHome) -> PathBuf {
     )
     .unwrap();
 
-    stdout(&home.run(&["discover", "--mattmc"]));
+    stdout(&home.run(&["discover", "--catalog"]));
     record
 }
 

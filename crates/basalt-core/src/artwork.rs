@@ -41,7 +41,7 @@ impl ArtworkRequest {
     /// The artwork request for a library entry, or `None` for entries without artwork
     /// (plain scripts).
     pub fn for_game(game: &GameEntry) -> Option<Self> {
-        if game.is_mattmc() {
+        if game.name == MATTMC_GAME_NAME {
             return Some(Self::mattmc());
         }
 
