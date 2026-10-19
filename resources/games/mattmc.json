@@ -8,8 +8,18 @@
     "repository": "HungLo2020/MattMC",
     "asset_prefix": "MattMC-Client-",
     "asset_suffix": ".zip",
-    "asset_contains": ["linux-x64"],
+    "asset_contains": [
+      "linux-x64"
+    ],
     "archive_root": "MattMC"
   },
-  "launch": { "executable": "app/bin/mattmc" }
+  "launch": {
+    "executable": "app/bin/mattmc"
+  },
+  "layout": {
+    "cache": [
+      "data/cache",
+      "data/save/**/DistantHorizons.sqlite*"
+    ]
+  }
 }

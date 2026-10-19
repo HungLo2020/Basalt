@@ -5,6 +5,7 @@
 mod common;
 
 use std::fs;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use common::{TestHome, stdout};
@@ -315,6 +316,186 @@ fn standard_mattmc_refuses_actions_on_an_old_run_mattmc_registration() {
         assert!(error.contains("Reinstall it"), "{action}: {error}");
     }
     assert_eq!(read(&old.join("run/saves/world/level.dat")), "world");
+}
+
+/// A machine with Sample installed and syncing to `remote`.
+fn sync_machine(name: &str, remote: &Path, extra: serde_json::Value) -> (TestHome, PathBuf) {
+    let home = TestHome::new(name);
+    let root = install_sample(&home, "Games", extra);
+    stdout(&home.run(&["sync-remote", remote.to_str().unwrap()]));
+    (home, root)
+}
+
+fn inode(path: &Path) -> u64 {
+    fs::symlink_metadata(path).unwrap().ino()
+}
+
+#[test]
+fn unchanged_syncs_neither_read_nor_rewrite_the_sync_folder() {
+    let scratch = TestHome::new("incremental-remote");
+    let remote = scratch.path.join("nas");
+    fs::create_dir_all(&remote).unwrap();
+    let (home, root) = sync_machine("incremental", &remote, serde_json::json!({}));
+    for i in 0..40 {
+        write(&root.join(format!("data/save/region/r.{i}.mca")), &format!("region {i}"));
+    }
+    assert!(stdout(&home.run(&["maintain", "Sample", "sync_up"])).contains("40 files copied"));
+    let manifest: serde_json::Value =
+        serde_json::from_str(&read(&remote.join("Sample/.basalt-sync.json"))).unwrap();
+    assert_eq!(manifest["complete"], true);
+    assert_eq!(manifest["files"].as_object().unwrap().len(), 40);
+
+    // Prove the next syncs trust the list instead of reading the files: make one unreadable.
+    let locked = remote.join("Sample/data/save/region/r.7.mca");
+    let before = inode(&remote.join("Sample/data/save/region/r.3.mca"));
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+    for action in ["sync_up", "sync", "sync_down"] {
+        let output = stdout(&home.run(&["maintain", "Sample", action]));
+        assert!(output.contains("already in sync"), "{action}: {output}");
+    }
+    assert_eq!(inode(&remote.join("Sample/data/save/region/r.3.mca")), before);
+    // --verify really reads every file.
+    assert!(!home.run(&["maintain", "Sample", "sync", "--verify"]).status.success());
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(stdout(&home.run(&["maintain", "Sample", "sync", "--verify"])).contains("already in sync"));
+
+    // A change copies only the files that differ.
+    write(&root.join("data/save/region/r.5.mca"), "played");
+    fs::remove_file(root.join("data/save/region/r.9.mca")).unwrap();
+    let output = stdout(&home.run(&["maintain", "Sample", "sync"]));
+    assert!(output.contains("(1 files copied, 1 removed)"), "{output}");
+    assert_eq!(inode(&remote.join("Sample/data/save/region/r.3.mca")), before);
+    assert_eq!(read(&remote.join("Sample/data/save/region/r.5.mca")), "played");
+    assert!(!remote.join("Sample/data/save/region/r.9.mca").exists());
+}
+
+#[test]
+fn stat_cache_trusts_unchanged_timestamps_until_verify() {
+    let scratch = TestHome::new("stat-cache-remote");
+    let remote = scratch.path.join("nas");
+    fs::create_dir_all(&remote).unwrap();
+    let (home, root) = sync_machine("stat-cache", &remote, serde_json::json!({}));
+    let slot = root.join("data/save/slot1");
+    write(&slot, "aaaa");
+    stdout(&home.run(&["maintain", "Sample", "sync_up"]));
+    // Same size and timestamp: invisible to the cached index...
+    let modified = fs::metadata(&slot).unwrap().modified().unwrap();
+    write(&slot, "bbbb");
+    fs::File::options().write(true).open(&slot).unwrap().set_modified(modified).unwrap();
+    assert!(stdout(&home.run(&["maintain", "Sample", "sync"])).contains("already in sync"));
+    // ...but --verify re-reads it and uploads the change.
+    assert!(stdout(&home.run(&["maintain", "Sample", "sync", "--verify"])).contains("up (1 files"));
+    assert_eq!(read(&remote.join("Sample/data/save/slot1")), "bbbb");
+}
+
+#[test]
+fn incomplete_or_old_sync_folder_lists_are_rebuilt_by_reading_the_folder() {
+    let scratch = TestHome::new("rebuild-remote");
+    let remote = scratch.path.join("nas");
+    fs::create_dir_all(&remote).unwrap();
+    let (home, root) = sync_machine("rebuild", &remote, serde_json::json!({}));
+    write(&root.join("data/save/slot1"), "progress");
+    stdout(&home.run(&["maintain", "Sample", "sync_up"]));
+    // Basalt 0.5.0 wrote a marker without a file list; an interrupted upload leaves one
+    // marked incomplete. Either way the folder is read, and the list rewritten.
+    for marker in [
+        r#"{"game_id": "Sample", "updated_unix": 1}"#.to_string(),
+        r#"{"format": 2, "game_id": "Sample", "updated_unix": 1, "complete": false, "files": {}}"#
+            .to_string(),
+    ] {
+        fs::write(remote.join("Sample/.basalt-sync.json"), &marker).unwrap();
+        // Someone else's change in the folder that the stale list does not know about.
+        write(&remote.join("Sample/data/save/slot1"), "newer elsewhere");
+        let output = stdout(&home.run(&["maintain", "Sample", "sync_down"]));
+        assert!(output.contains("down (1 files copied"), "{output}");
+        assert_eq!(read(&root.join("data/save/slot1")), "newer elsewhere");
+        let rebuilt: serde_json::Value =
+            serde_json::from_str(&read(&remote.join("Sample/.basalt-sync.json"))).unwrap();
+        assert_eq!(rebuilt["complete"], true);
+        assert!(rebuilt["files"]["data/save/slot1"].is_object());
+        write(&root.join("data/save/slot1"), "progress");
+        stdout(&home.run(&["maintain", "Sample", "sync_up"]));
+    }
+}
+
+#[test]
+fn wildcard_cache_paths_are_neither_synced_nor_backed_up() {
+    let scratch = TestHome::new("wildcard-remote");
+    let remote = scratch.path.join("nas");
+    fs::create_dir_all(&remote).unwrap();
+    let layout = serde_json::json!({"layout": {
+        "cache": ["data/cache", "data/save/**/DistantHorizons.sqlite*"]
+    }});
+    let (home, root) = sync_machine("wildcard", &remote, layout);
+    write(&root.join("data/save/saves/W/level.dat"), "world");
+    write(&root.join("data/save/saves/W/data/DistantHorizons.sqlite"), "lod");
+    write(&root.join("data/save/saves/W/DIM-1/data/DistantHorizons.sqlite-wal"), "lod");
+    write(&root.join("data/config/shared/DistantHorizons.toml"), "settings");
+    assert!(stdout(&home.run(&["maintain", "Sample", "sync_up"])).contains("2 files copied"));
+    assert!(remote.join("Sample/data/save/saves/W/level.dat").exists());
+    assert!(!remote.join("Sample/data/save/saves/W/data/DistantHorizons.sqlite").exists());
+    assert!(remote.join("Sample/data/config/shared/DistantHorizons.toml").exists());
+    assert!(stdout(&home.run(&["maintain", "Sample", "backup"])).contains("(2 files)"));
+    // Clearing the cache removes the databases, not the world.
+    assert!(stdout(&home.run(&["maintain", "Sample", "clear_cache"])).contains("2 cached"));
+    assert!(root.join("data/save/saves/W/level.dat").exists());
+}
+
+fn object_count(home: &TestHome) -> usize {
+    let objects = home.data_dir().join("backups/Sample/objects");
+    fs::read_dir(objects)
+        .map(|buckets| {
+            buckets
+                .flatten()
+                .map(|bucket| fs::read_dir(bucket.path()).unwrap().count())
+                .sum()
+        })
+        .unwrap_or(0)
+}
+
+#[test]
+fn backups_store_each_content_once_and_prune_unreferenced_content() {
+    let home = TestHome::new("dedupe");
+    let root = install_sample(
+        &home,
+        "Games",
+        serde_json::json!({"actions": {"backup": {"options": {"keep": 2}}}}),
+    );
+    for i in 0..10 {
+        write(&root.join(format!("data/save/chunk{i}")), &format!("chunk {i}"));
+    }
+    stdout(&home.run(&["maintain", "Sample", "backup"]));
+    assert_eq!(object_count(&home), 10);
+    stdout(&home.run(&["maintain", "Sample", "backup"]));
+    assert_eq!(object_count(&home), 10, "an unchanged backup stores nothing new");
+    write(&root.join("data/save/chunk0"), "changed");
+    stdout(&home.run(&["maintain", "Sample", "backup"]));
+    // Two snapshots kept; the oldest two shared everything except the old chunk0, which the
+    // remaining middle snapshot still references.
+    assert_eq!(stdout(&home.run(&["backups", "Sample"])).lines().count(), 2);
+    assert_eq!(object_count(&home), 11);
+    write(&root.join("data/save/chunk0"), "changed again");
+    stdout(&home.run(&["maintain", "Sample", "backup"]));
+    assert_eq!(object_count(&home), 11, "content only old snapshots used is removed");
+}
+
+#[test]
+fn backups_from_basalt_0_5_are_listed_and_restored() {
+    let home = TestHome::new("legacy-backup");
+    let root = install_sample(&home, "Games", serde_json::json!({}));
+    let old = home.data_dir().join("backups/Sample/20261019T120000.000Z-manual");
+    write(&old.join("files/data/save/slot1"), "old progress");
+    write(
+        &old.join("snapshot.json"),
+        r#"{"id": "20261019T120000.000Z-manual", "created_unix": 1792411200,
+            "reason": "manual", "categories": ["save"], "files": 1}"#,
+    );
+    write(&root.join("data/save/slot1"), "new progress");
+    write(&root.join("data/save/extra"), "added later");
+    assert!(stdout(&home.run(&["backups", "Sample"])).contains("20261019T120000.000Z-manual"));
+    stdout(&home.run(&["maintain", "Sample", "restore", "--snapshot", "20261019T120000.000Z-manual"]));
+    assert_eq!(read(&root.join("data/save/slot1")), "old progress");
+    assert!(!root.join("data/save/extra").exists());
 }
 
 #[test]

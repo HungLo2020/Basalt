@@ -67,14 +67,15 @@ pub(super) fn run(command: Command) -> CoreResult<()> {
             game,
             action,
             snapshot,
+            verify,
         } => {
             let printer = ProgressPrinter::new();
-            let result = core::run_game_action(
-                game.trim(),
-                action.trim(),
-                snapshot.as_deref().map(str::trim),
-                &printer.progress(),
-            );
+            let request = core::ActionRequest {
+                snapshot: snapshot.as_deref().map(str::trim),
+                verify,
+            };
+            let result =
+                core::run_game_action(game.trim(), action.trim(), request, &printer.progress());
             printer.finish();
             println!("{}", result?);
         }

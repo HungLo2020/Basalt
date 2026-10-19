@@ -74,6 +74,10 @@ enum Command {
         /// Backup to restore, for the restore action (see `basalt backups <game>`)
         #[arg(long)]
         snapshot: Option<String>,
+        /// For sync actions: re-read every file on both sides instead of trusting cached
+        /// hashes and the sync folder's file list
+        #[arg(long)]
+        verify: bool,
     },
 
     /// List the actions a catalog game supports
@@ -174,7 +178,12 @@ mod tests {
     #[test]
     fn maintenance_is_generic_and_old_commands_are_rejected() {
         let cli = Cli::try_parse_from(["basalt", "maintain", "MattMC", "sync_up"]).unwrap();
-        assert!(matches!(cli.command, Some(Command::Maintain { snapshot: None, .. })));
+        assert!(matches!(
+            cli.command,
+            Some(Command::Maintain { snapshot: None, verify: false, .. })
+        ));
+        let cli = Cli::try_parse_from(["basalt", "maintain", "MattMC", "sync", "--verify"]).unwrap();
+        assert!(matches!(cli.command, Some(Command::Maintain { verify: true, .. })));
         let cli = Cli::try_parse_from([
             "basalt", "maintain", "Jackal", "restore", "--snapshot", "20260101T000000.000Z-manual",
         ])

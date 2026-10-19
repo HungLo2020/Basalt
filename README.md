@@ -47,6 +47,7 @@ basalt actions MattMC                # what `maintain` can run for this game
 basalt maintain MattMC sync_up
 basalt backups MyGame                # snapshots, newest first
 basalt maintain MyGame restore --snapshot <id>
+basalt maintain MattMC sync --verify # re-read every file instead of trusting cached hashes
 basalt sync-remote                   # where standard games sync to (default /mnt/storage/Storage/Sync)
 basalt sync-remote /media/usb/Sync   # use another folder; --clear goes back to the default
 ```
@@ -56,7 +57,9 @@ basalt sync-remote /media/usb/Sync   # use another folder; --clear goes back to 
 folder, and press **Install / reinstall**. That page also lets you register additional libraries.
 Both interfaces use the same catalog installer. A game's page in the Library shows its actions as
 buttons; the sync folder (default `/mnt/storage/Storage/Sync`, one subfolder per game) is set under
-Settings → Game Sync.
+Settings → Game Sync. Sync and backup are incremental: Basalt caches file hashes, keeps a file list
+in the sync folder, copies only files that changed, and stores each file content once across backups.
+MattMC's Distant Horizons databases are treated as cache, so they are not synced or backed up.
 
 Downloads and extraction happen in a staging directory inside the chosen library. The installer
 validates the launch target, preserves executable permissions, and refuses unsafe archive paths.

@@ -562,6 +562,12 @@ fn copy_data(source: &Path, target: &Path, progress: &Progress) -> CoreResult<()
             .map_err(|e| CoreError::io("Preserve data permissions", target, e))?;
     } else if meta.is_file() {
         fs::copy(source, target).map_err(|e| CoreError::io("Preserve data file", source, e))?;
+        // Unchanged timestamps keep Basalt's file index (and so sync and backup) fast.
+        if let Ok(modified) = meta.modified()
+            && let Ok(file) = fs::File::options().write(true).open(target)
+        {
+            let _ = file.set_modified(modified);
+        }
     } else {
         return Err(CoreError::new(
             "Persistent data contains an unsupported special file",

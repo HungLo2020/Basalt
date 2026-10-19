@@ -166,9 +166,17 @@ launch a game while one of its actions is running.
 | `clear_cache` | Delete the contents of `data/cache/`. |
 
 **Synced sets** are `save/` and `config/shared/`. **Backed-up sets** are `save/` and all of `config/`
-(which includes `config/shared/`). The synced sets are compared and copied as a whole, never merged
-file by file: Basalt compares their contents, not timestamps, so copies on different machines and
-file systems compare reliably.
+(which includes `config/shared/`). Which way to sync, and whether there is a conflict, is decided for
+the synced sets as a whole; changes are never merged file by file. Basalt compares contents (file
+hashes), not timestamps, so copies on different machines and file systems compare reliably, and it
+then copies only the files that differ, several at a time.
+
+To stay fast, Basalt remembers each local file's hash with its size and modification time and only
+re-reads files whose size or time changed, and it keeps a list of the synced files and their hashes
+in the sync folder (`.basalt-sync.json`). An unchanged sync therefore reads one small file from the
+sync folder. The list is marked incomplete while files are being copied; if it is missing or
+incomplete (for example after an interrupted sync), Basalt reads the folder itself and rewrites it.
+`basalt maintain <game> <sync action> --verify` re-reads every file on both sides.
 
 The **sync folder** is chosen by the user (Settings → Game Sync, or `basalt sync-remote <folder>`) and
 defaults to `/mnt/storage/Storage/Sync`; games never see it. It can be any folder: a local disk, or a
@@ -179,7 +187,9 @@ the install root, so it does not matter which library the game is installed in o
 Files in that folder outside the synced sets are left alone.
 
 Backups are stored in Basalt's data directory (`~/.local/share/basalt/backups/<GameId>/` on Linux),
-outside the install root, so they survive uninstalling or reinstalling the game. Basalt takes one
+outside the install root, so they survive uninstalling or reinstalling the game. Each distinct file
+content is stored once and shared by every snapshot that contains it, so a backup only costs what
+changed since an earlier one, and pruning removes content no remaining snapshot uses. Basalt takes one
 automatically before an update, a `sync_down`, a `restore`, and (of the sync folder's copy) before a
 `sync_up` that replaces different data. Automatic backups use the `backup` action's options even when
 that action is disabled or replaced by a script.
@@ -237,7 +247,10 @@ A game whose zip wraps its files in a folder names it in `archive_root`. MattMC'
     "asset_contains": ["linux-x64"],
     "archive_root": "MattMC"
   },
-  "launch": { "executable": "app/bin/mattmc" }
+  "launch": { "executable": "app/bin/mattmc" },
+  "layout": {
+    "cache": ["data/cache", "data/save/**/DistantHorizons.sqlite*"]
+  }
 }
 ```
 
@@ -278,6 +291,22 @@ files, for example:
   "cache":  ["run/logs", "run/crash-reports"]
 }
 ```
+
+Paths outside `app` may use wildcards: `*` matches any characters within one file or folder name,
+and `**` (a whole path component) matches any number of folders. A wildcard path counts as more
+specific than a shorter literal one by its number of literal components, so it can carve files out
+of a category. MattMC uses this to treat Distant Horizons' level-of-detail databases, which the mod
+rebuilds and which change every time you play, as cache inside its saves:
+
+```json
+"layout": {
+  "cache": ["data/cache", "data/save/**/DistantHorizons.sqlite*"]
+}
+```
+
+Wildcards are not allowed in `app` paths or in a path's first component. Directories only matched
+by a pattern are not created on install, and the `BASALT_*_DIR` variables point at the first
+literal path of each category.
 
 ### Configuring, disabling or replacing actions
 
@@ -395,6 +424,7 @@ basalt maintain MyGame backup
 basalt backups MyGame
 basalt sync-remote /mnt/nas/Games
 basalt maintain MyGame sync
+basalt maintain MyGame sync --verify   # re-read everything on both sides
 ```
 
 ## 11. Legacy catalog entries

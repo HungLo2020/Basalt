@@ -227,14 +227,24 @@ pub(crate) fn backup_settings(definition: &GameDefinition) -> (Vec<DataCategory>
     )
 }
 
-/// Runs a game action and returns a message describing the outcome. `snapshot` selects the
-/// backup for `restore`.
+/// Extra input for an action.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ActionRequest<'a> {
+    /// The backup to restore, for `restore`.
+    pub snapshot: Option<&'a str>,
+    /// For sync actions: re-read every file on both sides instead of trusting cached hashes
+    /// and the sync folder's file list.
+    pub verify: bool,
+}
+
+/// Runs a game action and returns a message describing the outcome.
 pub fn run_game_action(
     game_id: &str,
     action: &str,
-    snapshot: Option<&str>,
+    request: ActionRequest<'_>,
     progress: &Progress,
 ) -> CoreResult<String> {
+    let snapshot = request.snapshot;
     let definition = catalog::find_game(game_id)?;
     let selected = game_actions(&definition)
         .into_iter()
@@ -299,6 +309,7 @@ pub fn run_game_action(
         ),
         backup_categories: &backup_categories,
         keep,
+        verify: request.verify,
     };
     match builtin {
         BuiltinAction::Update => {

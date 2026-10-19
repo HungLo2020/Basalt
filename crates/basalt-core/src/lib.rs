@@ -11,6 +11,7 @@ mod catalog_launch;
 mod discovery;
 mod download;
 mod error;
+mod file_index;
 mod game_data;
 mod game_install;
 mod game_layout;
@@ -43,7 +44,9 @@ pub use game_service::{
 pub use libraries::{GameLibrary, add_library, default_library, install_directory, list_libraries};
 pub use game_data::{BackupSnapshot, list_backups};
 pub use game_layout::DataCategory;
-pub use maintenance::{BuiltinAction, GameAction, game_actions, list_game_actions, run_game_action};
+pub use maintenance::{
+    ActionRequest, BuiltinAction, GameAction, game_actions, list_game_actions, run_game_action,
+};
 pub use platform::run_sibling_executable;
 pub use playlist_service::FAVORITES_PLAYLIST_NAME;
 pub use progress::{CancelToken, Progress, ProgressUnit, ProgressUpdate};

@@ -542,8 +542,11 @@ impl qobject::Backend {
             target,
             format!("Running {} for {game}...", action.replace('_', " ")),
             move |progress| {
-                let result =
-                    basalt_core::run_game_action(&game, &action, snapshot.as_deref(), &progress);
+                let request = basalt_core::ActionRequest {
+                    snapshot: snapshot.as_deref(),
+                    verify: false,
+                };
+                let result = basalt_core::run_game_action(&game, &action, request, &progress);
                 (game, action, result)
             },
             move |mut backend, (game, action, result)| {

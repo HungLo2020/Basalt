@@ -3,11 +3,12 @@
 //! game is open or another operation holds the installation.
 use crate::catalog::{GameDefinition, STANDARD_VERSION};
 use crate::error::{CoreError, CoreResult};
+use crate::file_index::{self, FileIndex, FileRecord, parallel};
 use crate::game_layout::{self, BASALT_DIR, DataCategory, GameLayout};
 use crate::progress::Progress;
 use crate::{catalog, platform, registry, storage};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -15,9 +16,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const RUNNING_MARKER: &str = "running.pid";
 const OPERATION_LOCK: &str = "operation.lock";
 const SYNC_STATE: &str = "sync-state.json";
+const FILE_INDEX: &str = "file-index.json";
 const REMOTE_MARKER: &str = ".basalt-sync.json";
-const SNAPSHOT_FILE: &str = "snapshot.json";
-const SNAPSHOT_FILES: &str = "files";
+/// Version of the sync state and the sync folder's file list.
+const SYNC_FORMAT: u32 = 2;
+const OBJECTS: &str = "objects";
+const SNAPSHOTS: &str = "snapshots";
+const LEGACY_SNAPSHOT_FILE: &str = "snapshot.json";
+const LEGACY_FILES: &str = "files";
 pub(crate) const DEFAULT_BACKUP_KEEP: u32 = 10;
 
 /// A catalog game's installation on this machine.
@@ -177,7 +183,137 @@ pub(crate) fn environment(
     Ok(variables)
 }
 
+// ----- local file index ----------------------------------------------------------------------
+
+fn index_path(installation: &Installation) -> PathBuf {
+    installation.basalt_dir().join(FILE_INDEX)
+}
+
+/// Indexes this installation's files in `categories`, reusing cached hashes for files whose size
+/// and modification time are unchanged (all of them are re-read with `verify`), and refreshes
+/// the cache.
+pub(crate) fn scan_installation(
+    installation: &Installation,
+    categories: &[DataCategory],
+    verify: bool,
+    progress: &Progress,
+) -> CoreResult<FileIndex> {
+    let layout = installation.layout();
+    let files = layout.collect_files(&installation.root, categories)?;
+    let cache = file_index::load(&index_path(installation));
+    let index = file_index::scan(
+        &installation.root,
+        &files,
+        (!verify).then_some(&cache),
+        progress,
+        "Checking game data",
+    )?;
+    let mut updated = cache;
+    updated.retain(|path, _| {
+        !layout
+            .category_of(Path::new(path))
+            .is_some_and(|category| categories.contains(&category))
+    });
+    updated.extend(index.iter().map(|(path, record)| (path.clone(), record.clone())));
+    save_index(installation, &updated);
+    Ok(index)
+}
+
+fn save_index(installation: &Installation, index: &FileIndex) {
+    if let Err(error) = file_index::save(&index_path(installation), index) {
+        crate::warnings::warn(format!("Could not save the file index: {error}"));
+    }
+}
+
+/// Records files just written into the installation, so the next scan need not re-read them.
+fn remember_copies(installation: &Installation, written: &[(String, FileRecord)]) {
+    let path = index_path(installation);
+    let mut cache = file_index::load(&path);
+    for (name, record) in written {
+        let target = installation.root.join(name);
+        match file_index::record_after_copy(&target, &record.hash, record.link.as_deref()) {
+            Some(fresh) => cache.insert(name.clone(), fresh),
+            None => cache.remove(name),
+        };
+    }
+    save_index(installation, &cache);
+}
+
+/// What to change in a destination so it matches a source index.
+struct Plan {
+    copies: Vec<String>,
+    deletes: Vec<String>,
+}
+
+impl Plan {
+    fn between(source: &FileIndex, destination: &FileIndex) -> Self {
+        Self {
+            copies: source
+                .iter()
+                .filter(|(path, record)| {
+                    destination
+                        .get(*path)
+                        .is_none_or(|existing| existing.hash != record.hash)
+                })
+                .map(|(path, _)| path.clone())
+                .collect(),
+            deletes: destination
+                .keys()
+                .filter(|path| !source.contains_key(*path))
+                .cloned()
+                .collect(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.copies.is_empty() && self.deletes.is_empty()
+    }
+
+    /// True if applying it would replace or remove anything that exists in the destination.
+    fn changes_existing(&self, destination: &FileIndex) -> bool {
+        !self.deletes.is_empty() || self.copies.iter().any(|path| destination.contains_key(path))
+    }
+}
+
+/// Applies a plan: deletes, then copies `source_of(path)` to `target/path` in parallel, checking
+/// each copy against the hash it was planned with. Returns the copied records.
+fn apply(
+    plan: &Plan,
+    layout: &GameLayout,
+    target: &Path,
+    expected: &FileIndex,
+    source_of: impl Fn(&str) -> PathBuf + Sync,
+    progress: &Progress,
+    message: &str,
+) -> CoreResult<Vec<(String, FileRecord)>> {
+    for path in &plan.deletes {
+        let file = target.join(path);
+        match fs::remove_file(&file) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                return Err(CoreError::io("Remove game data", &file, e));
+            }
+            _ => {}
+        }
+        game_layout::prune_empty_parents(layout, target, Path::new(path));
+    }
+    parallel(&plan.copies, progress, message, |path| {
+        let record = &expected[path];
+        let hash = file_index::copy_hashed(&source_of(path), &target.join(path))?;
+        if hash != record.hash {
+            return Err(CoreError::new(format!(
+                "{path} changed while it was being copied; run the action again"
+            )));
+        }
+        Ok((path.clone(), record.clone()))
+    })
+}
+
 // ----- backups -------------------------------------------------------------------------------
+//
+// Store layout (per game): `objects/<2 hex>/<hash>` holds each distinct file content once, and
+// `snapshots/<id>.json` lists a snapshot's files by hash. A backup therefore only copies content
+// the store does not already have. Snapshots from Basalt 0.5.0 (`<id>/snapshot.json` plus a
+// `files/` copy) are still listed, restored and pruned.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupSnapshot {
@@ -190,98 +326,159 @@ pub struct BackupSnapshot {
     pub files: usize,
 }
 
+#[derive(Serialize, Deserialize)]
+struct SnapshotFile {
+    #[serde(flatten)]
+    info: BackupSnapshot,
+    entries: FileIndex,
+}
+
 fn backup_store(game_id: &str) -> CoreResult<PathBuf> {
     Ok(storage::data_dir()?.join("backups").join(game_id))
+}
+
+fn object_path(store: &Path, hash: &str) -> PathBuf {
+    store.join(OBJECTS).join(&hash[..2.min(hash.len())]).join(hash)
+}
+
+fn snapshot_path(store: &Path, id: &str) -> PathBuf {
+    store.join(SNAPSHOTS).join(format!("{id}.json"))
 }
 
 /// Snapshots of a game, newest first.
 pub fn list_backups(game_id: &str) -> CoreResult<Vec<BackupSnapshot>> {
     catalog::find_game(game_id)?;
     let store = backup_store(game_id)?;
-    let Ok(entries) = fs::read_dir(&store) else {
-        return Ok(Vec::new());
-    };
-    let mut snapshots: Vec<BackupSnapshot> = entries
-        .flatten()
-        .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
-        .filter_map(|entry| {
-            let bytes = fs::read(entry.path().join(SNAPSHOT_FILE)).ok()?;
+    let mut snapshots: Vec<BackupSnapshot> = Vec::new();
+    if let Ok(entries) = fs::read_dir(store.join(SNAPSHOTS)) {
+        snapshots.extend(entries.flatten().filter_map(|entry| {
+            let bytes = fs::read(entry.path()).ok()?;
             serde_json::from_slice(&bytes).ok()
-        })
-        .collect();
+        }));
+    }
+    if let Ok(entries) = fs::read_dir(&store) {
+        snapshots.extend(
+            entries
+                .flatten()
+                .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
+                .filter_map(|entry| {
+                    let bytes = fs::read(entry.path().join(LEGACY_SNAPSHOT_FILE)).ok()?;
+                    serde_json::from_slice(&bytes).ok()
+                }),
+        );
+    }
     snapshots.sort_by(|a, b| b.id.cmp(&a.id));
     Ok(snapshots)
 }
 
-/// Copies `files` (relative to `source`) into a new snapshot, then prunes to `keep`.
+/// Saves a snapshot of `entries`. Content missing from the store is copied from the first of
+/// `sources` (root, index) that has a file with that hash. Then prunes to `keep`.
 pub(crate) fn create_snapshot(
     game_id: &str,
-    source: &Path,
-    files: &BTreeSet<PathBuf>,
+    entries: &FileIndex,
+    sources: &[(&Path, &FileIndex)],
     categories: &[DataCategory],
     reason: &str,
     keep: u32,
     progress: &Progress,
 ) -> CoreResult<BackupSnapshot> {
     let store = backup_store(game_id)?;
-    fs::create_dir_all(&store).map_err(|e| CoreError::io("Create backup store", &store, e))?;
+    // Where each content hash can be read from, preferring earlier sources.
+    let mut locations: BTreeMap<&str, PathBuf> = BTreeMap::new();
+    for (root, index) in sources.iter().rev() {
+        for (path, record) in index.iter().filter(|(_, record)| record.link.is_none()) {
+            locations.insert(&record.hash, root.join(path));
+        }
+    }
+    let mut needed: BTreeMap<&str, PathBuf> = BTreeMap::new();
+    for record in entries.values().filter(|record| record.link.is_none()) {
+        if needed.contains_key(record.hash.as_str()) || object_path(&store, &record.hash).is_file()
+        {
+            continue;
+        }
+        let source = locations.get(record.hash.as_str()).cloned();
+        let source = source.ok_or_else(|| CoreError::new("Backup source file is missing"))?;
+        needed.insert(&record.hash, source);
+    }
+    let needed: Vec<(&str, PathBuf)> = needed.into_iter().collect();
+    parallel(&needed, progress, "Backing up game data", |(hash, source)| {
+        let copied = file_index::copy_hashed(source, &object_path(&store, hash))?;
+        if copied != *hash {
+            let _ = fs::remove_file(object_path(&store, hash));
+            return Err(CoreError::new(format!(
+                "{} changed while it was being backed up; run the action again",
+                source.display()
+            )));
+        }
+        Ok(())
+    })?;
+
     let now_ms = unix_now_ms();
-    let now = now_ms / 1000;
     let stamp = timestamp_id(now_ms);
     let mut id = format!("{stamp}-{reason}");
     let mut counter = 2;
-    while store.join(&id).exists() {
+    while snapshot_path(&store, &id).exists() || store.join(&id).exists() {
         id = format!("{stamp}-{reason}-{counter}");
         counter += 1;
     }
-    let incoming = store.join(format!(".incoming-{id}"));
-    let _ = fs::remove_dir_all(&incoming);
-    let result = (|| {
-        let total = files.len() as u64;
-        for (index, relative) in files.iter().enumerate() {
-            progress.check_cancelled()?;
-            progress.report_items("Backing up game data", index as u64, total);
-            game_layout::copy_entry(
-                &source.join(relative),
-                &incoming.join(SNAPSHOT_FILES).join(relative),
-            )?;
-        }
-        fs::create_dir_all(incoming.join(SNAPSHOT_FILES))
-            .map_err(|e| CoreError::io("Create backup", &incoming, e))?;
-        let snapshot = BackupSnapshot {
+    let snapshot = SnapshotFile {
+        info: BackupSnapshot {
             id: id.clone(),
-            created_unix: now,
+            created_unix: now_ms / 1000,
             reason: reason.to_string(),
             categories: categories.iter().map(|c| c.as_str().to_string()).collect(),
-            files: files.len(),
-        };
-        let bytes =
-            serde_json::to_vec_pretty(&snapshot).map_err(|e| CoreError::new(e.to_string()))?;
-        storage::write_atomic(&incoming.join(SNAPSHOT_FILE), &bytes)?;
-        fs::rename(&incoming, store.join(&id))
-            .map_err(|e| CoreError::io("Save backup", &incoming, e))?;
-        Ok(snapshot)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_dir_all(&incoming);
-    }
-    let snapshot = result?;
+            files: entries.len(),
+        },
+        entries: entries
+            .iter()
+            .map(|(path, record)| (path.clone(), record.portable()))
+            .collect(),
+    };
+    let bytes = serde_json::to_vec(&snapshot).map_err(|e| CoreError::new(e.to_string()))?;
+    storage::write_atomic(&snapshot_path(&store, &id), &bytes)?;
     prune_backups(game_id, keep);
-    Ok(snapshot)
+    Ok(snapshot.info)
 }
 
+/// Keeps the newest `keep` snapshots and deletes stored content no snapshot refers to.
 fn prune_backups(game_id: &str, keep: u32) {
     let (Ok(snapshots), Ok(store)) = (list_backups(game_id), backup_store(game_id)) else {
         return;
     };
     for old in snapshots.iter().skip(keep.max(1) as usize) {
-        let path = store.join(&old.id);
-        if let Err(error) = fs::remove_dir_all(&path) {
-            crate::warnings::warn(format!(
-                "Could not remove old backup {}: {error}",
-                path.display()
-            ));
+        let new_format = snapshot_path(&store, &old.id);
+        let result = if new_format.is_file() {
+            fs::remove_file(&new_format)
+        } else {
+            fs::remove_dir_all(store.join(&old.id))
+        };
+        if let Err(error) = result {
+            crate::warnings::warn(format!("Could not remove old backup {}: {error}", old.id));
         }
+    }
+    let mut referenced = BTreeSet::new();
+    if let Ok(entries) = fs::read_dir(store.join(SNAPSHOTS)) {
+        for entry in entries.flatten() {
+            let Some(snapshot) = fs::read(entry.path())
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<SnapshotFile>(&bytes).ok())
+            else {
+                // Unreadable snapshot: keep every object rather than risk deleting its content.
+                return;
+            };
+            referenced.extend(snapshot.entries.into_values().map(|record| record.hash));
+        }
+    }
+    let Ok(buckets) = fs::read_dir(store.join(OBJECTS)) else {
+        return;
+    };
+    for bucket in buckets.flatten() {
+        for object in fs::read_dir(bucket.path()).into_iter().flatten().flatten() {
+            if !referenced.contains(object.file_name().to_string_lossy().as_ref()) {
+                let _ = fs::remove_file(object.path());
+            }
+        }
+        let _ = fs::remove_dir(bucket.path());
     }
 }
 
@@ -294,13 +491,11 @@ pub(crate) fn backup_installation(
     progress: &Progress,
 ) -> CoreResult<BackupSnapshot> {
     let categories = game_layout::expand_categories(categories);
-    let files = installation
-        .layout()
-        .collect_files(&installation.root, &categories)?;
+    let index = scan_installation(installation, &categories, false, progress)?;
     create_snapshot(
         &installation.definition.id,
-        &installation.root,
-        &files,
+        &index,
+        &[(&installation.root, &index)],
         &categories,
         reason,
         keep,
@@ -309,6 +504,7 @@ pub(crate) fn backup_installation(
 }
 
 /// Replaces the snapshot's categories with its contents, after backing up the current state.
+/// Only files that differ are copied.
 pub(crate) fn restore_backup(
     installation: &Installation,
     snapshot_id: &str,
@@ -316,13 +512,14 @@ pub(crate) fn restore_backup(
     keep: u32,
     progress: &Progress,
 ) -> CoreResult<String> {
-    let snapshot = list_backups(&installation.definition.id)?
+    let game_id = &installation.definition.id;
+    let snapshot = list_backups(game_id)?
         .into_iter()
         .find(|snapshot| snapshot.id == snapshot_id)
         .ok_or_else(|| {
             CoreError::InvalidInput(format!(
-                "No backup '{snapshot_id}' for {} (see `basalt backups {}`)",
-                installation.definition.name, installation.definition.id
+                "No backup '{snapshot_id}' for {} (see `basalt backups {game_id}`)",
+                installation.definition.name
             ))
         })?;
     let categories: Vec<DataCategory> = snapshot
@@ -330,26 +527,74 @@ pub(crate) fn restore_backup(
         .iter()
         .filter_map(|c| DataCategory::parse(c))
         .collect();
-    let layout = installation.layout();
-    let source = backup_store(&installation.definition.id)?
-        .join(&snapshot.id)
-        .join(SNAPSHOT_FILES);
-    let files = all_files(&source)?;
+    let store = backup_store(game_id)?;
+    let new_format = snapshot_path(&store, &snapshot.id);
+    let (entries, legacy_root) = if new_format.is_file() {
+        let bytes = fs::read(&new_format).map_err(|e| CoreError::io("Read backup", &new_format, e))?;
+        let file: SnapshotFile = serde_json::from_slice(&bytes).map_err(|e| CoreError::Json {
+            path: new_format.clone(),
+            source: e,
+        })?;
+        (file.entries, None)
+    } else {
+        let root = store.join(&snapshot.id).join(LEGACY_FILES);
+        let files = all_files(&root)?;
+        let index = file_index::scan(&root, &files, None, progress, "Reading backup")?;
+        (index, Some(root))
+    };
     backup_installation(installation, safety_categories, keep, "before-restore", progress)?;
     progress.check_cancelled()?;
-    let managed = layout.collect_files(&installation.root, &categories)?;
-    game_layout::mirror(
+    let local = scan_installation(installation, &categories, false, progress)?;
+    let plan = Plan::between(&entries, &local);
+    let layout = installation.layout();
+    // Copying cannot be cancelled midway; the backup taken first is the way back.
+    let copying = progress.uncancellable();
+    let links: Vec<String> = plan
+        .copies
+        .iter()
+        .filter(|path| entries[*path].link.is_some())
+        .cloned()
+        .collect();
+    let content = Plan {
+        copies: plan
+            .copies
+            .iter()
+            .filter(|path| entries[*path].link.is_none())
+            .cloned()
+            .collect(),
+        deletes: plan.deletes.clone(),
+    };
+    let mut written = apply(
+        &content,
         &layout,
-        &source,
-        &files,
         &installation.root,
-        &managed,
-        &progress.uncancellable(),
+        &entries,
+        |path| match &legacy_root {
+            Some(root) => root.join(path),
+            None => object_path(&store, &entries[path].hash),
+        },
+        &copying,
         "Restoring game data",
     )?;
+    for path in links {
+        let record = &entries[&path];
+        let target = installation.root.join(&path);
+        let link = record.link.as_deref().unwrap_or_default();
+        if let Some(parent) = target.parent() {
+            game_layout::ensure_directory(parent)?;
+        }
+        let _ = fs::remove_file(&target);
+        std::os::unix::fs::symlink(link, &target)
+            .map_err(|e| CoreError::io("Restore link", &target, e))?;
+        written.push((path, record.clone()));
+    }
+    remember_copies(installation, &written);
     Ok(format!(
-        "Restored {} backup {}",
-        installation.definition.name, snapshot.id
+        "Restored {} backup {} ({} files changed, {} removed)",
+        installation.definition.name,
+        snapshot.id,
+        plan.copies.len(),
+        plan.deletes.len()
     ))
 }
 
@@ -377,6 +622,12 @@ fn all_files(root: &Path) -> CoreResult<BTreeSet<PathBuf>> {
 }
 
 // ----- sync ----------------------------------------------------------------------------------
+//
+// The sync folder holds `<GameId>/` with the synced files plus `.basalt-sync.json`, a list of
+// those files and their hashes written by the last sync. A sync compares that list with this
+// machine's cached index, so when nothing changed it reads one small file from the share, and
+// otherwise it copies only the files that differ. The list is marked incomplete while files are
+// being changed; an incomplete or missing list (or `verify`) makes Basalt read the folder itself.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SyncMode {
@@ -389,12 +640,21 @@ pub(crate) enum SyncMode {
 struct SyncState {
     remote: PathBuf,
     fingerprint: String,
+    /// 2 since the per-file index; older fingerprints are not comparable.
+    #[serde(default)]
+    format: u32,
 }
 
-#[derive(Serialize)]
-struct RemoteMarker<'a> {
-    game_id: &'a str,
+#[derive(Serialize, Deserialize)]
+struct RemoteManifest {
+    #[serde(default)]
+    format: u32,
+    game_id: String,
     updated_unix: u64,
+    #[serde(default)]
+    complete: bool,
+    #[serde(default)]
+    files: FileIndex,
 }
 
 /// One side of a sync: its fingerprint and whether it holds any files.
@@ -432,6 +692,23 @@ pub(crate) struct SyncSettings<'a> {
     pub categories: &'a [DataCategory],
     pub backup_categories: &'a [DataCategory],
     pub keep: u32,
+    /// Re-read every file on both sides instead of trusting the cache and the folder's list.
+    pub verify: bool,
+}
+
+fn write_manifest(remote: &Path, game_id: &str, files: &FileIndex, complete: bool) -> CoreResult<()> {
+    let manifest = RemoteManifest {
+        format: SYNC_FORMAT,
+        game_id: game_id.to_string(),
+        updated_unix: unix_now(),
+        complete,
+        files: files
+            .iter()
+            .map(|(path, record)| (path.clone(), record.portable()))
+            .collect(),
+    };
+    let bytes = serde_json::to_vec(&manifest).map_err(|e| CoreError::new(e.to_string()))?;
+    storage::write_atomic(&remote.join(REMOTE_MARKER), &bytes)
 }
 
 pub(crate) fn sync(
@@ -441,6 +718,7 @@ pub(crate) fn sync(
     progress: &Progress,
 ) -> CoreResult<String> {
     let name = &installation.definition.name;
+    let game_id = &installation.definition.id;
     let remote_root = crate::settings::load_sync_remote()?.path;
     // Never create the sync folder itself: if a share is unmounted, its mount point must not be
     // mistaken for an empty sync folder. Per-game folders inside it are created as needed.
@@ -451,45 +729,59 @@ pub(crate) fn sync(
             remote_root.display()
         )));
     }
-    let remote = remote_root.join(&installation.definition.id);
+    let remote = remote_root.join(game_id);
     let categories = game_layout::expand_categories(settings.categories);
     let layout = installation.layout();
-    let local_files = layout.collect_files(&installation.root, &categories)?;
+    let in_categories = |path: &str| {
+        layout
+            .category_of(Path::new(path))
+            .is_some_and(|category| categories.contains(&category))
+    };
+
+    let local = scan_installation(installation, &categories, settings.verify, progress)?;
     let remote_exists = remote.is_dir();
-    let remote_files = if remote_exists {
-        layout.collect_files(&remote, &categories)?
-    } else {
-        BTreeSet::new()
+    let manifest = fs::read(remote.join(REMOTE_MARKER))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<RemoteManifest>(&bytes).ok())
+        .filter(|m| m.format == SYNC_FORMAT && m.complete && !settings.verify);
+    // The folder's list is trusted unless missing, incomplete, or verify was asked for.
+    let (remote_index, list_is_current) = match (remote_exists, manifest) {
+        (false, _) => (None, true),
+        (true, Some(manifest)) => {
+            let mut files = manifest.files;
+            files.retain(|path, _| in_categories(path));
+            (Some(files), true)
+        }
+        (true, None) => {
+            let files = layout.collect_files(&remote, &categories)?;
+            let index = file_index::scan(&remote, &files, None, progress, "Checking synced game data")?;
+            (Some(index), false)
+        }
     };
-    let local_fp = game_layout::fingerprint(
-        &installation.root,
-        &local_files,
-        progress,
-        "Checking local game data",
-    )?;
-    let remote_fp = if remote_exists {
-        Some(game_layout::fingerprint(
-            &remote,
-            &remote_files,
-            progress,
-            "Checking synced game data",
-        )?)
-    } else {
-        None
-    };
+    let local_fp = file_index::fingerprint(&local);
+    let remote_fp = remote_index.as_ref().map(file_index::fingerprint);
+
     let state_path = installation.basalt_dir().join(SYNC_STATE);
     let base = fs::read(&state_path)
         .ok()
         .and_then(|bytes| serde_json::from_slice::<SyncState>(&bytes).ok())
-        .filter(|state| state.remote == remote_root)
+        .filter(|state| state.remote == remote_root && state.format == SYNC_FORMAT)
         .map(|state| state.fingerprint);
     let save_state = |fingerprint: &str| {
         let state = SyncState {
             remote: remote_root.clone(),
             fingerprint: fingerprint.to_string(),
+            format: SYNC_FORMAT,
         };
         let bytes = serde_json::to_vec_pretty(&state).map_err(|e| CoreError::new(e.to_string()))?;
         storage::write_atomic(&state_path, &bytes)
+    };
+    let in_sync = |remote_index: &FileIndex| -> CoreResult<String> {
+        if !list_is_current {
+            write_manifest(&remote, game_id, remote_index, true)?;
+        }
+        save_state(&local_fp)?;
+        Ok(format!("{name} is already in sync"))
     };
 
     let direction = match mode {
@@ -504,30 +796,31 @@ pub(crate) fn sync(
         SyncMode::Auto => auto_direction(
             Side {
                 fingerprint: &local_fp,
-                empty: local_files.is_empty(),
+                empty: local.is_empty(),
             },
             remote_fp.as_deref().map(|fingerprint| Side {
                 fingerprint,
-                empty: remote_files.is_empty(),
+                empty: remote_index.as_ref().is_none_or(FileIndex::is_empty),
             }),
             base.as_deref(),
         )
         .map_err(|()| CoreError::SyncConflict(name.clone()))?,
     };
     progress.check_cancelled()?;
-    // Copying cannot be cancelled midway; the backup taken first is the way back.
-    let copying = progress.uncancellable();
+    let empty = FileIndex::new();
+    let remote_index_ref = remote_index.as_ref().unwrap_or(&empty);
     match direction {
-        None => {
-            save_state(&local_fp)?;
-            Ok(format!("{name} is already in sync"))
-        }
+        None => in_sync(remote_index_ref),
         Some(SyncMode::Up) => {
-            if !remote_files.is_empty() && remote_fp.as_deref() != Some(local_fp.as_str()) {
+            let plan = Plan::between(&local, remote_index_ref);
+            if plan.is_empty() && remote_exists {
+                return in_sync(remote_index_ref);
+            }
+            if plan.changes_existing(remote_index_ref) {
                 create_snapshot(
-                    &installation.definition.id,
-                    &remote,
-                    &remote_files,
+                    game_id,
+                    remote_index_ref,
+                    &[(&installation.root, &local), (&remote, remote_index_ref)],
                     &categories,
                     "remote-before-sync-up",
                     settings.keep,
@@ -535,44 +828,58 @@ pub(crate) fn sync(
                 )?;
             }
             fs::create_dir_all(&remote).map_err(|e| CoreError::io("Create sync copy", &remote, e))?;
-            let count = game_layout::mirror(
+            // Mark the list incomplete until every file is in place.
+            write_manifest(&remote, game_id, remote_index_ref, false)?;
+            apply(
+                &plan,
                 &layout,
-                &installation.root,
-                &local_files,
                 &remote,
-                &remote_files,
-                &copying,
+                &local,
+                |path| installation.root.join(path),
+                &progress.uncancellable(),
                 "Uploading game data",
             )?;
-            let marker = RemoteMarker {
-                game_id: &installation.definition.id,
-                updated_unix: unix_now(),
-            };
-            let bytes =
-                serde_json::to_vec_pretty(&marker).map_err(|e| CoreError::new(e.to_string()))?;
-            storage::write_atomic(&remote.join(REMOTE_MARKER), &bytes)?;
+            write_manifest(&remote, game_id, &local, true)?;
             save_state(&local_fp)?;
-            Ok(format!("Synced {name} up ({count} files)"))
+            Ok(format!(
+                "Synced {name} up ({} files copied, {} removed)",
+                plan.copies.len(),
+                plan.deletes.len()
+            ))
         }
         Some(SyncMode::Down) | Some(SyncMode::Auto) => {
-            backup_installation(
-                installation,
-                settings.backup_categories,
-                settings.keep,
-                "before-sync-down",
-                progress,
-            )?;
-            let count = game_layout::mirror(
+            let plan = Plan::between(remote_index_ref, &local);
+            if plan.is_empty() {
+                return in_sync(remote_index_ref);
+            }
+            if plan.changes_existing(&local) {
+                backup_installation(
+                    installation,
+                    settings.backup_categories,
+                    settings.keep,
+                    "before-sync-down",
+                    progress,
+                )?;
+            }
+            let written = apply(
+                &plan,
                 &layout,
-                &remote,
-                &remote_files,
                 &installation.root,
-                &local_files,
-                &copying,
+                remote_index_ref,
+                |path| remote.join(path),
+                &progress.uncancellable(),
                 "Downloading game data",
             )?;
+            remember_copies(installation, &written);
+            if !list_is_current {
+                write_manifest(&remote, game_id, remote_index_ref, true)?;
+            }
             save_state(remote_fp.as_deref().unwrap_or(&local_fp))?;
-            Ok(format!("Synced {name} down ({count} files)"))
+            Ok(format!(
+                "Synced {name} down ({} files copied, {} removed)",
+                plan.copies.len(),
+                plan.deletes.len()
+            ))
         }
     }
 }

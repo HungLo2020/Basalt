@@ -124,9 +124,11 @@ fn safe_relative(value: &str) -> bool {
             .all(|c| matches!(c, Component::Normal(_)))
 }
 
-/// Layout paths must stay inside the installation and away from Basalt's own files.
-fn valid_layout_path(value: &str) -> bool {
-    safe_relative(value)
+/// Layout paths must stay inside the installation and away from Basalt's own files. Patterns
+/// (`*`, `**`) are allowed except in `app` and in the first component.
+fn valid_layout_path(value: &str, allow_patterns: bool) -> bool {
+    crate::game_layout::valid_pattern(value)
+        && (allow_patterns || !crate::game_layout::has_wildcard(value))
         && std::path::Path::new(value)
             .components()
             .next()
@@ -277,7 +279,9 @@ impl GameDefinition {
             ] {
                 if let Some(paths) = paths
                     && (paths.is_empty() && category == "app"
-                        || paths.iter().any(|path| !valid_layout_path(path)))
+                        || paths
+                            .iter()
+                            .any(|path| !valid_layout_path(path, category != "app")))
                 {
                     return Err(invalid(format!("invalid layout.{category}")));
                 }
@@ -479,6 +483,9 @@ mod tests {
             json!({"layout": {"save": ["../outside"]}}),
             json!({"layout": {"save": [".basalt/state"]}}),
             json!({"layout": {"app": []}}),
+            json!({"layout": {"app": ["app/*"]}}),
+            json!({"layout": {"cache": ["*/cache"]}}),
+            json!({"layout": {"cache": ["data/**x"]}}),
             json!({"actions": {"repair": false}}),
             json!({"actions": {"repair": {"label": "Repair"}}}),
             json!({"actions": {"backup": {"options": {"keep": 0}}}}),
@@ -524,7 +531,22 @@ mod tests {
         game.validate().unwrap();
         assert!(game.follows_standard());
         assert_eq!(game.source.archive_root.as_deref(), Some("MattMC"));
-        assert!(game.actions.is_empty() && game.layout.is_none());
+        assert!(game.actions.is_empty());
+        // Distant Horizons' level-of-detail databases are rebuildable cache, at any depth.
+        let layout = crate::game_layout::GameLayout::for_game(&game);
+        use crate::game_layout::DataCategory::{Cache, Save};
+        let category = |path: &str| layout.category_of(std::path::Path::new(path));
+        for database in [
+            "data/save/saves/Origin Prime City 3/data/DistantHorizons.sqlite",
+            "data/save/saves/Origin Prime City 3/DIM-1/data/DistantHorizons.sqlite",
+            "data/save/saves/Origin Prime City 3/dimensions/minecraft/primordial_caves/data/DistantHorizons.sqlite",
+            "data/save/saves/Redstone!/data/DistantHorizons.sqlite-wal",
+        ] {
+            assert_eq!(category(database), Some(Cache), "{database}");
+        }
+        assert_eq!(category("data/save/saves/Redstone!/level.dat"), Some(Save));
+        assert_eq!(category("data/config/shared/DistantHorizons.toml"), Some(crate::game_layout::DataCategory::SharedConfig));
+        assert_eq!(layout.primary(Cache), Some(std::path::Path::new("data/cache")));
     }
     #[test]
     fn unknown_option_fields_are_rejected_at_parse_time() {

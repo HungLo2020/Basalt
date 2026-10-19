@@ -1,18 +1,17 @@
-//! The STANDARDS.md data layout: which category every path in an installation belongs to, and
-//! file-level helpers (collect, fingerprint, mirror) that the install, backup and sync code share.
+//! The STANDARDS.md data layout: which category every path in an installation belongs to.
 //!
-//! All paths are relative to a root (an installation, a backup snapshot or a sync folder), so a
-//! game behaves the same in every library.
+//! All paths are relative to a root (an installation or a sync folder), so a game behaves the
+//! same in every library. Layout paths outside `app` may use `*` (any characters within one
+//! name) and `**` (any number of folders), e.g. `data/save/**/DistantHorizons.sqlite*`.
 use crate::catalog::GameDefinition;
 use crate::error::{CoreError, CoreResult};
-use crate::progress::Progress;
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::symlink;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
-/// Basalt's own per-installation files (sync state, running marker, operation lock).
+/// Basalt's own per-installation files (sync state, file index, running marker, lock).
 pub(crate) const BASALT_DIR: &str = ".basalt";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -59,9 +58,96 @@ pub(crate) fn expand_categories(categories: &[DataCategory]) -> Vec<DataCategory
     expanded
 }
 
+/// True if a layout path uses `*` or `**`.
+pub(crate) fn has_wildcard(path: &str) -> bool {
+    path.contains('*')
+}
+
+/// Whether `value` is an acceptable layout path: relative, inside the installation, `**` only
+/// as a whole component, and no wildcard in the first component (so a pattern can never reach
+/// Basalt's own files at the installation root).
+pub(crate) fn valid_pattern(value: &str) -> bool {
+    let path = Path::new(value);
+    let mut components = path.components();
+    let Some(Component::Normal(first)) = components.next() else {
+        return false;
+    };
+    !value.is_empty()
+        && !first.as_bytes().contains(&b'*')
+        && path.components().all(|c| match c {
+            Component::Normal(name) => {
+                let bytes = name.as_bytes();
+                bytes == b"**" || !bytes.windows(2).any(|pair| pair == b"**")
+            }
+            _ => false,
+        })
+}
+
+/// `*` glob within a single file or folder name.
+fn name_matches(pattern: &[u8], name: &[u8]) -> bool {
+    match pattern.split_first() {
+        None => name.is_empty(),
+        Some((b'*', rest)) => (0..=name.len()).any(|skip| name_matches(rest, &name[skip..])),
+        Some((byte, rest)) => name.first() == Some(byte) && name_matches(rest, &name[1..]),
+    }
+}
+
+/// Whether `pattern` matches `path` itself (`exact`) or `path` or one of its ancestors.
+fn components_match(pattern: &[&OsStr], path: &[&OsStr], exact: bool) -> bool {
+    match pattern.split_first() {
+        None => !exact || path.is_empty(),
+        Some((first, rest)) if first.as_bytes() == b"**" => {
+            (0..=path.len()).any(|skip| components_match(rest, &path[skip..], exact))
+        }
+        Some((first, rest)) => path.split_first().is_some_and(|(name, remaining)| {
+            name_matches(first.as_bytes(), name.as_bytes())
+                && components_match(rest, remaining, exact)
+        }),
+    }
+}
+
+fn parts(path: &Path) -> Vec<&OsStr> {
+    path.components().map(|c| c.as_os_str()).collect()
+}
+
+#[derive(Debug, Clone)]
+struct Entry {
+    path: PathBuf,
+    category: DataCategory,
+    /// Literal (non-`**`) components, for "most specific wins".
+    specificity: usize,
+    wildcard: bool,
+}
+
+impl Entry {
+    fn contains(&self, relative: &Path) -> bool {
+        if self.wildcard {
+            components_match(&parts(&self.path), &parts(relative), false)
+        } else {
+            relative.starts_with(&self.path)
+        }
+    }
+
+    fn is(&self, relative: &Path) -> bool {
+        if self.wildcard {
+            components_match(&parts(&self.path), &parts(relative), true)
+        } else {
+            relative == self.path
+        }
+    }
+
+    /// The folder to walk to find everything the entry can match.
+    fn walk_root(&self) -> PathBuf {
+        self.path
+            .components()
+            .take_while(|c| !c.as_os_str().as_bytes().contains(&b'*'))
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct GameLayout {
-    entries: Vec<(PathBuf, DataCategory)>,
+    entries: Vec<Entry>,
 }
 
 impl GameLayout {
@@ -84,7 +170,16 @@ impl GameLayout {
             (DataCategory::Cache, pick(layout.cache, "data/cache")),
         ] {
             for path in paths {
-                entries.push((PathBuf::from(path), category));
+                let path = PathBuf::from(path);
+                entries.push(Entry {
+                    specificity: path
+                        .components()
+                        .filter(|c| c.as_os_str().as_bytes() != b"**")
+                        .count(),
+                    wildcard: has_wildcard(&path.to_string_lossy()),
+                    path,
+                    category,
+                });
             }
         }
         Self { entries }
@@ -92,35 +187,35 @@ impl GameLayout {
 
     /// The category of `relative`: that of the most specific layout path containing it, or
     /// `None` for uncategorized files (preserved on update, never synced or backed up).
+    /// Between equally specific paths, a literal one beats a pattern.
     pub fn category_of(&self, relative: &Path) -> Option<DataCategory> {
         self.entries
             .iter()
-            .filter(|(path, _)| relative.starts_with(path))
-            .max_by_key(|(path, _)| path.components().count())
-            .map(|(_, category)| *category)
+            .filter(|entry| entry.contains(relative))
+            .max_by_key(|entry| (entry.specificity, !entry.wildcard))
+            .map(|entry| entry.category)
     }
 
-    pub fn paths(&self, category: DataCategory) -> impl Iterator<Item = &Path> {
+    /// The first literal path of a category, which the `BASALT_*_DIR` variables point at and
+    /// which installs create.
+    pub fn primary(&self, category: DataCategory) -> Option<&Path> {
         self.entries
             .iter()
-            .filter(move |(_, c)| *c == category)
-            .map(|(path, _)| path.as_path())
-    }
-
-    /// The first path of a category, which the `BASALT_*_DIR` variables point at.
-    pub fn primary(&self, category: DataCategory) -> Option<&Path> {
-        self.paths(category).next()
+            .find(|entry| entry.category == category && !entry.wildcard)
+            .map(|entry| entry.path.as_path())
     }
 
     pub fn is_layout_root(&self, relative: &Path) -> bool {
-        self.entries.iter().any(|(path, _)| path == relative)
+        self.entries.iter().any(|entry| entry.is(relative))
     }
 
-    /// True when some layout path of `category` lies strictly inside `relative`.
+    /// True when some literal layout path of `category` lies strictly inside `relative`.
     fn has_nested(&self, relative: &Path, category: DataCategory) -> bool {
-        self.entries
-            .iter()
-            .any(|(path, c)| *c == category && path != relative && path.starts_with(relative))
+        self.entries.iter().any(|entry| {
+            entry.category == category
+                && entry.path != relative
+                && entry.walk_root().starts_with(relative)
+        })
     }
 
     /// Every file and symlink under `root` whose category is in `categories`, relative to `root`.
@@ -130,24 +225,36 @@ impl GameLayout {
         root: &Path,
         categories: &[DataCategory],
     ) -> CoreResult<BTreeSet<PathBuf>> {
-        let mut files = BTreeSet::new();
-        for (path, category) in &self.entries {
-            if categories.contains(category) {
-                walk(root, path, &mut |relative| {
-                    if self
-                        .category_of(relative)
-                        .is_some_and(|c| categories.contains(&c))
-                    {
-                        files.insert(relative.to_path_buf());
-                    }
-                })?;
+        let mut walk_roots: Vec<PathBuf> = self
+            .entries
+            .iter()
+            .filter(|entry| categories.contains(&entry.category))
+            .map(Entry::walk_root)
+            .collect();
+        walk_roots.sort();
+        // Walking a folder covers everything nested in it.
+        let mut distinct: Vec<PathBuf> = Vec::new();
+        for path in walk_roots {
+            if !distinct.iter().any(|kept| path.starts_with(kept)) {
+                distinct.push(path);
             }
+        }
+        let mut files = BTreeSet::new();
+        for path in distinct {
+            walk(root, &path, &mut |relative| {
+                if self
+                    .category_of(relative)
+                    .is_some_and(|c| categories.contains(&c))
+                {
+                    files.insert(relative.to_path_buf());
+                }
+            })?;
         }
         Ok(files)
     }
 
     /// Files under `root` that are not application files: user data and anything uncategorized.
-    /// Basalt's manifest and staging directories are excluded; `.basalt/` is included.
+    /// Basalt's manifest is excluded; `.basalt/` is included.
     pub fn non_app_entries(&self, root: &Path) -> CoreResult<Vec<PathBuf>> {
         let mut kept = Vec::new();
         self.non_app_in(root, Path::new(""), &mut kept)?;
@@ -187,9 +294,11 @@ impl GameLayout {
     }
 
     fn has_non_app_nested(&self, relative: &Path) -> bool {
-        self.entries
-            .iter()
-            .any(|(path, c)| *c != DataCategory::App && path != relative && path.starts_with(relative))
+        self.entries.iter().any(|entry| {
+            entry.category != DataCategory::App
+                && entry.path != relative
+                && entry.walk_root().starts_with(relative)
+        })
     }
 }
 
@@ -209,93 +318,9 @@ fn walk(root: &Path, relative: &Path, visit: &mut dyn FnMut(&Path)) -> CoreResul
     Ok(())
 }
 
-/// Stable content fingerprint of `files` under `root` (paths, symlink targets and file bytes),
-/// so two copies of a data set compare equal regardless of timestamps. FNV-1a, 64-bit.
-pub(crate) fn fingerprint(
-    root: &Path,
-    files: &BTreeSet<PathBuf>,
-    progress: &Progress,
-    message: &str,
-) -> CoreResult<String> {
-    use std::io::Read;
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    let mut feed = |bytes: &[u8]| {
-        for byte in bytes {
-            hash ^= u64::from(*byte);
-            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-        }
-    };
-    let total = files.len() as u64;
-    for (index, relative) in files.iter().enumerate() {
-        progress.check_cancelled()?;
-        progress.report_items(message, index as u64, total);
-        feed(relative.as_os_str().as_bytes());
-        feed(&[0]);
-        let path = root.join(relative);
-        let metadata =
-            fs::symlink_metadata(&path).map_err(|e| CoreError::io("Inspect game data", &path, e))?;
-        if metadata.file_type().is_symlink() {
-            let target = fs::read_link(&path).map_err(|e| CoreError::io("Read link", &path, e))?;
-            feed(b"L");
-            feed(target.as_os_str().as_bytes());
-        } else {
-            feed(b"F");
-            let mut file =
-                fs::File::open(&path).map_err(|e| CoreError::io("Read game data", &path, e))?;
-            let mut buffer = vec![0u8; 64 * 1024];
-            loop {
-                let read = file
-                    .read(&mut buffer)
-                    .map_err(|e| CoreError::io("Read game data", &path, e))?;
-                if read == 0 {
-                    break;
-                }
-                feed(&buffer[..read]);
-            }
-        }
-        feed(&[0xff]);
-    }
-    Ok(format!("{hash:016x}"))
-}
-
-/// Copies one file or symlink, replacing whatever is at `target` (via a temporary sibling and
-/// rename, so the destination is never half-written).
-pub(crate) fn copy_entry(source: &Path, target: &Path) -> CoreResult<()> {
-    let parent = target
-        .parent()
-        .ok_or_else(|| CoreError::new("Copy target has no parent"))?;
-    ensure_directory(parent)?;
-    let name = target
-        .file_name()
-        .ok_or_else(|| CoreError::new("Copy target has no file name"))?;
-    let temporary = parent.join(format!(
-        ".{}.basalt-{}.tmp",
-        name.to_string_lossy(),
-        std::process::id()
-    ));
-    let _ = fs::remove_file(&temporary);
-    let metadata =
-        fs::symlink_metadata(source).map_err(|e| CoreError::io("Inspect game data", source, e))?;
-    if metadata.file_type().is_symlink() {
-        let link = fs::read_link(source).map_err(|e| CoreError::io("Read link", source, e))?;
-        symlink(link, &temporary).map_err(|e| CoreError::io("Copy link", &temporary, e))?;
-    } else {
-        fs::copy(source, &temporary).map_err(|e| CoreError::io("Copy game data", source, e))?;
-    }
-    if let Ok(existing) = fs::symlink_metadata(target)
-        && existing.is_dir()
-    {
-        fs::remove_dir_all(target).map_err(|e| CoreError::io("Replace directory", target, e))?;
-    }
-    fs::rename(&temporary, target).map_err(|e| {
-        let _ = fs::remove_file(&temporary);
-        CoreError::io("Write game data", target, e)
-    })
-}
-
 /// Creates `directory` and its parents, replacing a plain file or symlink that is in the way
 /// (a file that became a directory in the incoming data).
-fn ensure_directory(directory: &Path) -> CoreResult<()> {
+pub(crate) fn ensure_directory(directory: &Path) -> CoreResult<()> {
     if let Ok(metadata) = fs::symlink_metadata(directory) {
         if metadata.is_dir() {
             return Ok(());
@@ -304,37 +329,11 @@ fn ensure_directory(directory: &Path) -> CoreResult<()> {
     } else if let Some(parent) = directory.parent() {
         ensure_directory(parent)?;
     }
-    fs::create_dir(directory).map_err(|e| CoreError::io("Create directory", directory, e))
-}
-
-/// Makes the managed files under `target` match `source`: copies every source file and deletes
-/// target files in `managed` that the source lacks, then prunes directories that became empty
-/// (stopping at layout roots so the game's top-level folders remain).
-pub(crate) fn mirror(
-    layout: &GameLayout,
-    source: &Path,
-    files: &BTreeSet<PathBuf>,
-    target: &Path,
-    managed: &BTreeSet<PathBuf>,
-    progress: &Progress,
-    message: &str,
-) -> CoreResult<usize> {
-    let stale: Vec<&PathBuf> = managed.difference(files).collect();
-    let total = (files.len() + stale.len()) as u64;
-    let mut done = 0;
-    for relative in &stale {
-        progress.report_items(message, done, total);
-        let path = target.join(relative);
-        fs::remove_file(&path).map_err(|e| CoreError::io("Remove game data", &path, e))?;
-        prune_empty_parents(layout, target, relative);
-        done += 1;
+    match fs::create_dir(directory) {
+        // Another copy worker created it first.
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && directory.is_dir() => Ok(()),
+        other => other.map_err(|e| CoreError::io("Create directory", directory, e)),
     }
-    for relative in files {
-        progress.report_items(message, done, total);
-        copy_entry(&source.join(relative), &target.join(relative))?;
-        done += 1;
-    }
-    Ok(files.len())
 }
 
 /// Removes now-empty parent directories of `relative`, stopping at a layout root.
@@ -392,15 +391,56 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn wildcards_match_names_and_any_depth() {
+        let game = standard_game(json!({"layout": {
+            "cache": ["data/cache", "data/save/**/DistantHorizons.sqlite*", "data/save/*/logs"]
+        }}));
+        let layout = GameLayout::for_game(&game);
+        let category = |path: &str| layout.category_of(Path::new(path));
+        for cached in [
+            "data/save/saves/World/data/DistantHorizons.sqlite",
+            "data/save/saves/World/data/DistantHorizons.sqlite-wal",
+            "data/save/saves/World/DIM-1/data/DistantHorizons.sqlite",
+            "data/save/saves/W/dimensions/minecraft/caves/data/DistantHorizons.sqlite",
+            "data/save/DistantHorizons.sqlite",
+            "data/save/saves/logs/latest.log",
+        ] {
+            assert_eq!(category(cached), Some(DataCategory::Cache), "{cached}");
+        }
+        for saved in [
+            "data/save/saves/World/level.dat",
+            "data/save/saves/World/data/DistantHorizons.toml",
+            "data/save/saves/World/region/r.0.0.mca",
+            "data/save/saves/x/y/logs",
+        ] {
+            assert_eq!(category(saved), Some(DataCategory::Save), "{saved}");
+        }
+        assert!(layout.is_layout_root(Path::new("data/save/saves/logs")));
+        assert!(!layout.is_layout_root(Path::new("data/save/saves")));
+        assert_eq!(layout.primary(DataCategory::Cache), Some(Path::new("data/cache")));
+    }
+
+    #[test]
+    fn pattern_validation() {
+        for valid in ["data/save", "data/save/**/x.db*", "data/*/logs", "data/**"] {
+            assert!(valid_pattern(valid), "{valid}");
+        }
+        for invalid in ["", "*", "**/x", "*.db", "data/a**b", "/abs", "data/../x", "./data"] {
+            assert!(!valid_pattern(invalid), "{invalid}");
+        }
+    }
+
+    #[test]
     fn collect_files_respects_nested_categories_and_overrides() {
         let game = standard_game(json!({"layout": {
             "save": ["run/saves", "run/mods"],
             "config": ["run/options.txt"],
-            "cache": ["run/saves/logs"]
+            "cache": ["run/saves/logs", "run/saves/**/*.sqlite"]
         }}));
         let layout = GameLayout::for_game(&game);
         let root = temp_root("collect");
         write(&root.join("run/saves/world/level.dat"), "w");
+        write(&root.join("run/saves/world/data/lod.sqlite"), "lod");
         write(&root.join("run/saves/logs/latest.log"), "log");
         write(&root.join("run/mods/a.jar"), "m");
         write(&root.join("run/options.txt"), "o");
@@ -408,6 +448,8 @@ pub(crate) mod tests {
         let saves = layout.collect_files(&root, &[DataCategory::Save]).unwrap();
         let names: Vec<_> = saves.iter().map(|p| p.to_string_lossy().into_owned()).collect();
         assert_eq!(names, ["run/mods/a.jar", "run/saves/world/level.dat"]);
+        let cache = layout.collect_files(&root, &[DataCategory::Cache]).unwrap();
+        assert_eq!(cache.len(), 2);
         let config = layout.collect_files(&root, &[DataCategory::Config]).unwrap();
         assert_eq!(config.len(), 1);
         let _ = fs::remove_dir_all(root);
@@ -432,43 +474,5 @@ pub(crate) mod tests {
         kept.sort();
         assert_eq!(kept, ["data", "lib/user"]);
         let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn fingerprint_depends_on_content_not_timestamps() {
-        let layout = GameLayout::for_game(&standard_game(json!({})));
-        let a = temp_root("fp-a");
-        let b = temp_root("fp-b");
-        write(&a.join("data/save/s"), "same");
-        write(&b.join("data/save/s"), "same");
-        let fp = |root: &Path| {
-            let files = layout.collect_files(root, &[DataCategory::Save]).unwrap();
-            fingerprint(root, &files, &Progress::none(), "").unwrap()
-        };
-        assert_eq!(fp(&a), fp(&b));
-        write(&b.join("data/save/s"), "different");
-        assert_ne!(fp(&a), fp(&b));
-        let _ = fs::remove_dir_all(a);
-        let _ = fs::remove_dir_all(b);
-    }
-
-    #[test]
-    fn mirror_replaces_removes_and_prunes_empty_directories() {
-        let layout = GameLayout::for_game(&standard_game(json!({})));
-        let source = temp_root("mirror-src");
-        let target = temp_root("mirror-dst");
-        write(&source.join("data/save/a"), "new a");
-        write(&target.join("data/save/a"), "old a");
-        write(&target.join("data/save/world/gone"), "stale");
-        write(&target.join("data/config/video.ini"), "unmanaged");
-        let files = layout.collect_files(&source, &[DataCategory::Save]).unwrap();
-        let managed = layout.collect_files(&target, &[DataCategory::Save]).unwrap();
-        mirror(&layout, &source, &files, &target, &managed, &Progress::none(), "").unwrap();
-        assert_eq!(fs::read_to_string(target.join("data/save/a")).unwrap(), "new a");
-        assert!(!target.join("data/save/world").exists());
-        assert!(target.join("data/save").is_dir());
-        assert!(target.join("data/config/video.ini").exists());
-        let _ = fs::remove_dir_all(source);
-        let _ = fs::remove_dir_all(target);
     }
 }
