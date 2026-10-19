@@ -5,7 +5,7 @@
 mod common;
 
 use std::fs;
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use common::{TestHome, stdout};
@@ -345,19 +345,22 @@ fn unchanged_syncs_neither_read_nor_rewrite_the_sync_folder() {
     assert_eq!(manifest["complete"], true);
     assert_eq!(manifest["files"].as_object().unwrap().len(), 40);
 
-    // Prove the next syncs trust the list instead of reading the files: make one unreadable.
-    let locked = remote.join("Sample/data/save/region/r.7.mca");
+    // Prove the next syncs trust the list instead of reading the files: change one behind the
+    // list's back (works even when tests run as root, unlike unreadable permissions).
+    let tampered = remote.join("Sample/data/save/region/r.7.mca");
     let before = inode(&remote.join("Sample/data/save/region/r.3.mca"));
-    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+    fs::write(&tampered, "changed behind the list").unwrap();
     for action in ["sync_up", "sync", "sync_down"] {
         let output = stdout(&home.run(&["maintain", "Sample", action]));
         assert!(output.contains("already in sync"), "{action}: {output}");
     }
+    assert_eq!(read(&root.join("data/save/region/r.7.mca")), "region 7");
     assert_eq!(inode(&remote.join("Sample/data/save/region/r.3.mca")), before);
-    // --verify really reads every file.
-    assert!(!home.run(&["maintain", "Sample", "sync", "--verify"]).status.success());
-    fs::set_permissions(&locked, fs::Permissions::from_mode(0o644)).unwrap();
-    assert!(stdout(&home.run(&["maintain", "Sample", "sync", "--verify"])).contains("already in sync"));
+    // --verify really reads every file, finds the change and brings it down.
+    let output = stdout(&home.run(&["maintain", "Sample", "sync", "--verify"]));
+    assert!(output.contains("down (1 files copied, 0 removed)"), "{output}");
+    assert_eq!(read(&root.join("data/save/region/r.7.mca")), "changed behind the list");
+    assert!(stdout(&home.run(&["maintain", "Sample", "sync"])).contains("already in sync"));
 
     // A change copies only the files that differ.
     write(&root.join("data/save/region/r.5.mca"), "played");
