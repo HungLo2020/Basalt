@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "MicroMages",
+  "name": "MicroMages",
+  "source": {
+    "kind": "github_release",
+    "repository": "HungLo2020/MicroMages",
+    "asset_prefix": "MicroMages-",
+    "asset_suffix": ".zip"
+  },
+  "launch": {
+    "executable": "app/bin/micromages",
+    "arguments": [],
+    "working_directory": "."
+  },
+  "persistent_directory": "run"
+}

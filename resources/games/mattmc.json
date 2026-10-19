@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "MattMC",
+  "name": "MattMC",
+  "source": {
+    "kind": "github_release",
+    "repository": "HungLo2020/MattMC",
+    "asset_prefix": "MattMC-Client",
+    "asset_suffix": ".zip"
+  },
+  "launch": {
+    "executable": "run-mattmc.sh",
+    "arguments": [],
+    "working_directory": "."
+  },
+  "persistent_directory": "run"
+}

@@ -6,6 +6,8 @@
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 mod artwork;
+mod catalog;
+mod libraries;
 mod discovery;
 mod download;
 mod emulation;
@@ -23,6 +25,8 @@ mod storage;
 mod types;
 mod warnings;
 
+pub use catalog::{GameDefinition, LaunchDefinition, ReleaseSource, bundled_games, find_game};
+pub use libraries::{GameLibrary, add_library, default_library, install_directory, list_libraries};
 pub use artwork::{ArtworkKind, ArtworkRequest, clear_artwork_cache};
 pub use discovery::{discover_games, discover_with_runners};
 pub use emulation::{
