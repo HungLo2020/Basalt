@@ -5,6 +5,14 @@ use crate::runners::RunnerKind;
 use crate::{CoreResult, DiscoverResult, add_game};
 
 pub fn discover_mattmc_entry() -> CoreResult<DiscoverResult> {
+    // Catalog installations may live in any library. Never replace their launch metadata
+    // with the legacy default-directory bash target during discovery.
+    if registry::load_entries()?
+        .iter()
+        .any(|entry| entry.name == MATTMC_GAME_NAME && entry.runner_kind == RunnerKind::Catalog)
+    {
+        return Ok(DiscoverResult::AlreadyExists);
+    }
     let mattmc_root = mattmc_install_dir()?;
     let mattmc_script = MATTMC_LAUNCH_SCRIPT_CANDIDATES
         .iter()

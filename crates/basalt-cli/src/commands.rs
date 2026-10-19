@@ -1,10 +1,42 @@
 use basalt_core::{self as core, CoreResult, DiscoverResult, DiscoverRunner};
 
 use super::progress_printer::ProgressPrinter;
-use super::{Command, SettingsCommand};
+use super::{Command, LibraryCommand, SettingsCommand};
 
 pub(super) fn run(command: Command) -> CoreResult<()> {
     match command {
+        Command::Catalog => {
+            for game in core::bundled_games()? {
+                println!("{}\t{}\t{}", game.id, game.name, game.source.repository);
+            }
+        }
+        Command::Libraries { action } => match action {
+            LibraryCommand::List => {
+                for library in core::list_libraries()? {
+                    println!("{}\t{}", library.id, library.path.display());
+                }
+            }
+            LibraryCommand::Add { id, path } => {
+                let library = core::add_library(&id, &path)?;
+                println!("Added {}: {}", library.id, library.path.display());
+            }
+        },
+        Command::Install { game, library } => {
+            core::find_game(game.trim())?;
+            let library = match library {
+                Some(id) => id,
+                None => select_install_library()?,
+            };
+            let printer = ProgressPrinter::new();
+            let report = core::install_game(game.trim(), library.trim(), &printer.progress())?;
+            printer.finish();
+            println!(
+                "Installed {} release '{}' into {}",
+                report.game_name,
+                report.release_tag,
+                report.install_dir.display()
+            );
+        }
         Command::Add { name, target } => {
             core::add_game(name.trim(), target.trim())?;
             println!("Game added successfully.");
@@ -293,4 +325,41 @@ fn settings(action: SettingsCommand) -> CoreResult<()> {
     }
 
     Ok(())
+}
+
+fn select_install_library() -> CoreResult<String> {
+    use std::io::{self, IsTerminal, Write};
+    if !io::stdin().is_terminal() {
+        return Err(core::CoreError::new(
+            "Specify --library <id> for a noninteractive install (use 'basalt libraries list')",
+        ));
+    }
+    let libraries = core::list_libraries()?;
+    for (index, library) in libraries.iter().enumerate() {
+        println!("{}. {} — {}", index + 1, library.id, library.path.display());
+    }
+    print!("Install into library [1]: ");
+    io::stdout()
+        .flush()
+        .map_err(|e| core::CoreError::new(e.to_string()))?;
+    let mut input = String::new();
+    if io::stdin()
+        .read_line(&mut input)
+        .map_err(|e| core::CoreError::new(e.to_string()))?
+        == 0
+    {
+        return Err(core::CoreError::new("Library selection cancelled"));
+    }
+    let choice = if input.trim().is_empty() {
+        1
+    } else {
+        input
+            .trim()
+            .parse::<usize>()
+            .map_err(|_| core::CoreError::new("Invalid library number"))?
+    };
+    libraries
+        .get(choice.wrapping_sub(1))
+        .map(|l| l.id.clone())
+        .ok_or_else(|| core::CoreError::new("Invalid library number"))
 }

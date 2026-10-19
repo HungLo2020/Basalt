@@ -25,11 +25,49 @@ Without the repository, build and install the `.deb` from a checkout (that insta
 - Integrate with MattMC (a Minecraft fork) to download, install, and launch it.
 - Provide a robust CLI for scripting and automation workflows.
 
-## MattMC Integration Goal
+## Catalog games and installation libraries
 
-MattMC is fully independent and can run without a launcher, but Basalt is designed to provide a unified flow to manage and launch it alongside other games.
+Game definitions in `resources/games/*.json` describe the GitHub release repository, asset
+filename filters, executable, arguments, working directory, persistent directory, and maintenance
+scripts. The bundled catalog currently contains MattMC, MicroMages, and Jackal. The latter two
+asset names are packaging conventions; installation needs a matching published release.
 
-Basalt installs MattMC to `~/Games/MattMC` with the same rules as MattMC's own updater: `lib/`, `natives/` and the bundled JDK in `run/jdk/` are replaced, while the rest of `run/` (worlds, settings, the dedicated server in `run/server/`) is kept and only the files the release ships there are overwritten. Update, Sync Up/Down and Backup run the scripts that ship with MattMC (`update-mattmc.sh`, `SyncGameData.sh`, `backup.sh`); sync covers only `MattMC/run/`, excluding `run/jdk/`. MattMC's [packaging guide](https://github.com/HungLo2020/MattMC/blob/master/docs/development/tooling/PACKAGING.md) describes the full layout.
+```sh
+basalt catalog
+basalt libraries list
+basalt libraries add ssd /mnt/ssd/Games
+basalt install MattMC --library ssd
+basalt launch MattMC
+basalt maintain MattMC sync_up
+```
+
+`basalt install <game>` prompts for a library in a terminal. Scripts must supply `--library <id>`;
+`default` means `~/Games`. In the GUI, select a game on the Install page, choose an installation
+folder, and press **Install / reinstall**. That page also lets you register additional libraries.
+Both interfaces use the same catalog installer. The old `install-mattmc`, `sync-mattmc`,
+`backup-mattmc`, and `update-mattmc` CLI commands are removed, without aliases.
+
+Downloads and extraction happen in a staging directory inside the chosen library. The installer
+validates the launch target, preserves executable permissions, and refuses unsafe archive paths.
+On a fresh install, the release can seed `run/`. On reinstall, the **entire existing `run/` wins**:
+worlds, settings, server data, shader packs, and the existing bundled JDK are retained unchanged.
+Application files outside the persistent directory are replaced, so obsolete libraries do not
+linger. Reinstallation needs enough free space for staging plus a copy of the persistent data.
+Close the game and any dedicated server before reinstalling.
+
+An existing installation is retained until activation and registry persistence succeed, with
+rollback on reported failures. A crash or power loss during activation is not automatically
+recovered: any retained `.basalt-install-*/previous` directory is left for recovery. Basalt
+currently registers one installation per game name; installing it in a different library requires
+removing the old Basalt entry first (which does not delete its files).
+
+Maintenance remains game-owned. For MattMC, `backup`, `update`, `sync`, `sync_up`, and `sync_down`
+run the scripts declared by its JSON entry. The `update` maintenance action follows that script's
+own data and runtime replacement rules; it is distinct from Basalt's catalog reinstall. The GUI
+shows noninteractive maintenance actions from the catalog. Steam support is unchanged.
+
+This branch is still a draft: ROM/emulator removal and full generic rediscovery remain separate
+unfinished work. Installed catalog games are registered immediately and survive ordinary refresh.
 
 ## Design Principles
 

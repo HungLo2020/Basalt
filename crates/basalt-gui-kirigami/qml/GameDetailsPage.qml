@@ -84,39 +84,16 @@ Kirigami.ScrollablePage {
             }
         }
 
-        ColumnLayout {
+        Flow {
             Layout.fillWidth: true
-            visible: details.game !== null && details.game.isMattmc
             spacing: Kirigami.Units.smallSpacing
-
-            Kirigami.Heading {
-                level: 4
-                text: "MattMC"
-            }
-
-            Flow {
-                Layout.fillWidth: true
-                spacing: Kirigami.Units.smallSpacing
-
+            Repeater {
+                model: details.game ? details.game.maintenanceActions : []
                 Controls.Button {
-                    text: "Sync Up"
-                    icon.name: "cloud-upload"
-                    enabled: !Backend.jobActive
-                    onClicked: Backend.syncMattmc(true)
-                }
-
-                Controls.Button {
-                    text: "Sync Down"
-                    icon.name: "cloud-download"
-                    enabled: !Backend.jobActive
-                    onClicked: Backend.syncMattmc(false)
-                }
-
-                Controls.Button {
-                    text: "Update"
-                    icon.name: "update-none"
-                    enabled: !Backend.jobActive
-                    onClicked: Backend.updateMattmc("library")
+                    required property string modelData
+                    text: modelData.replace(/_/g, " ")
+                    enabled: !Backend.jobActive && !details.running
+                    onClicked: Backend.maintainGame(details.game.catalogId, modelData, "library")
                 }
             }
         }

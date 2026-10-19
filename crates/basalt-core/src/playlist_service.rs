@@ -167,7 +167,7 @@ pub(super) fn sync_automatic_playlists() -> CoreResult<()> {
             RunnerKind::Emulator => {
                 emulation_games.insert(entry.name);
             }
-            RunnerKind::Bash => {}
+            RunnerKind::Bash | RunnerKind::Catalog => {}
         }
     }
 

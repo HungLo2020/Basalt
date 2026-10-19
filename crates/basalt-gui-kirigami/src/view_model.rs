@@ -24,6 +24,8 @@ pub struct GameView {
     pub artwork_key: String,
     pub favorite: bool,
     pub is_mattmc: bool,
+    pub catalog_id: String,
+    pub maintenance_actions: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -39,7 +41,7 @@ pub struct InstallTileView {
     pub key: String,
     pub title: String,
     pub description: String,
-    /// "mattmc" or "core".
+    /// "game" or "core".
     pub kind: &'static str,
     pub system: String,
     pub supports_save_sync: bool,
@@ -54,6 +56,7 @@ pub fn games_json(games: &[GameEntry], playlists: &[Playlist]) -> String {
         .map(|playlist| playlist.game_names.iter().map(String::as_str).collect())
         .unwrap_or_default();
 
+    let catalog = core::bundled_games().unwrap_or_default();
     let views: Vec<GameView> = games
         .iter()
         .map(|game| {
@@ -69,6 +72,22 @@ pub fn games_json(games: &[GameEntry], playlists: &[Playlist]) -> String {
                     .unwrap_or_default(),
                 favorite: favorites.contains(game.name.as_str()),
                 is_mattmc: game.is_mattmc(),
+                catalog_id: catalog
+                    .iter()
+                    .find(|g| g.name == game.name)
+                    .map(|g| g.id.clone())
+                    .unwrap_or_default(),
+                maintenance_actions: catalog
+                    .iter()
+                    .find(|g| g.name == game.name)
+                    .map(|g| {
+                        g.maintenance
+                            .keys()
+                            .filter(|a| a.as_str() != "sync")
+                            .cloned()
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             }
         })
         .collect();
@@ -89,21 +108,27 @@ pub fn playlists_json(playlists: &[Playlist]) -> String {
 }
 
 pub fn install_tiles_json() -> String {
-    let mut tiles = vec![InstallTileView {
-        key: "mattmc".to_string(),
-        title: core::MATTMC_GAME_NAME.to_string(),
-        description: format!(
-            "Install or update MattMC into {}.",
-            core::mattmc_install_dir()
-                .map(|dir| dir.display().to_string())
-                .unwrap_or_else(|_| "~/Games/MattMC".to_string())
-        ),
-        kind: "mattmc",
-        system: String::new(),
-        supports_save_sync: false,
-        category: MY_GAMES_CATEGORY,
-        artwork_key: core::ArtworkRequest::mattmc().key,
-    }];
+    let mut tiles: Vec<InstallTileView> = core::bundled_games()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|game| InstallTileView {
+            key: game.id.clone(),
+            title: game.name.clone(),
+            description: format!(
+                "Install the latest release of {} from {}. Existing game data is preserved.",
+                game.name, game.source.repository
+            ),
+            kind: "game",
+            system: String::new(),
+            supports_save_sync: false,
+            category: MY_GAMES_CATEGORY,
+            artwork_key: if game.id == core::MATTMC_GAME_NAME {
+                core::ArtworkRequest::mattmc().key
+            } else {
+                String::new()
+            },
+        })
+        .collect();
 
     let mut core_tiles: Vec<InstallTileView> = core::emulator_systems()
         .into_iter()
@@ -131,7 +156,7 @@ pub fn install_tiles_json() -> String {
 fn game_category(game: &GameEntry) -> (String, String) {
     match game.runner_kind {
         RunnerKind::Steam => (STEAM_CATEGORY.to_string(), "0".to_string()),
-        RunnerKind::Bash => (MY_GAMES_CATEGORY.to_string(), "1".to_string()),
+        RunnerKind::Bash | RunnerKind::Catalog => (MY_GAMES_CATEGORY.to_string(), "1".to_string()),
         RunnerKind::Emulator => {
             let system = EmulatorLaunchTarget::decode(&game.launch_target)
                 .ok()
@@ -197,7 +222,7 @@ mod tests {
         let json: Value = serde_json::from_str(&install_tiles_json()).unwrap();
         let tiles = json.as_array().unwrap();
 
-        assert_eq!(tiles[0]["key"], "mattmc");
+        assert_eq!(tiles[0]["key"], "MattMC");
         let atari = tiles
             .iter()
             .find(|tile| tile["system"] == "atari2600")

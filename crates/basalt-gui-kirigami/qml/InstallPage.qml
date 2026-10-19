@@ -90,14 +90,14 @@ Kirigami.ScrollablePage {
         id: grid
 
         flickable: page.flickable
-        items: page.filteredTiles.map(tile => Object.assign({ categoryOrder: tile.kind === "mattmc" ? "0" : "1" }, tile))
+        items: page.filteredTiles.map(tile => Object.assign({ categoryOrder: tile.kind === "game" ? "0" : "1" }, tile))
         keyOf: tile => tile.key
         titleOf: tile => tile.title
         imageOf: tile => {
             Backend.artworkRevision;
             return tile.artworkKey === "" ? "" : Backend.artworkUrl(tile.artworkKey);
         }
-        iconOf: tile => tile.kind === "mattmc" ? "applications-games" : "application-x-executable"
+        iconOf: tile => tile.kind === "game" ? "applications-games" : "application-x-executable"
         badgeOf: tile => {
             Backend.coreStatusRevision;
             return tile.kind === "core" && Backend.isCoreInstalled(tile.system) ? "Installed" : "";

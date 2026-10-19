@@ -52,16 +52,13 @@ fn sync_commands_pass_the_direction_to_the_sync_script() {
     let home = TestHome::new("mattmc-sync");
     let record = stub_mattmc(&home);
 
-    assert!(stdout(&home.run(&["sync-mattmc", "up"])).contains("sync-up"));
-    assert!(stdout(&home.run(&["sync-mattmc", "down"])).contains("sync-down"));
-    // The older spellings keep working.
-    stdout(&home.run(&["sync-up", "mattmc"]));
-    stdout(&home.run(&["sync-down", "mattmc"]));
+    assert!(stdout(&home.run(&["maintain", "MattMC", "sync_up"])).contains("sync_up"));
+    assert!(stdout(&home.run(&["maintain", "MattMC", "sync_down"])).contains("sync_down"));
+    // Removed spellings must not dispatch maintenance.
+    assert!(!home.run(&["sync-mattmc", "up"]).status.success());
+    assert!(!home.run(&["sync-up", "mattmc"]).status.success());
 
-    assert_eq!(
-        recorded(&record),
-        ["sync up", "sync down", "sync up", "sync down"]
-    );
+    assert_eq!(recorded(&record), ["sync up", "sync down"]);
 }
 
 #[test]
@@ -70,7 +67,7 @@ fn interactive_sync_without_a_terminal_fails_instead_of_guessing() {
     let record = stub_mattmc(&home);
 
     // No direction and no terminal: the script's prompt gets no answer.
-    let output = home.run(&["sync-mattmc"]);
+    let output = home.run(&["maintain", "MattMC", "sync"]);
 
     assert!(!output.status.success());
     assert!(
@@ -84,8 +81,8 @@ fn update_and_backup_run_their_scripts() {
     let home = TestHome::new("mattmc-scripts");
     let record = stub_mattmc(&home);
 
-    stdout(&home.run(&["update-mattmc"]));
-    stdout(&home.run(&["backup-mattmc"]));
+    stdout(&home.run(&["maintain", "MattMC", "update"]));
+    stdout(&home.run(&["maintain", "MattMC", "backup"]));
 
     assert_eq!(recorded(&record), ["update", "backup"]);
 }

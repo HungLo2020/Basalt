@@ -7,15 +7,16 @@
 
 mod artwork;
 mod catalog;
-mod libraries;
-mod maintenance;
+mod catalog_launch;
 mod discovery;
 mod download;
 mod emulation;
 mod error;
+mod game_install;
 mod game_service;
+mod libraries;
+mod maintenance;
 mod mattmc;
-mod mattmc_install;
 mod platform;
 mod playlist_service;
 mod progress;
@@ -26,10 +27,10 @@ mod storage;
 mod types;
 mod warnings;
 
-pub use catalog::{GameDefinition, LaunchDefinition, MaintenanceCommand, ReleaseSource, bundled_games, find_game};
-pub use maintenance::run_game_maintenance;
-pub use libraries::{GameLibrary, add_library, default_library, install_directory, list_libraries};
 pub use artwork::{ArtworkKind, ArtworkRequest, clear_artwork_cache};
+pub use catalog::{
+    GameDefinition, LaunchDefinition, MaintenanceCommand, ReleaseSource, bundled_games, find_game,
+};
 pub use discovery::{discover_games, discover_with_runners};
 pub use emulation::{
     EmulatorInstallReport, EmulatorLaunchTarget, EmulatorSystem, SyncReport, emulator_rom_dir,
@@ -38,15 +39,17 @@ pub use emulation::{
     sync_saves_up,
 };
 pub use error::{CoreError, CoreResult};
+pub use game_install::{GameInstallReport, install_game};
 pub use game_service::{
     add_game, add_game_to_playlist, launch_game, list_games, list_playlists, remove_all_games,
     remove_game, remove_game_from_playlist,
 };
+pub use libraries::{GameLibrary, add_library, default_library, install_directory, list_libraries};
+pub use maintenance::run_game_maintenance;
 pub use mattmc::{
     MATTMC_GAME_NAME, backup_mattmc, mattmc_install_dir, sync_mattmc_down, sync_mattmc_interactive,
     sync_mattmc_up, update_mattmc,
 };
-pub use mattmc_install::{MattmcInstallReport, install_mattmc};
 pub use platform::run_sibling_executable;
 pub use playlist_service::FAVORITES_PLAYLIST_NAME;
 pub use progress::{CancelToken, Progress, ProgressUnit, ProgressUpdate};

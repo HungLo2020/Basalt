@@ -6,7 +6,8 @@
     "kind": "github_release",
     "repository": "HungLo2020/MattMC",
     "asset_prefix": "MattMC-Client",
-    "asset_suffix": ".zip"
+    "asset_suffix": ".zip",
+    "asset_contains": ["linux-x64"]
   },
   "launch": {
     "executable": "run-mattmc.sh",

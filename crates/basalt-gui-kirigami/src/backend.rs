@@ -19,6 +19,7 @@ pub mod qobject {
         #[qproperty(QString, games_json)]
         #[qproperty(QString, playlists_json)]
         #[qproperty(QString, install_tiles_json)]
+        #[qproperty(QString, game_libraries_json)]
         #[qproperty(QString, running_games_json)]
         #[qproperty(bool, loading)]
         // Bumped when artwork URLs or installed-core state change, so QML bindings re-evaluate.
@@ -63,12 +64,18 @@ pub mod qobject {
         fn remove_game(self: Pin<&mut Backend>, name: &QString);
 
         #[qinvokable]
-        fn sync_mattmc(self: Pin<&mut Backend>, up: bool);
-        /// `target` is "library" or "install": which screen shows the result.
+        fn maintain_game(
+            self: Pin<&mut Backend>,
+            game: &QString,
+            action: &QString,
+            target: &QString,
+        );
         #[qinvokable]
-        fn update_mattmc(self: Pin<&mut Backend>, target: &QString);
+        fn install_game(self: Pin<&mut Backend>, game: &QString, library: &QString);
         #[qinvokable]
-        fn install_mattmc(self: Pin<&mut Backend>);
+        fn add_game_library(self: Pin<&mut Backend>, id: &QString, path: &QString);
+        #[qinvokable]
+        fn refresh_game_libraries(self: Pin<&mut Backend>);
         #[qinvokable]
         fn install_core(self: Pin<&mut Backend>, system: &QString);
         #[qinvokable]
@@ -140,6 +147,7 @@ pub struct BackendRust {
     games_json: QString,
     playlists_json: QString,
     install_tiles_json: QString,
+    game_libraries_json: QString,
     running_games_json: QString,
     loading: bool,
     artwork_revision: i32,
@@ -175,6 +183,7 @@ impl Default for BackendRust {
             games_json: QString::from("[]"),
             playlists_json: QString::from("[]"),
             install_tiles_json: QString::from(view_model::install_tiles_json().as_str()),
+            game_libraries_json: QString::from("[]"),
             running_games_json: QString::from("[]"),
             loading: true,
             artwork_revision: 0,
@@ -508,63 +517,73 @@ impl qobject::Backend {
         self.as_mut().set_library_status(qs(message));
     }
 
-    // ----- MattMC and emulation jobs ---------------------------------------------------------
+    // ----- Catalog and emulation jobs ---------------------------------------------------------
 
-    fn sync_mattmc(mut self: Pin<&mut Self>, up: bool) {
-        let label = if up { "Sync Up" } else { "Sync Down" };
-        self.as_mut().start_job(
-            StatusTarget::Library,
-            format!("{} started for MattMC", label),
-            move |_| {
-                if up {
-                    basalt_core::sync_mattmc_up()
-                } else {
-                    basalt_core::sync_mattmc_down()
-                }
-            },
-            move |mut backend, result| {
-                let message = match result {
-                    Ok(()) => format!("{} completed for MattMC", label),
-                    Err(error) => failure_message(label, &error),
-                };
-                backend.as_mut().set_library_status(qs(message));
-            },
-        );
-    }
-
-    fn update_mattmc(mut self: Pin<&mut Self>, target: &QString) {
+    fn maintain_game(mut self: Pin<&mut Self>, game: &QString, action: &QString, target: &QString) {
+        let game = game.to_string();
+        let action = action.to_string();
         let target = StatusTarget::parse(&target.to_string());
         self.as_mut().start_job(
             target,
-            "MattMC update started".to_string(),
-            |_| basalt_core::update_mattmc(),
+            format!("{action} started for {game}"),
+            move |_| basalt_core::run_game_maintenance(&game, &action),
             move |mut backend, result| {
                 let message = match result {
                     Ok(()) => {
                         backend.as_mut().reload_library();
-                        "Update completed for MattMC".to_string()
+                        "Maintenance completed".to_string()
                     }
-                    Err(error) => format!("MattMC update failed: {}", error),
+                    Err(error) => failure_message("Maintenance", &error),
                 };
                 backend.as_mut().set_status(target, message);
             },
         );
     }
 
-    fn install_mattmc(mut self: Pin<&mut Self>) {
+    fn refresh_game_libraries(mut self: Pin<&mut Self>) {
+        match basalt_core::list_libraries().and_then(|libraries| {
+            serde_json::to_string(&libraries)
+                .map_err(|e| basalt_core::CoreError::new(e.to_string()))
+        }) {
+            Ok(json) => self.as_mut().set_game_libraries_json(qs(json)),
+            Err(error) => self.as_mut().set_install_status(qs(error.to_string())),
+        }
+    }
+
+    fn add_game_library(mut self: Pin<&mut Self>, id: &QString, path: &QString) {
+        match basalt_core::add_library(
+            id.to_string().trim(),
+            std::path::Path::new(path.to_string().trim()),
+        ) {
+            Ok(_) => {
+                self.as_mut().refresh_game_libraries();
+                self.as_mut().set_install_status(qs("Library added"));
+            }
+            Err(error) => self.as_mut().set_install_status(qs(error.to_string())),
+        }
+    }
+
+    fn install_game(mut self: Pin<&mut Self>, game: &QString, library: &QString) {
+        let game = game.to_string();
+        if self.rust().running.contains(&game) {
+            self.as_mut()
+                .set_install_status(qs("Close the game before reinstalling it"));
+            return;
+        }
+        let library = library.to_string();
         self.as_mut().start_job(
             StatusTarget::Install,
-            "MattMC install started".to_string(),
-            |progress| basalt_core::install_mattmc(&progress),
+            format!("Installing {game}"),
+            move |progress| basalt_core::install_game(&game, &library, &progress),
             |mut backend, result| {
                 let message = match result {
                     Ok(report) => {
                         backend.as_mut().reload_library();
                         format!(
-                            "Installed MattMC release '{}' into {}. {}",
+                            "Installed {} release '{}' into {}",
+                            report.game_name,
                             report.release_tag,
-                            report.install_dir.display(),
-                            report.discovery_message()
+                            report.install_dir.display()
                         )
                     }
                     Err(error) => failure_message("Install", &error),

@@ -76,7 +76,7 @@ impl ArtworkRequest {
                 display_name: game.name.clone(),
                 target: game.launch_target.clone(),
             }),
-            RunnerKind::Bash => None,
+            RunnerKind::Bash | RunnerKind::Catalog => None,
         }
     }
 

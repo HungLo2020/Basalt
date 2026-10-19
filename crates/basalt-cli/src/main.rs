@@ -62,6 +62,22 @@ enum Command {
     /// Install RetroArch runtime plus built-in emulator cores
     InstallEmulators,
 
+    /// List games available from the bundled catalog
+    Catalog,
+
+    /// Install/reinstall a catalog game; prompts for a library unless --library is supplied
+    Install {
+        game: String,
+        #[arg(long)]
+        library: Option<String>,
+    },
+
+    /// List or add game installation libraries
+    Libraries {
+        #[command(subcommand)]
+        action: LibraryCommand,
+    },
+
     /// Launch a saved game by name
     Launch { name: String },
 
@@ -88,6 +104,15 @@ enum Command {
 
     /// Clear cached artwork metadata and images
     RefreshMetadata,
+}
+
+#[derive(Subcommand)]
+enum LibraryCommand {
+    List,
+    Add {
+        id: String,
+        path: std::path::PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -179,7 +204,12 @@ mod tests {
     fn maintenance_is_generic_and_old_commands_are_rejected() {
         let cli = Cli::try_parse_from(["basalt", "maintain", "MattMC", "sync_up"]).unwrap();
         assert!(matches!(cli.command, Some(Command::Maintain { .. })));
-        for obsolete in ["sync-mattmc", "backup-mattmc", "update-mattmc", "install-mattmc"] {
+        for obsolete in [
+            "sync-mattmc",
+            "backup-mattmc",
+            "update-mattmc",
+            "install-mattmc",
+        ] {
             assert!(Cli::try_parse_from(["basalt", obsolete]).is_err());
         }
     }

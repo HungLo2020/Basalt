@@ -21,6 +21,7 @@ Kirigami.ScrollablePage {
     Kirigami.ColumnView.preferredWidth: Kirigami.Units.gridUnit * 24
 
     title: tile ? tile.title : ""
+    Component.onCompleted: Backend.refreshGameLibraries()
 
     ColumnLayout {
         spacing: Kirigami.Units.largeSpacing
@@ -31,24 +32,45 @@ Kirigami.ScrollablePage {
             wrapMode: Text.Wrap
         }
 
-        // MattMC
-        Flow {
+        ColumnLayout {
             Layout.fillWidth: true
-            visible: details.tile !== null && details.tile.kind === "mattmc"
-            spacing: Kirigami.Units.smallSpacing
-
-            Controls.Button {
-                text: "Install MattMC"
-                icon.name: "run-build-install"
+            visible: details.tile !== null && details.tile.kind === "game"
+            Controls.Label { text: "Install location" }
+            Controls.ComboBox {
+                id: libraryPicker
+                Layout.fillWidth: true
+                model: JSON.parse(Backend.gameLibrariesJson)
+                textRole: "path"
+                valueRole: "id"
                 enabled: !Backend.jobActive
-                onClicked: Backend.installMattmc()
             }
-
+            Controls.Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WrapAnywhere
+                text: libraryPicker.currentIndex >= 0 && details.tile
+                    ? libraryPicker.currentText + "/" + details.tile.key : "Add a library to install games."
+            }
             Controls.Button {
-                text: "Update MattMC"
-                icon.name: "update-none"
-                enabled: !Backend.jobActive
-                onClicked: Backend.updateMattmc("install")
+                text: "Install / reinstall " + (details.tile ? details.tile.title : "game")
+                icon.name: "run-build-install"
+                enabled: !Backend.jobActive && libraryPicker.currentIndex >= 0
+                    && details.tile !== null && !JSON.parse(Backend.runningGamesJson).includes(details.tile.title)
+                onClicked: Backend.installGame(details.tile.key, libraryPicker.currentValue)
+            }
+            Controls.TextField {
+                id: libraryId
+                Layout.fillWidth: true
+                placeholderText: "New library name (e.g. ssd)"
+            }
+            Controls.TextField {
+                id: libraryPath
+                Layout.fillWidth: true
+                placeholderText: "Absolute folder path (e.g. /mnt/ssd/Games)"
+            }
+            Controls.Button {
+                text: "Add library"
+                enabled: !Backend.jobActive && libraryId.text.trim() !== "" && libraryPath.text.trim() !== ""
+                onClicked: Backend.addGameLibrary(libraryId.text, libraryPath.text)
             }
         }
 

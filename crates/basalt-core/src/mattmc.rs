@@ -17,8 +17,6 @@ pub const MATTMC_GAME_NAME: &str = "MattMC";
 const MATTMC_DIR_NAME: &str = "MattMC";
 /// Launch scripts discovery looks for in the install directory.
 pub(crate) const MATTMC_LAUNCH_SCRIPT_CANDIDATES: &[&str] = &["run-mattmc.sh"];
-/// Release ZIPs are named `MattMC-Client-<version>-<suffix>...zip`.
-pub(crate) const MATTMC_RELEASE_ZIP_SUFFIX: &str = "linux-x64";
 
 // Scripts shipped next to MattMC's launch script.
 const SYNC_SCRIPT_NAME: &str = "SyncGameData.sh";
