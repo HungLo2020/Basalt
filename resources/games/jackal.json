@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "Jackal",
+  "name": "Jackal",
+  "source": {
+    "kind": "github_release",
+    "repository": "HungLo2020/Jackal",
+    "asset_prefix": "Jackal-",
+    "asset_suffix": ".zip"
+  },
+  "launch": {
+    "executable": "app/bin/jackal",
+    "arguments": [],
+    "working_directory": "."
+  },
+  "persistent_directory": "run"
+}

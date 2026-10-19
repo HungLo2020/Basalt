@@ -11,7 +11,6 @@ use super::types::Playlist;
 const PLAYLISTS_FILE_NAME: &str = "playlists.tsv";
 pub const FAVORITES_PLAYLIST_NAME: &str = "Favorites";
 pub const STEAM_PLAYLIST_NAME: &str = "Steam";
-pub const EMULATION_PLAYLIST_NAME: &str = "Emulation";
 
 // Callers must hold `storage::with_data_lock`; the public entry points in game_service do.
 
@@ -29,11 +28,6 @@ pub fn list_playlists() -> CoreResult<Vec<Playlist>> {
         .unwrap_or_default()
         .into_iter()
         .collect();
-    let emulation_games = memberships
-        .remove(EMULATION_PLAYLIST_NAME)
-        .unwrap_or_default()
-        .into_iter()
-        .collect();
 
     let mut playlists = vec![
         Playlist {
@@ -43,10 +37,6 @@ pub fn list_playlists() -> CoreResult<Vec<Playlist>> {
         Playlist {
             name: STEAM_PLAYLIST_NAME.to_string(),
             game_names: steam_games,
-        },
-        Playlist {
-            name: EMULATION_PLAYLIST_NAME.to_string(),
-            game_names: emulation_games,
         },
     ];
 
@@ -157,17 +147,13 @@ pub(super) fn sync_automatic_playlists() -> CoreResult<()> {
     let entries = registry::load_entries()?;
 
     let mut steam_games = BTreeSet::new();
-    let mut emulation_games = BTreeSet::new();
 
     for entry in entries {
         match entry.runner_kind {
             RunnerKind::Steam => {
                 steam_games.insert(entry.name);
             }
-            RunnerKind::Emulator => {
-                emulation_games.insert(entry.name);
-            }
-            RunnerKind::Bash => {}
+            RunnerKind::Bash | RunnerKind::Catalog => {}
         }
     }
 
@@ -175,15 +161,10 @@ pub(super) fn sync_automatic_playlists() -> CoreResult<()> {
         .get(STEAM_PLAYLIST_NAME)
         .map(|existing| existing != &steam_games)
         .unwrap_or(!steam_games.is_empty());
-    let emulation_changed = memberships
-        .get(EMULATION_PLAYLIST_NAME)
-        .map(|existing| existing != &emulation_games)
-        .unwrap_or(!emulation_games.is_empty());
 
     memberships.insert(STEAM_PLAYLIST_NAME.to_string(), steam_games);
-    memberships.insert(EMULATION_PLAYLIST_NAME.to_string(), emulation_games);
 
-    if steam_changed || emulation_changed {
+    if steam_changed {
         save_playlist_memberships(&memberships)?;
     }
 
@@ -223,9 +204,6 @@ fn resolve_playlist_name(
     }
     if trimmed.eq_ignore_ascii_case(STEAM_PLAYLIST_NAME) {
         return Ok(STEAM_PLAYLIST_NAME.to_string());
-    }
-    if trimmed.eq_ignore_ascii_case(EMULATION_PLAYLIST_NAME) {
-        return Ok(EMULATION_PLAYLIST_NAME.to_string());
     }
 
     for existing_name in memberships.keys() {

@@ -6,7 +6,7 @@ mod progress_printer;
 use std::process::ExitCode;
 
 use basalt_core as core;
-use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 
 const GUI_EXECUTABLE_NAME: &str = "basalt-gui";
 
@@ -22,7 +22,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Add a game via script file, Steam appid/URL, or emulator launch target
+    /// Add a game via script file, Steam appid/URL, or catalog launch target
     Add { name: String, target: String },
 
     /// Remove a saved game by name
@@ -40,89 +40,46 @@ enum Command {
     /// List all added games and playlists
     List,
 
-    /// Discover games and add new entries (no flags = all discover runners)
+    /// Discover catalog installations and Steam games.
     Discover {
-        /// Discover Steam games
         #[arg(long)]
         steam: bool,
-        /// Discover MattMC
         #[arg(long)]
-        mattmc: bool,
-        /// Discover emulator ROM entries
-        #[arg(long)]
-        emulators: bool,
+        catalog: bool,
     },
 
-    /// Install a RetroArch core for one system key (e.g. nes, gba, snes, atari2600, nds, 3ds)
-    InstallCore { system: String },
+    /// List games available from the bundled catalog
+    Catalog,
 
-    /// Show whether a system core is installed and if save sync is supported
-    CoreStatus { system: String },
+    /// Install/reinstall a catalog game; prompts for a library unless --library is supplied
+    Install {
+        game: String,
+        #[arg(long)]
+        library: Option<String>,
+    },
 
-    /// Install RetroArch runtime plus built-in emulator cores
-    InstallEmulators,
-
-    /// Download latest MattMC release into ~/Games/MattMC
-    InstallMattmc,
+    /// List or add game installation libraries
+    Libraries {
+        #[command(subcommand)]
+        action: LibraryCommand,
+    },
 
     /// Launch a saved game by name
     Launch { name: String },
 
-    /// Run backup.sh from the MattMC launch script directory
-    BackupMattmc,
-
-    /// Sync MattMC's game data with its remote copy (without a direction, the script asks)
-    SyncMattmc {
-        /// Which way to sync: `up` (local to remote) or `down` (remote to local)
-        #[arg(value_enum)]
-        direction: Option<SyncDirection>,
-    },
-
-    /// Run update-mattmc from the MattMC launch script directory
-    UpdateMattmc,
-
-    /// Sync up for a platform: mattmc or an emulator system key (e.g. nes, gba)
-    SyncUp { platform: String },
-
-    /// Sync down for a platform: mattmc or an emulator system key (emulators also run discover)
-    SyncDown { platform: String },
-
-    /// Sync local save files to remote for a system key
-    SyncSavesUp { system: String },
-
-    /// Sync remote save files to local for a system key
-    SyncSavesDown { system: String },
-
-    /// Show or change the remote ROM/Saves root directories used by sync commands
-    Settings {
-        #[command(subcommand)]
-        action: SettingsCommand,
-    },
+    /// Execute a manifest-defined maintenance action for an installed game.
+    Maintain { game: String, action: String },
 
     /// Clear cached artwork metadata and images
     RefreshMetadata,
 }
 
-#[derive(Clone, Copy, ValueEnum)]
-enum SyncDirection {
-    Up,
-    Down,
-}
-
 #[derive(Subcommand)]
-enum SettingsCommand {
-    /// Show remote ROM/Saves root directories
-    Get,
-
-    /// Update remote ROM/Saves root directories
-    #[command(group(ArgGroup::new("paths").required(true).multiple(true)))]
-    Set {
-        /// Remote ROMs root directory
-        #[arg(long, group = "paths", value_name = "PATH")]
-        roms_root: Option<String>,
-        /// Remote saves root directory
-        #[arg(long, group = "paths", value_name = "PATH")]
-        saves_root: Option<String>,
+enum LibraryCommand {
+    List,
+    Add {
+        id: String,
+        path: std::path::PathBuf,
     },
 }
 
@@ -183,36 +140,28 @@ mod tests {
                 if playlist == "Favorites" && name == "Doom"
         ));
 
-        let cli = Cli::try_parse_from(["basalt", "discover", "--steam", "--emulators"]).unwrap();
+        let cli = Cli::try_parse_from(["basalt", "discover", "--steam", "--catalog"]).unwrap();
         assert!(matches!(
             cli.command,
             Some(Command::Discover {
                 steam: true,
-                mattmc: false,
-                emulators: true
+                catalog: true
             })
         ));
     }
 
     #[test]
-    fn sync_mattmc_takes_an_optional_direction() {
-        let parse = |args: &[&str]| match Cli::try_parse_from(args).unwrap().command {
-            Some(Command::SyncMattmc { direction }) => {
-                direction.map(|d| matches!(d, SyncDirection::Up))
-            }
-            _ => panic!("expected sync-mattmc"),
-        };
-
-        assert_eq!(parse(&["basalt", "sync-mattmc"]), None);
-        assert_eq!(parse(&["basalt", "sync-mattmc", "up"]), Some(true));
-        assert_eq!(parse(&["basalt", "sync-mattmc", "down"]), Some(false));
-        assert!(Cli::try_parse_from(["basalt", "sync-mattmc", "sideways"]).is_err());
-    }
-
-    #[test]
-    fn settings_set_requires_at_least_one_path() {
-        assert!(Cli::try_parse_from(["basalt", "settings", "set"]).is_err());
-        assert!(Cli::try_parse_from(["basalt", "settings", "set", "--roms-root", "/r"]).is_ok());
+    fn maintenance_is_generic_and_old_commands_are_rejected() {
+        let cli = Cli::try_parse_from(["basalt", "maintain", "MattMC", "sync_up"]).unwrap();
+        assert!(matches!(cli.command, Some(Command::Maintain { .. })));
+        for obsolete in [
+            "sync-mattmc",
+            "backup-mattmc",
+            "update-mattmc",
+            "install-mattmc",
+        ] {
+            assert!(Cli::try_parse_from(["basalt", obsolete]).is_err());
+        }
     }
 
     #[test]

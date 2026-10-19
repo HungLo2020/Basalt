@@ -21,7 +21,7 @@ QtObject {
         { name: "02-library-details", run: () => selectFirst(window.libraryPage, item => item.artworkKey !== "") },
         { name: "03-library-mattmc", run: () => selectFirst(window.libraryPage, item => item.isMattmc) },
         { name: "04-install", run: () => window.showSection("install") },
-        { name: "05-install-mattmc", run: () => selectFirst(window.installPage, item => item.kind === "mattmc") },
+        { name: "05-install-mattmc", run: () => selectFirst(window.installPage, item => item.kind === "game" && item.key === "MattMC") },
         { name: "06-install-core", run: () => selectFirst(window.installPage, item => item.system === "gba") },
         { name: "07-install-core-no-saves", run: () => selectFirst(window.installPage, item => item.system === "atari2600") },
         { name: "08-settings", run: () => window.showSection("settings") },

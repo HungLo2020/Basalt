@@ -22,15 +22,13 @@ pub enum DiscoverResult {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DiscoverRunner {
-    Mattmc,
+    Catalog,
     Steam,
-    Emulators,
 }
 
-pub const ALL_DISCOVER_RUNNERS: [DiscoverRunner; 3] = [
-    DiscoverRunner::Mattmc,
+pub const ALL_DISCOVER_RUNNERS: [DiscoverRunner; 2] = [
+    DiscoverRunner::Catalog,
     DiscoverRunner::Steam,
-    DiscoverRunner::Emulators,
 ];
 
 pub struct SteamDiscoverReport {
@@ -39,15 +37,7 @@ pub struct SteamDiscoverReport {
     pub already_exists: usize,
 }
 
-pub struct EmulatorDiscoverReport {
-    pub found: usize,
-    pub added: usize,
-    pub updated: usize,
-    pub already_exists: usize,
-}
-
 pub struct DiscoverReport {
-    pub mattmc: Option<DiscoverResult>,
+    pub catalog: Option<DiscoverResult>,
     pub steam: Option<SteamDiscoverReport>,
-    pub emulators: Option<EmulatorDiscoverReport>,
 }

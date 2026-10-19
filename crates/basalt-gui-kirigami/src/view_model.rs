@@ -4,13 +4,11 @@
 
 use std::collections::HashSet;
 
-use basalt_core::{self as core, EmulatorLaunchTarget, GameEntry, Playlist, RunnerKind};
+use basalt_core::{self as core, GameEntry, Playlist, RunnerKind};
 use serde::Serialize;
 
 const STEAM_CATEGORY: &str = "Steam";
 const MY_GAMES_CATEGORY: &str = "My Games";
-const EMULATION_CATEGORY: &str = "Emulation";
-const EMULATORS_CATEGORY: &str = "Emulators";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,11 +17,13 @@ pub struct GameView {
     pub runner: &'static str,
     pub target: String,
     pub category: String,
-    /// Sorts categories: Steam, My Games, then emulator systems.
+    /// Sorts categories: Steam, My Games, then catalog games.
     pub category_order: String,
     pub artwork_key: String,
     pub favorite: bool,
     pub is_mattmc: bool,
+    pub catalog_id: String,
+    pub maintenance_actions: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -39,7 +39,7 @@ pub struct InstallTileView {
     pub key: String,
     pub title: String,
     pub description: String,
-    /// "mattmc" or "core".
+    /// "game" or "core".
     pub kind: &'static str,
     pub system: String,
     pub supports_save_sync: bool,
@@ -54,6 +54,7 @@ pub fn games_json(games: &[GameEntry], playlists: &[Playlist]) -> String {
         .map(|playlist| playlist.game_names.iter().map(String::as_str).collect())
         .unwrap_or_default();
 
+    let catalog = core::bundled_games().unwrap_or_default();
     let views: Vec<GameView> = games
         .iter()
         .map(|game| {
@@ -68,7 +69,23 @@ pub fn games_json(games: &[GameEntry], playlists: &[Playlist]) -> String {
                     .map(|request| request.key)
                     .unwrap_or_default(),
                 favorite: favorites.contains(game.name.as_str()),
-                is_mattmc: game.is_mattmc(),
+                is_mattmc: game.name == "MattMC",
+                catalog_id: catalog
+                    .iter()
+                    .find(|g| g.name == game.name)
+                    .map(|g| g.id.clone())
+                    .unwrap_or_default(),
+                maintenance_actions: catalog
+                    .iter()
+                    .find(|g| g.name == game.name)
+                    .map(|g| {
+                        g.maintenance
+                            .keys()
+                            .filter(|a| a.as_str() != "sync")
+                            .cloned()
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             }
         })
         .collect();
@@ -89,40 +106,27 @@ pub fn playlists_json(playlists: &[Playlist]) -> String {
 }
 
 pub fn install_tiles_json() -> String {
-    let mut tiles = vec![InstallTileView {
-        key: "mattmc".to_string(),
-        title: core::MATTMC_GAME_NAME.to_string(),
-        description: format!(
-            "Install or update MattMC into {}.",
-            core::mattmc_install_dir()
-                .map(|dir| dir.display().to_string())
-                .unwrap_or_else(|_| "~/Games/MattMC".to_string())
-        ),
-        kind: "mattmc",
-        system: String::new(),
-        supports_save_sync: false,
-        category: MY_GAMES_CATEGORY,
-        artwork_key: core::ArtworkRequest::mattmc().key,
-    }];
-
-    let mut core_tiles: Vec<InstallTileView> = core::emulator_systems()
+    let tiles: Vec<InstallTileView> = core::bundled_games()
+        .unwrap_or_default()
         .into_iter()
-        .map(|system| InstallTileView {
-            key: format!("core-{}", system.key),
-            title: format!("{} Core", system.short_name),
+        .map(|game| InstallTileView {
+            key: game.id.clone(),
+            title: game.name.clone(),
             description: format!(
-                "RetroArch {} core for {} ROMs.",
-                system.core_name, system.full_name
+                "Install the latest release of {} from {}. Existing game data is preserved.",
+                game.name, game.source.repository
             ),
-            kind: "core",
-            system: system.key.to_string(),
-            supports_save_sync: system.supports_save_sync,
-            category: EMULATORS_CATEGORY,
-            artwork_key: String::new(),
+            kind: "game",
+            system: String::new(),
+            supports_save_sync: false,
+            category: MY_GAMES_CATEGORY,
+            artwork_key: if game.id == "MattMC" {
+                core::ArtworkRequest::mattmc().key
+            } else {
+                String::new()
+            },
         })
         .collect();
-    core_tiles.sort_by(|left, right| left.title.cmp(&right.title));
-    tiles.extend(core_tiles);
 
     to_json(&tiles)
 }
@@ -131,16 +135,7 @@ pub fn install_tiles_json() -> String {
 fn game_category(game: &GameEntry) -> (String, String) {
     match game.runner_kind {
         RunnerKind::Steam => (STEAM_CATEGORY.to_string(), "0".to_string()),
-        RunnerKind::Bash => (MY_GAMES_CATEGORY.to_string(), "1".to_string()),
-        RunnerKind::Emulator => {
-            let system = EmulatorLaunchTarget::decode(&game.launch_target)
-                .ok()
-                .map(|target| target.system_key().trim().to_uppercase())
-                .filter(|system| !system.is_empty())
-                .unwrap_or_else(|| EMULATION_CATEGORY.to_string());
-            let order = format!("2-{}", system);
-            (system, order)
-        }
+        RunnerKind::Bash | RunnerKind::Catalog => (MY_GAMES_CATEGORY.to_string(), "1".to_string()),
     }
 }
 
@@ -150,7 +145,6 @@ fn to_json<T: Serialize>(value: &T) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
 
     use serde_json::Value;
 
@@ -166,14 +160,9 @@ mod tests {
 
     #[test]
     fn games_json_categorizes_and_marks_favorites() {
-        let rom_target = EmulatorLaunchTarget::new_retroarch("gba", PathBuf::from("/r/a.gba"))
-            .unwrap()
-            .encode()
-            .unwrap();
         let games = vec![
             game("Doom", RunnerKind::Steam, "2280"),
-            game(core::MATTMC_GAME_NAME, RunnerKind::Bash, "/g/run-mattmc.sh"),
-            game("Pokemon", RunnerKind::Emulator, &rom_target),
+            game("MattMC", RunnerKind::Bash, "/g/run-mattmc.sh"),
         ];
         let playlists = vec![Playlist {
             name: core::FAVORITES_PLAYLIST_NAME.to_string(),
@@ -187,9 +176,6 @@ mod tests {
         assert_eq!(json[0]["artworkKey"], "steam:2280");
         assert_eq!(json[1]["category"], "My Games");
         assert_eq!(json[1]["isMattmc"], true);
-        assert_eq!(json[2]["category"], "GBA");
-        assert_eq!(json[2]["categoryOrder"], "2-GBA");
-        assert_eq!(json[2]["favorite"], false);
     }
 
     #[test]
@@ -197,16 +183,7 @@ mod tests {
         let json: Value = serde_json::from_str(&install_tiles_json()).unwrap();
         let tiles = json.as_array().unwrap();
 
-        assert_eq!(tiles[0]["key"], "mattmc");
-        let atari = tiles
-            .iter()
-            .find(|tile| tile["system"] == "atari2600")
-            .unwrap();
-        assert_eq!(atari["title"], "Atari 2600 Core");
-        assert_eq!(
-            atari["description"],
-            "RetroArch Stella core for Atari 2600 ROMs."
-        );
-        assert_eq!(atari["supportsSaveSync"], false);
+        assert_eq!(tiles[0]["key"], "MattMC");
+        assert_eq!(tiles.len(), 3);
     }
 }

@@ -5,26 +5,17 @@
 
 use std::path::PathBuf;
 
-use super::mattmc::MATTMC_GAME_NAME;
+const MATTMC_GAME_NAME: &str = "MattMC";
 use super::runners::RunnerKind;
 use crate::GameEntry;
-use crate::emulation::{EmulatorLaunchTarget, emulator_artwork_catalog_path};
 
 mod cache;
 mod fetch;
 mod local_overrides;
-mod matching_index;
 mod validation;
 
 pub use cache::clear_artwork_cache;
 
-const EMULATOR_ARTWORK_USER_AGENT: &str = "Basalt-Emulator-Artwork";
-const EMULATOR_ARTWORK_IMAGES_PATH: &str = "images";
-const EMULATOR_ARTWORK_INDEX_PATH: &str = "index";
-const EMULATOR_ARTWORK_INDEX_TTL_SECONDS: u64 = 60 * 60 * 24;
-const EMULATOR_ARTWORK_KEY_VERSION: &str = "v2";
-const EMULATOR_ARTWORK_MIN_WIDTH: u32 = 120;
-const EMULATOR_ARTWORK_MIN_HEIGHT: u32 = 120;
 const LOCAL_ARTWORK_EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
 
 /// Where a game's artwork comes from.
@@ -34,8 +25,6 @@ pub enum ArtworkKind {
     Mattmc,
     /// Steam library portrait art, downloaded from the Steam CDN.
     Steam,
-    /// Box art from the libretro thumbnail server.
-    Emulator,
 }
 
 /// A request for one game's artwork. `key` is stable per artwork and suitable as a cache or
@@ -52,7 +41,7 @@ impl ArtworkRequest {
     /// The artwork request for a library entry, or `None` for entries without artwork
     /// (plain scripts).
     pub fn for_game(game: &GameEntry) -> Option<Self> {
-        if game.is_mattmc() {
+        if game.name == MATTMC_GAME_NAME {
             return Some(Self::mattmc());
         }
 
@@ -66,17 +55,7 @@ impl ArtworkRequest {
                     target: appid,
                 })
             }
-            RunnerKind::Emulator => Some(Self {
-                key: format!(
-                    "emulator:{}:{}",
-                    EMULATOR_ARTWORK_KEY_VERSION,
-                    stable_hash_hex(&game.launch_target)
-                ),
-                kind: ArtworkKind::Emulator,
-                display_name: game.name.clone(),
-                target: game.launch_target.clone(),
-            }),
-            RunnerKind::Bash => None,
+            RunnerKind::Bash | RunnerKind::Catalog => None,
         }
     }
 
@@ -99,7 +78,6 @@ impl ArtworkRequest {
     pub fn cached_path(&self) -> Option<PathBuf> {
         match self.kind {
             ArtworkKind::Steam => fetch::find_cached_steam_portrait_artwork_path(&self.target),
-            ArtworkKind::Emulator => fetch::find_cached_emulator_artwork_path(&self.target),
             ArtworkKind::Mattmc => None,
         }
     }
@@ -109,22 +87,9 @@ impl ArtworkRequest {
     pub fn fetch(&self) -> Option<PathBuf> {
         match self.kind {
             ArtworkKind::Steam => fetch::fetch_steam_portrait_artwork(&self.target),
-            ArtworkKind::Emulator => fetch::fetch_emulator_artwork(&self.target),
             ArtworkKind::Mattmc => None,
         }
     }
-}
-
-fn emulator_system_catalog_path(system: &str) -> Option<&'static str> {
-    emulator_artwork_catalog_path(system)
-}
-
-fn parse_emulator_launch_target(launch_target: &str) -> Option<(String, PathBuf)> {
-    let parsed_target = EmulatorLaunchTarget::decode(launch_target).ok()?;
-    Some((
-        parsed_target.system_key().to_string(),
-        parsed_target.rom_path().to_path_buf(),
-    ))
 }
 
 fn normalize_matching_title(raw: &str) -> String {

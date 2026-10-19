@@ -199,3 +199,55 @@ fn check_script_status(status: ExitStatus) -> CoreResult<()> {
             .unwrap_or_else(|| "terminated by signal".to_string())
     )))
 }
+
+/// Execute a catalog-specified maintenance script without a shell command string.
+pub fn run_maintenance_script(
+    path: &Path,
+    cwd: &Path,
+    arguments: &[String],
+    input: Option<&str>,
+) -> CoreResult<()> {
+    if !path.is_file() || !cwd.is_dir() {
+        return Err(CoreError::new(format!(
+            "Maintenance script or directory missing: {}",
+            path.display()
+        )));
+    }
+    let mut command = Command::new("bash");
+    command.arg(path).args(arguments).current_dir(cwd);
+    if input.is_some() {
+        command.stdin(Stdio::piped());
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|err| CoreError::new(format!("Cannot launch maintenance script: {err}")))?;
+    if let Some(input) = input
+        && let Some(mut stdin) = child.stdin.take()
+    {
+        stdin
+            .write_all(input.as_bytes())
+            .map_err(|err| CoreError::new(format!("Cannot supply maintenance input: {err}")))?;
+    }
+    check_script_status(
+        child
+            .wait()
+            .map_err(|err| CoreError::new(format!("Maintenance script failed: {err}")))?,
+    )
+}
+
+/// Run a catalog executable with its declared arguments and working directory.
+pub(crate) fn launch_catalog_game(path: &Path, cwd: &Path, arguments: &[String]) -> CoreResult<()> {
+    let mut command = if path.extension().is_some_and(|ext| ext == "sh") {
+        let mut command = Command::new("bash");
+        command.arg(path);
+        command
+    } else {
+        Command::new(path)
+    };
+    let status = command
+        .args(arguments)
+        .current_dir(cwd)
+        .status()
+        .map_err(|e| CoreError::new(format!("Cannot launch game: {e}")))?;
+    check_script_status(status)
+}

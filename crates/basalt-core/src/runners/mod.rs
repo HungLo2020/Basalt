@@ -1,4 +1,3 @@
-mod emulator;
 mod steam;
 
 use crate::error::CoreResult;
@@ -7,8 +6,8 @@ use crate::platform;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunnerKind {
     Bash,
+    Catalog,
     Steam,
-    Emulator,
 }
 
 pub struct ResolvedTarget {
@@ -20,16 +19,16 @@ impl RunnerKind {
     pub fn as_str(self) -> &'static str {
         match self {
             RunnerKind::Bash => "bash",
+            RunnerKind::Catalog => "catalog",
             RunnerKind::Steam => "steam",
-            RunnerKind::Emulator => "emulator",
         }
     }
 
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "bash" => Some(RunnerKind::Bash),
+            "catalog" => Some(RunnerKind::Catalog),
             "steam" => Some(RunnerKind::Steam),
-            "emulator" => Some(RunnerKind::Emulator),
             _ => None,
         }
     }
@@ -53,7 +52,7 @@ pub fn resolve_add_target(raw_input: &str) -> CoreResult<ResolvedTarget> {
 pub fn launch(runner_kind: RunnerKind, launch_target: &str) -> CoreResult<()> {
     match runner_kind {
         RunnerKind::Bash => platform::launch_script(launch_target),
+        RunnerKind::Catalog => crate::catalog_launch::launch(launch_target),
         RunnerKind::Steam => steam::launch(launch_target),
-        RunnerKind::Emulator => emulator::launch(launch_target),
     }
 }
