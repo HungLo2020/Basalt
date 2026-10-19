@@ -75,7 +75,7 @@ fn catalog_launch_honors_arguments_cwd_and_generic_maintenance_in_another_librar
     let legacy = home.path.join("Games/MattMC");
     fs::create_dir_all(&legacy).unwrap();
     fs::write(legacy.join("run-mattmc.sh"), "exit 1").unwrap();
-    stdout(&home.run(&["discover", "--mattmc"]));
+    stdout(&home.run(&["discover", "--catalog"]));
     assert!(
         fs::read_to_string(home.data_dir().join("games.tsv"))
             .unwrap()
