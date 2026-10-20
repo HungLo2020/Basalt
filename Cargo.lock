@@ -72,7 +72,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "basalt-cli"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "basalt-core",
  "clap",
@@ -81,10 +81,11 @@ dependencies = [
 
 [[package]]
 name = "basalt-core"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "directories",
  "image",
+ "percent-encoding",
  "serde",
  "serde_json",
  "steamlocate",
@@ -96,7 +97,7 @@ dependencies = [
 
 [[package]]
 name = "basalt-gui-kirigami"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "basalt-core",
  "crossbeam-channel",

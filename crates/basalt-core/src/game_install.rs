@@ -9,6 +9,7 @@ use crate::{
     progress::Progress,
 };
 use serde_json::Value;
+use ureq::ResponseExt;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::{
     fs,
@@ -97,21 +98,7 @@ fn install_into(
         ));
     }
     progress.report_step(format!("Checking latest {} release", game.name));
-    let url = format!(
-        "https://api.github.com/repos/{}/releases/latest",
-        game.source.repository
-    );
-    let mut response = ureq::get(&url)
-        .header("Accept", "application/vnd.github+json")
-        .header("User-Agent", "Basalt-Installer")
-        .call()
-        .map_err(|e| CoreError::new(format!("Cannot fetch {} release: {e}", game.name)))?;
-    let payload = response
-        .body_mut()
-        .read_to_string()
-        .map_err(|e| CoreError::new(e.to_string()))?;
-    let release: Value =
-        serde_json::from_str(&payload).map_err(|e| CoreError::new(e.to_string()))?;
+    let release = fetch_latest_release(&game, progress)?;
     let (tag, archive_url) = select_asset(&game, &release)?;
     let stage = Stage::new(&library)?;
     let archive = stage.0.join("release.zip");
@@ -190,6 +177,122 @@ fn install_into(
         release_tag: tag,
         install_dir: target,
     })
+}
+
+fn fetch_latest_release(game: &GameDefinition, progress: &Progress) -> CoreResult<Value> {
+    fetch_latest_release_at(
+        game,
+        progress,
+        "https://api.github.com",
+        "https://github.com",
+    )
+    .map_err(|e| match e {
+        CoreError::Cancelled => e,
+        _ => CoreError::new(format!("Cannot fetch {} release: {e}", game.name)),
+    })
+}
+
+fn fetch_latest_release_at(
+    game: &GameDefinition,
+    progress: &Progress,
+    api: &str,
+    web: &str,
+) -> CoreResult<Value> {
+    progress.check_cancelled()?;
+    let mut response = ureq::get(format!(
+        "{api}/repos/{}/releases/latest",
+        game.source.repository
+    ))
+    .header("Accept", "application/vnd.github+json")
+    .header("User-Agent", "Basalt-Installer")
+    .config()
+    .http_status_as_error(false)
+    .build()
+    .call()
+    .map_err(|e| CoreError::new(e.to_string()))?;
+    let status = response.status();
+    let limited = response
+        .headers()
+        .get("x-ratelimit-remaining")
+        .is_some_and(|v| v == "0")
+        || response.headers().contains_key("retry-after");
+    let payload = response
+        .body_mut()
+        .read_to_string()
+        .map_err(|e| CoreError::new(e.to_string()))?;
+    if status.is_success() {
+        return serde_json::from_str(&payload).map_err(|e| CoreError::new(e.to_string()));
+    }
+    let message = serde_json::from_str::<Value>(&payload)
+        .ok()
+        .and_then(|v| v["message"].as_str().map(str::to_owned))
+        .unwrap_or_else(|| status.to_string());
+    if !matches!(status.as_u16(), 403 | 429)
+        || !(limited || message.to_ascii_lowercase().contains("rate limit"))
+    {
+        return Err(CoreError::new(format!("GitHub HTTP {status}: {message}")));
+    }
+
+    // Public release pages and asset downloads do not use the REST API quota. Resolve
+    // GitHub's latest redirect, then read its asset fragment using the same strict selector.
+    progress.report_step("GitHub API rate limit reached; checking public release page");
+    progress.check_cancelled()?;
+    let repo = format!("{web}/{}", game.source.repository);
+    let response = ureq::get(format!("{repo}/releases/latest"))
+        .header("User-Agent", "Basalt-Installer")
+        .call()
+        .map_err(|e| {
+            CoreError::new(format!(
+                "GitHub API rate limit reached; public release lookup failed: {e}"
+            ))
+        })?;
+    let final_url = response.get_uri().to_string();
+    let tag = final_url
+        .strip_prefix(&format!("{repo}/releases/tag/"))
+        .filter(|tag| !tag.is_empty() && !tag.contains(['?', '#']))
+        .ok_or_else(|| CoreError::new("GitHub latest release did not resolve to a release tag"))?;
+    progress.check_cancelled()?;
+    let html = ureq::get(format!("{repo}/releases/expanded_assets/{tag}"))
+        .header("User-Agent", "Basalt-Installer")
+        .call()
+        .and_then(|mut response| response.body_mut().read_to_string())
+        .map_err(|e| {
+            CoreError::new(format!(
+                "GitHub API rate limit reached; public release assets failed: {e}"
+            ))
+        })?;
+    release_from_html(&game.source.repository, tag, &html, web)
+}
+
+fn release_from_html(repository: &str, tag: &str, html: &str, web: &str) -> CoreResult<Value> {
+    let prefix = format!("/{repository}/releases/download/{tag}/");
+    let mut assets = Vec::new();
+    for attribute in html.split("href=").skip(1) {
+        let Some(quote @ ('\"' | '\'')) = attribute.chars().next() else {
+            continue;
+        };
+        let Some(href) = attribute[1..].split(quote).next() else {
+            continue;
+        };
+        let Some(name) = href.strip_prefix(&prefix) else {
+            continue;
+        };
+        if name.is_empty() || name.contains(['/', '?', '#']) {
+            continue;
+        }
+        let name = percent_encoding::percent_decode_str(name)
+            .decode_utf8()
+            .map_err(|e| CoreError::new(format!("Invalid GitHub asset name: {e}")))?;
+        let asset =
+            serde_json::json!({"name": name, "browser_download_url": format!("{web}{href}")});
+        if !assets.contains(&asset) {
+            assets.push(asset);
+        }
+    }
+    let tag = percent_encoding::percent_decode_str(tag)
+        .decode_utf8()
+        .map_err(|e| CoreError::new(format!("Invalid GitHub release tag: {e}")))?;
+    Ok(serde_json::json!({"tag_name": tag, "assets": assets}))
 }
 
 fn select_asset(game: &GameDefinition, release: &Value) -> CoreResult<(String, String)> {
@@ -580,6 +683,134 @@ fn copy_data(source: &Path, target: &Path, progress: &Progress) -> CoreResult<()
 mod tests {
     use super::*;
     use std::io::Write;
+    #[test]
+    fn public_release_assets_keep_platform_filter_and_reject_ambiguity() {
+        let game = crate::find_game("MicroMages").unwrap();
+        let html = r#"
+            <a href="/HungLo2020/MicroMages/releases/download/v1%2Fstable/MicroMages-v1-linux-x64.zip">Linux</a>
+            <a href="/HungLo2020/MicroMages/releases/download/v1%2Fstable/MicroMages-v1-linux-x64.zip">Duplicate link</a>
+            <a href='/HungLo2020/MicroMages/releases/download/v1%2Fstable/MicroMages-v1-windows-x64.zip'>Windows</a>
+            <a href="/HungLo2020/Jackal/releases/download/v1%2Fstable/MicroMages-other-linux-x64.zip">Wrong repo</a>
+            <a href="/HungLo2020/MicroMages/releases/download/old/MicroMages-old-linux-x64.zip">Old tag</a>
+            <a href="https://example.com/MicroMages-other-linux-x64.zip">External</a>
+        "#;
+        let release = release_from_html(
+            &game.source.repository,
+            "v1%2Fstable",
+            html,
+            "https://github.com",
+        )
+        .unwrap();
+        let (tag, url) = select_asset(&game, &release).unwrap();
+        assert_eq!(tag, "v1/stable");
+        assert_eq!(
+            url,
+            "https://github.com/HungLo2020/MicroMages/releases/download/v1%2Fstable/MicroMages-v1-linux-x64.zip"
+        );
+        let ambiguous = format!(
+            "{html}<a href=\"/HungLo2020/MicroMages/releases/download/v1%2Fstable/MicroMages-other-linux-x64.zip\">"
+        );
+        let release = release_from_html(
+            &game.source.repository,
+            "v1%2Fstable",
+            &ambiguous,
+            "https://github.com",
+        )
+        .unwrap();
+        assert!(select_asset(&game, &release).is_err());
+        let empty = release_from_html(
+            &game.source.repository,
+            "v1",
+            "Unexpected page",
+            "https://github.com",
+        )
+        .unwrap();
+        assert!(select_asset(&game, &empty).is_err());
+    }
+
+    #[test]
+    fn rate_limited_api_falls_back_but_other_errors_do_not() {
+        use std::io::{BufRead, BufReader};
+        use std::net::TcpListener;
+        use std::thread;
+        for status in [403, 429, 404] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let base = format!("http://{}", listener.local_addr().unwrap());
+            let server = thread::spawn(move || {
+                let requests = if status == 404 { 1 } else { 4 };
+                for index in 0..requests {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    stream
+                        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                        .unwrap();
+                    let mut reader = BufReader::new(stream.try_clone().unwrap());
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    let path = line.split_whitespace().nth(1).unwrap().to_owned();
+                    loop {
+                        line.clear();
+                        reader.read_line(&mut line).unwrap();
+                        if line == "\r\n" {
+                            break;
+                        }
+                    }
+                    let (code, headers, body) = match index {
+                        0 => {
+                            assert_eq!(path, "/repos/HungLo2020/MicroMages/releases/latest");
+                            (
+                                status,
+                                "X-RateLimit-Remaining: 0\r\n",
+                                r#"{"message":"Test API error"}"#,
+                            )
+                        }
+                        1 => {
+                            assert_eq!(path, "/HungLo2020/MicroMages/releases/latest");
+                            (
+                                302,
+                                "Location: /HungLo2020/MicroMages/releases/tag/v2\r\n",
+                                "",
+                            )
+                        }
+                        2 => {
+                            assert_eq!(path, "/HungLo2020/MicroMages/releases/tag/v2");
+                            (200, "", "Release page")
+                        }
+                        _ => {
+                            assert_eq!(path, "/HungLo2020/MicroMages/releases/expanded_assets/v2");
+                            (
+                                200,
+                                "",
+                                r#"<a href="/HungLo2020/MicroMages/releases/download/v2/MicroMages-v2-linux-x64.zip">Linux</a>"#,
+                            )
+                        }
+                    };
+                    write!(stream, "HTTP/1.1 {code} Test\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+                }
+            });
+            let game = crate::find_game("MicroMages").unwrap();
+            let result = fetch_latest_release_at(&game, &Progress::none(), &base, &base);
+            if status == 404 {
+                assert!(result.unwrap_err().to_string().contains("Test API error"));
+            } else {
+                let release = result.unwrap();
+                assert_eq!(release["tag_name"], "v2");
+                assert_eq!(release["assets"][0]["name"], "MicroMages-v2-linux-x64.zip");
+            }
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    #[ignore = "queries live GitHub release metadata without installing anything"]
+    fn live_public_release_lookup() {
+        for id in ["MicroMages", "Jackal"] {
+            let game = crate::find_game(id).unwrap();
+            let release = fetch_latest_release(&game, &Progress::none()).unwrap();
+            let (tag, url) = select_asset(&game, &release).unwrap();
+            println!("{id}: {tag} {url}");
+        }
+    }
+
     fn write(path: &Path, value: &str) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, value).unwrap();
