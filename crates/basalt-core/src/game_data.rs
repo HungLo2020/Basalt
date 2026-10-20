@@ -24,7 +24,6 @@ const OBJECTS: &str = "objects";
 const SNAPSHOTS: &str = "snapshots";
 const LEGACY_SNAPSHOT_FILE: &str = "snapshot.json";
 const LEGACY_FILES: &str = "files";
-pub(crate) const DEFAULT_BACKUP_KEEP: u32 = 10;
 
 /// A catalog game's installation on this machine.
 pub(crate) struct Installation {

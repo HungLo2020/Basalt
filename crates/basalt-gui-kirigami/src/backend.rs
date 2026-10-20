@@ -37,6 +37,7 @@ pub mod qobject {
         // Settings.
         #[qproperty(bool, fullscreen)]
         #[qproperty(bool, maximized)]
+        #[qproperty(i32, backup_keep)]
         // The configured sync folder, or "" when the default is used.
         #[qproperty(QString, sync_remote)]
         #[qproperty(QString, default_sync_remote)]
@@ -93,6 +94,8 @@ pub mod qobject {
         /// Sets the sync folder; an empty path clears it.
         #[qinvokable]
         fn save_sync_remote(self: Pin<&mut Backend>, path: &QString);
+        #[qinvokable]
+        fn save_backup_keep(self: Pin<&mut Backend>, keep: i32);
 
         /// Image URL for an artwork key, or "" while unresolved.
         #[qinvokable]
@@ -158,6 +161,7 @@ pub struct BackendRust {
     job_cancelling: bool,
     fullscreen: bool,
     maximized: bool,
+    backup_keep: i32,
     sync_remote: QString,
     default_sync_remote: QString,
     sync_conflict_game: QString,
@@ -194,6 +198,7 @@ impl Default for BackendRust {
             job_cancelling: false,
             fullscreen: false,
             maximized: false,
+            backup_keep: basalt_core::DEFAULT_BACKUP_KEEP as i32,
             sync_remote: QString::default(),
             default_sync_remote: QString::from(basalt_core::DEFAULT_SYNC_REMOTE),
             sync_conflict_game: QString::default(),
@@ -250,6 +255,10 @@ impl qobject::Backend {
                 .as_mut()
                 .set_sync_remote(qs(remote.path.to_string_lossy())),
             Err(error) => warnings.push(format!("Sync setting load warning: {}", error)),
+        }
+        match basalt_core::load_backup_keep() {
+            Ok(keep) => self.as_mut().set_backup_keep(keep as i32),
+            Err(error) => warnings.push(format!("Backup setting load warning: {error}")),
         }
         self.as_mut().set_settings_status(qs(warnings.join(" | ")));
     }
@@ -717,6 +726,20 @@ impl qobject::Backend {
     }
 
     // ----- settings --------------------------------------------------------------------------
+
+    fn save_backup_keep(mut self: Pin<&mut Self>, keep: i32) {
+        let result = u32::try_from(keep)
+            .map_err(|_| CoreError::InvalidInput("Backups per game must be at least 1".into()))
+            .and_then(basalt_core::save_backup_keep);
+        let message = match result {
+            Ok(()) => {
+                self.as_mut().set_backup_keep(keep);
+                format!("Backup limit saved: {keep} per game. Applied when the next backup is created.")
+            }
+            Err(error) => format!("Save failed: {error}"),
+        };
+        self.as_mut().set_settings_status(qs(message));
+    }
 
     fn set_display_mode(mut self: Pin<&mut Self>, fullscreen: bool, maximized: bool) {
         let maximized = maximized && !fullscreen;

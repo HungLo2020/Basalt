@@ -191,7 +191,7 @@ launch a game while one of its actions is running.
 | Action | Default behavior |
 |---|---|
 | `update` | Download the latest matching release, unpack it to a staging directory, validate it, back up user data, replace the `app` paths and leave everything else untouched. On failure the previous installation is restored. Reinstalling from the Install page or `basalt install` does the same. |
-| `backup` | Copy the backed-up sets (`save/`, `config/`) into Basalt's backup store as a timestamped snapshot. Keeps the newest 10 snapshots per game. |
+| `backup` | Copy the backed-up sets (`save/`, `config/`) into Basalt's backup store as a timestamped snapshot. Keeps up to the user's maximum per game (default: 3). |
 | `restore` | Replace the snapshot's sets with its contents, after first taking a backup of the current state. The GUI asks which snapshot; the CLI takes `--snapshot <id>` (list them with `basalt backups <game>`). |
 | `sync_up` | Make the remote copy of the synced sets match this machine. The remote copy being replaced is kept as a backup. |
 | `sync_down` | Make this machine's synced sets match the remote copy. The local copy is backed up first. |
@@ -354,7 +354,7 @@ Any action object MAY also set `"label"` to change the button text shown in the 
 
 ```json
 "actions": {
-  "backup":      { "options": { "keep": 20 } },
+  "backup":      { "options": { "keep": 2 } },
   "sync":        false,
   "update":      { "script": { "path": "app/scripts/update.sh" } },
   "clear_cache": { "label": "Clear shader cache" }
@@ -368,7 +368,7 @@ Built-in action options:
 
 | Action | Option | Default | Meaning |
 |---|---|---|---|
-| `backup` | `keep` | `10` | Number of snapshots kept per game. |
+| `backup` | `keep` | User's limit (initially `3`) | Number of snapshots kept per game, capped by the user's retention setting. |
 | `backup` | `include` | `["save", "config"]` | Categories included in a snapshot (`save`, `shared_config`, `config`). |
 | `sync`, `sync_up`, `sync_down` | `include` | `["save", "shared_config"]` | Categories that are synced (`save`, `shared_config`, `config`). |
 | `update` | `backup_first` | `true` | Take a backup before replacing `app/`. |

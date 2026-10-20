@@ -83,6 +83,36 @@ Kirigami.ScrollablePage {
 
         Kirigami.Separator {
             Kirigami.FormData.isSection: true
+            Kirigami.FormData.label: "Game Backups"
+        }
+
+        Controls.SpinBox {
+            id: backupKeepBox
+
+            Kirigami.FormData.label: "Maximum backups per game:"
+            from: 1
+            to: 2147483647
+            editable: true
+            value: Backend.backupKeep
+        }
+
+        Controls.Button {
+            text: "Save backup limit"
+            icon.name: "document-save"
+            enabled: backupKeepBox.value !== Backend.backupKeep
+            onClicked: Backend.saveBackupKeep(backupKeepBox.value)
+        }
+
+        Controls.Label {
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 24
+            text: "Keep the newest backups for each game (default: 3). Manual backups and automatic "
+                + "safety backups share this limit. Older backups are removed when the next backup is created."
+            wrapMode: Text.Wrap
+            opacity: 0.7
+        }
+
+        Kirigami.Separator {
+            Kirigami.FormData.isSection: true
             Kirigami.FormData.label: "About"
         }
 

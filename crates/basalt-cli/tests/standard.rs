@@ -162,6 +162,31 @@ fn backup_keep_option_prunes_old_snapshots() {
 }
 
 #[test]
+fn user_backup_limit_defaults_to_three_and_caps_catalog_retention() {
+    let home = TestHome::new("user-backup-limit");
+    let root = install_sample(&home, "Games", serde_json::json!({
+        "actions": {"backup": {"options": {"keep": 20}}}
+    }));
+    let count = || stdout(&home.run(&["backups", "Sample"])).lines().count();
+    let backup = || {
+        write(&root.join("data/save/slot"), "save contents");
+        stdout(&home.run(&["maintain", "Sample", "backup"]));
+    };
+    for _ in 0..4 { backup(); }
+    assert_eq!(count(), 3);
+    write(&home.config_dir().join("settings.json"), r#"{"backup": {"keep": 5}}"#);
+    for _ in 0..3 { backup(); }
+    assert_eq!(count(), 5);
+    write(&home.config_dir().join("settings.json"), r#"{"backup": {"keep": 2}}"#);
+    assert_eq!(count(), 5, "saving a setting does not immediately delete backups");
+    backup();
+    assert_eq!(count(), 2);
+    write(&home.config_dir().join("settings.json"), r#"{"backup": {"keep": 0}}"#);
+    assert!(failure(&home.run(&["maintain", "Sample", "backup"])).contains("Backups per game"));
+    assert_eq!(count(), 2, "invalid retention must not prune existing backups");
+}
+
+#[test]
 fn sync_moves_save_and_shared_config_between_machines_and_detects_conflicts() {
     let a = TestHome::new("standard-sync-a");
     let b = TestHome::new("standard-sync-b");

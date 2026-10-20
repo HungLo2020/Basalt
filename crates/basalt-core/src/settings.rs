@@ -17,8 +17,46 @@ struct SettingsFile {
     launcher: Option<LauncherSection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sync: Option<SyncSection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    backup: Option<BackupSection>,
     #[serde(flatten)]
     extra: Map<String, Value>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct BackupSection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    keep: Option<u32>,
+    #[serde(flatten)]
+    extra: Map<String, Value>,
+}
+
+pub const DEFAULT_BACKUP_KEEP: u32 = 3;
+
+/// Maximum snapshots per game, shared by manual and safety backups.
+pub fn load_backup_keep() -> CoreResult<u32> {
+    backup_keep_from(read_settings_file()?)
+}
+
+fn validate_backup_keep(keep: u32) -> CoreResult<u32> {
+    if keep == 0 || keep > i32::MAX as u32 {
+        return Err(CoreError::InvalidInput(
+            "Backups per game must be between 1 and 2147483647".into(),
+        ));
+    }
+    Ok(keep)
+}
+
+fn backup_keep_from(settings: SettingsFile) -> CoreResult<u32> {
+    validate_backup_keep(settings.backup.and_then(|backup| backup.keep).unwrap_or(DEFAULT_BACKUP_KEEP))
+}
+
+/// Applies when the next backup is created; saving does not delete existing snapshots.
+pub fn save_backup_keep(keep: u32) -> CoreResult<()> {
+    validate_backup_keep(keep)?;
+    update_settings_file(|settings| {
+        settings.backup.get_or_insert_with(Default::default).keep = Some(keep);
+    })
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -148,6 +186,21 @@ fn update_settings_file(apply: impl FnOnce(&mut SettingsFile)) -> CoreResult<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backup_retention_defaults_validates_and_preserves_unknown_fields() {
+        for json in ["{}", r#"{"backup": {}}"#] {
+            assert_eq!(backup_keep_from(parse_settings(json).unwrap()).unwrap(), 3);
+        }
+        let settings = parse_settings(r#"{"backup": {"keep": 5, "future": true}, "launcher": {"fullscreen": true}}"#).unwrap();
+        let serialized = serde_json::to_value(&settings).unwrap();
+        assert_eq!(serialized["backup"]["future"], true);
+        assert_eq!(serialized["launcher"]["fullscreen"], true);
+        assert_eq!(backup_keep_from(settings).unwrap(), 5);
+        for keep in [0, u32::MAX] {
+            assert!(validate_backup_keep(keep).is_err());
+        }
+    }
 
     #[test]
     fn settings_round_trip_preserves_unknown_keys() {

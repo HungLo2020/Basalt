@@ -116,7 +116,7 @@ fn install_into(
     progress.check_cancelled()?;
     if backup_first && game.follows_standard() && target.join(MANIFEST).is_file() {
         progress.report_step(format!("Backing up {} before updating", game.name));
-        let (categories, keep) = crate::maintenance::backup_settings(&game);
+        let (categories, keep) = crate::maintenance::backup_settings(&game)?;
         let installation = Installation {
             definition: game.clone(),
             root: target.clone(),

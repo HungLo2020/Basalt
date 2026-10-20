@@ -52,6 +52,7 @@ pub use playlist_service::FAVORITES_PLAYLIST_NAME;
 pub use progress::{CancelToken, Progress, ProgressUnit, ProgressUpdate};
 pub use runners::RunnerKind;
 pub use settings::{
+    DEFAULT_BACKUP_KEEP, load_backup_keep, save_backup_keep,
     DEFAULT_SYNC_REMOTE, LauncherDisplaySettings, SyncRemote, load_launcher_display_settings,
     load_sync_remote, save_launcher_display_settings, save_sync_remote,
 };

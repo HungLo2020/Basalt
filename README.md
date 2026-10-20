@@ -77,6 +77,11 @@ existing bundled JDK are retained unchanged. In both cases application files are
 merged, so obsolete libraries do not linger. Reinstallation needs enough free space for staging plus
 a copy of the preserved data. Close the game and any dedicated server before reinstalling.
 
+Settings → Game Backups controls the maximum snapshots per game (default: **3**). Manual and
+automatic safety backups share this limit; older snapshots are pruned when the next backup is
+created. The value is stored as `backup.keep` in `~/.config/basalt/settings.json` and also applies
+to CLI actions. A catalog entry can request fewer snapshots, but cannot exceed this limit.
+
 An existing installation is retained until activation and registry persistence succeed, with
 rollback on reported failures. A crash or power loss during activation is not automatically
 recovered: any retained `.basalt-install-*/previous` directory is left for recovery. Basalt

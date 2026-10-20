@@ -211,20 +211,21 @@ fn categories(include: &Option<Vec<String>>, default: &[DataCategory]) -> Vec<Da
 }
 
 /// Backup settings used by manual backups and the automatic ones taken before updates,
-/// restores and sync downs; they come from the `backup` action's options even when that action
-/// is disabled or scripted.
-pub(crate) fn backup_settings(definition: &GameDefinition) -> (Vec<DataCategory>, u32) {
+/// restores and sync downs. Catalog options may lower the user's retention limit.
+/// These options apply even when the backup action is disabled or scripted.
+pub(crate) fn backup_settings(definition: &GameDefinition) -> CoreResult<(Vec<DataCategory>, u32)> {
     let options = match definition.actions.get(BuiltinAction::Backup.name()) {
         Some(ActionSetting::Configured(config)) => config.options.clone().unwrap_or_default(),
         _ => ActionOptions::default(),
     };
-    (
+    let limit = crate::settings::load_backup_keep()?;
+    Ok((
         categories(
             &options.include,
             &[DataCategory::Save, DataCategory::Config],
         ),
-        options.keep.unwrap_or(game_data::DEFAULT_BACKUP_KEEP),
-    )
+        options.keep.unwrap_or(limit).min(limit),
+    ))
 }
 
 /// Extra input for an action.
@@ -301,7 +302,7 @@ pub fn run_game_action(
     let builtin = selected
         .builtin
         .ok_or_else(|| CoreError::new("Action has neither a script nor a built-in"))?;
-    let (backup_categories, keep) = backup_settings(&definition);
+    let (backup_categories, keep) = backup_settings(&definition)?;
     let sync_settings = SyncSettings {
         categories: &categories(
             &selected.options.include,
@@ -398,15 +399,15 @@ mod tests {
         assert_eq!(find("clear_cache").label, "Clear shader cache");
         assert_eq!(find("update").script.as_ref().unwrap().path, "app/update.sh");
         assert_eq!(find("repair").label, "Repair install");
-        assert_eq!(backup_settings(&game), (vec![DataCategory::Save], 3));
+        assert_eq!(backup_settings(&game).unwrap(), (vec![DataCategory::Save], 3));
         assert_eq!(names(&actions).last(), Some(&"repair"));
     }
 
     #[test]
     fn backup_defaults_cover_save_and_config() {
         assert_eq!(
-            backup_settings(&standard_game(json!({}))),
-            (vec![DataCategory::Save, DataCategory::Config], 10)
+            backup_settings(&standard_game(json!({}))).unwrap(),
+            (vec![DataCategory::Save, DataCategory::Config], crate::DEFAULT_BACKUP_KEEP)
         );
     }
 }
