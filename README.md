@@ -174,3 +174,39 @@ Useful Rust tools:
 
 - `rustup` — installs and manages Rust toolchains.
 - `rustc` — the Rust compiler.
+
+## GitHub private releases (optional)
+
+Basalt's existing `github_release` catalog entries work unchanged for both
+public and private repositories. Public releases do **not** require a GitHub login.
+
+For private releases, Basalt resolves credentials in this order:
+1. `GH_TOKEN`, then `GITHUB_TOKEN` (use a read-only credential with access to the repository).
+2. Native GitHub login, stored in the Linux Secret Service (KWallet/GNOME Keyring).
+3. An existing `gh auth login` credential, if GitHub CLI happens to be installed.
+4. Anonymous public release access.
+
+GitHub CLI is **not** a required dependency. For native login, the Basalt
+maintainer must register a GitHub **OAuth App** at
+[GitHub Developer Settings](https://github.com/settings/developers), enable
+**Device Flow**, and provide its public Client ID as `BASALT_GITHUB_CLIENT_ID`
+in the application environment (or package defaults). The OAuth App must
+have permission to access private repositories via the `repo` scope. This
+Client ID is public and is not a secret.
+
+Install the `libsecret-tools` package (providing `secret-tool`) and configure
+a Secret Service provider such as KWallet. Then select **Sign in with GitHub**
+in Basalt's Settings, visit the GitHub URL displayed, and enter its one-time
+verification code. Alternatively run `basalt github login`. Use
+`basalt github status` or `basalt github logout` to inspect or remove
+saved native credentials.
+
+OAuth credentials are never stored in game manifests or settings JSON.
+Basalt automatically refreshes expiring OAuth access tokens when needed,
+persisting the replacement access and refresh tokens in the system keyring.
+If a refresh token expires after an extended period without use, sign in again.
+Refreshing only requires the public Client ID for Device Flow credentials.
+Already installed games remain playable if authentication is unavailable.
+
+For CI/headless installations, use a GitHub read-only access token in an
+environment variable; a desktop keyring is unnecessary.
