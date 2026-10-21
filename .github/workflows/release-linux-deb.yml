@@ -42,9 +42,11 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - name: Build Linux amd64 DEB
-        run: bash DevUtils/BuildScripts/build-linux-amd64.sh
+        run: bash DevUtils/Build.sh
 
       - name: Read build metadata
         id: metadata

@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "standard_version": 1,
+  "id": "MissileCommand",
+  "name": "Missile Command",
+  "source": {
+    "kind": "github_release",
+    "repository": "HungLo2020/MissileCommand",
+    "asset_prefix": "MissileCommand-",
+    "asset_suffix": ".zip",
+    "asset_contains": ["linux-x64"]
+  },
+  "launch": {
+    "executable": "app/bin/missile-command"
+  },
+  "artwork": {
+    "cover_url": "https://raw.githubusercontent.com/HungLo2020/MissileCommand/main/assets/cover.png"
+  }
+}

@@ -360,16 +360,15 @@ pub fn catalog_games() -> CoreResult<Vec<GameDefinition>> {
 }
 
 fn bundled_games() -> CoreResult<Vec<GameDefinition>> {
-    let texts = [
-        include_str!("../../../resources/games/mattmc.json"),
-        include_str!("../../../resources/games/micromages.json"),
-        include_str!("../../../resources/games/jackal.json"),
-    ];
-    texts
+    // Generated from resources/games/*.json; no game list needs maintaining in Rust.
+    const MANIFESTS: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/bundled_catalog.rs"));
+    MANIFESTS
         .iter()
-        .map(|value| {
+        .map(|(filename, value)| {
             let entry: GameDefinition = serde_json::from_str(value)
-                .map_err(|err| CoreError::new(format!("Invalid bundled game manifest: {err}")))?;
+                .map_err(|err| {
+                    CoreError::new(format!("Invalid bundled game manifest {filename}: {err}"))
+                })?;
             entry.validate()?;
             Ok(entry)
         })
@@ -462,10 +461,37 @@ mod tests {
     #[test]
     fn bundled_catalog_is_valid_and_unique() {
         let list = bundled_games().unwrap();
+        assert!(!list.is_empty(), "the bundled catalog must not be empty");
         let mut ids = std::collections::HashSet::new();
         for item in list {
             assert!(ids.insert(item.id));
         }
+    }
+
+    #[test]
+    fn bundled_catalog_matches_every_manifest_on_disk() {
+        let directory =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../resources/games");
+        let mut paths: Vec<_> = std::fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "json"))
+            .collect();
+        paths.sort();
+        let expected: Vec<serde_json::Value> = paths
+            .iter()
+            .map(|path| {
+                let game: GameDefinition =
+                    serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+                serde_json::to_value(game).unwrap()
+            })
+            .collect();
+        let actual: Vec<serde_json::Value> = bundled_games()
+            .unwrap()
+            .iter()
+            .map(|game| serde_json::to_value(game).unwrap())
+            .collect();
+        assert_eq!(actual, expected);
     }
     #[test]
     fn rejects_escaping_maintenance_path() {

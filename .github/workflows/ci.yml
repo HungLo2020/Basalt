@@ -28,9 +28,14 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - name: Check
         run: cargo check --locked --workspace
+
+      - name: Check platform boundaries
+        run: cargo clippy --locked --workspace --all-targets -- -D clippy::disallowed_methods -D clippy::disallowed_types
 
       - name: Test
         run: cargo test --locked --workspace

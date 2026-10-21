@@ -20,9 +20,21 @@ fn library_configuration_and_noninteractive_install_selection() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("--library"));
     let catalog = stdout(&home.run(&["catalog"]));
-    for name in ["MattMC", "MicroMages", "Jackal"] {
-        assert!(catalog.contains(name));
-    }
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../resources/games");
+    let mut paths: Vec<_> = fs::read_dir(directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "json"))
+        .collect();
+    paths.sort();
+    let expected: String = paths.iter()
+        .map(|path| {
+            let game: basalt_core::GameDefinition =
+                serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+            format!("{}\t{}\t{}\n", game.id, game.name, game.source.repository)
+        })
+        .collect();
+    assert_eq!(catalog, expected);
     assert!(!home.run(&["install-mattmc"]).status.success());
 }
 

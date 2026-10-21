@@ -246,11 +246,13 @@ mod tests {
         let json: Value = serde_json::from_str(&install_tiles_json()).unwrap();
         let tiles = json.as_array().unwrap();
 
-        assert_eq!(tiles[0]["key"], "MattMC");
+        let catalog = core::catalog_games().unwrap();
+        assert_eq!(tiles.len(), catalog.len());
         // Install tiles share artwork keys with installed games' library tiles.
-        for tile in tiles {
-            assert_eq!(tile["artworkKey"], format!("catalog:{}", tile["key"].as_str().unwrap()));
+        for (tile, game) in tiles.iter().zip(&catalog) {
+            assert_eq!(tile["key"], game.id);
+            assert_eq!(tile["title"], game.name);
+            assert_eq!(tile["artworkKey"], format!("catalog:{}", game.id));
         }
-        assert_eq!(tiles.len(), 3);
     }
 }

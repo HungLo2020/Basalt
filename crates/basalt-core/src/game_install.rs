@@ -180,11 +180,14 @@ fn install_into(
 }
 
 fn fetch_latest_release(game: &GameDefinition, progress: &Progress) -> CoreResult<Value> {
+    progress.check_cancelled()?;
+    let token = crate::github::token();
     fetch_latest_release_at(
         game,
         progress,
         "https://api.github.com",
         "https://github.com",
+        token.as_deref(),
     )
     .map_err(|e| match e {
         CoreError::Cancelled => e,
@@ -197,9 +200,9 @@ fn fetch_latest_release_at(
     progress: &Progress,
     api: &str,
     web: &str,
+    token: Option<&str>,
 ) -> CoreResult<Value> {
     progress.check_cancelled()?;
-    let token = crate::github::token();
     let mut request = ureq::get(format!(
         "{api}/repos/{}/releases/latest",
         game.source.repository
@@ -207,7 +210,7 @@ fn fetch_latest_release_at(
     .header("Accept", "application/vnd.github+json")
     .header("User-Agent", "Basalt-Installer")
     .header("X-GitHub-Api-Version", "2022-11-28");
-    if let Some(token) = &token {
+    if let Some(token) = token {
         request = request.header("Authorization", format!("Bearer {token}"));
     }
     let mut response = request
@@ -754,11 +757,18 @@ mod tests {
         use std::io::{BufRead, BufReader};
         use std::net::TcpListener;
         use std::thread;
-        for status in [403, 429, 404] {
+        for (status, token) in [
+            (403, None),
+            (429, None),
+            (404, None),
+            (403, Some("test-token")),
+            (429, Some("test-token")),
+            (404, Some("test-token")),
+        ] {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let base = format!("http://{}", listener.local_addr().unwrap());
             let server = thread::spawn(move || {
-                let requests = if status == 404 { 1 } else { 4 };
+                let requests = if status == 404 || token.is_some() { 1 } else { 4 };
                 for index in 0..requests {
                     let (mut stream, _) = listener.accept().unwrap();
                     stream
@@ -768,13 +778,20 @@ mod tests {
                     let mut line = String::new();
                     reader.read_line(&mut line).unwrap();
                     let path = line.split_whitespace().nth(1).unwrap().to_owned();
+                    let mut authorization = None;
                     loop {
                         line.clear();
-                        reader.read_line(&mut line).unwrap();
+                        assert_ne!(reader.read_line(&mut line).unwrap(), 0, "incomplete request headers");
                         if line == "\r\n" {
                             break;
                         }
+                        if let Some((name, value)) = line.split_once(':')
+                            && name.eq_ignore_ascii_case("authorization")
+                        {
+                            authorization = Some(value.trim().to_owned());
+                        }
                     }
+                    assert_eq!(authorization, token.map(|value| format!("Bearer {value}")));
                     let (code, headers, body) = match index {
                         0 => {
                             assert_eq!(path, "/repos/HungLo2020/MicroMages/releases/latest");
@@ -805,13 +822,18 @@ mod tests {
                             )
                         }
                     };
-                    write!(stream, "HTTP/1.1 {code} Test\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+                    // Send headers and body together: the release-page client only needs the
+                    // final URL and can close the connection as soon as headers arrive.
+                    let response = format!("HTTP/1.1 {code} Test\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                    stream.write_all(response.as_bytes()).unwrap();
                 }
             });
             let game = crate::find_game("MicroMages").unwrap();
-            let result = fetch_latest_release_at(&game, &Progress::none(), &base, &base);
+            let result = fetch_latest_release_at(&game, &Progress::none(), &base, &base, token);
             if status == 404 {
                 assert!(result.unwrap_err().to_string().contains("Test API error"));
+            } else if token.is_some() {
+                assert!(result.unwrap_err().to_string().contains("cannot use the public HTML fallback"));
             } else {
                 let release = result.unwrap();
                 assert_eq!(release["tag_name"], "v2");

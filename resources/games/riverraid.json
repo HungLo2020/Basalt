@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "standard_version": 1,
+  "id": "RiverRaid",
+  "name": "River Raid",
+  "source": {
+    "kind": "github_release",
+    "repository": "HungLo2020/RiverRaid",
+    "asset_prefix": "RiverRaid-",
+    "asset_suffix": ".zip",
+    "asset_contains": ["linux-x64"]
+  },
+  "launch": {
+    "executable": "app/bin/river-raid"
+  },
+  "artwork": {
+    "cover_url": "https://raw.githubusercontent.com/HungLo2020/RiverRaid/main/assets/cover.png"
+  }
+}

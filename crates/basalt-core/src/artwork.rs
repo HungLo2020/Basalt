@@ -311,12 +311,19 @@ mod catalog_tests {
     #[test]
     fn every_catalog_game_gets_one_request_installed_or_not() {
         let root = temp_root("art-all");
-        let games = [entry("MicroMages", RunnerKind::Catalog, &root.join(".basalt-game.json"))];
+        let catalog = crate::catalog_games().unwrap();
+        let games = [entry(&catalog[0].name, RunnerKind::Catalog, &root.join(".basalt-game.json"))];
         let requests = ArtworkRequest::for_catalog_games(&games);
         let keys: Vec<&str> = requests.iter().map(|r| r.key.as_str()).collect();
-        assert_eq!(keys, ["catalog:MattMC", "catalog:MicroMages", "catalog:Jackal"]);
-        assert!(requests[0].install_root.is_none());
-        assert_eq!(requests[1].install_root.as_deref(), Some(root.as_path()));
+        let expected: Vec<String> = catalog
+            .iter()
+            .map(|game| format!("catalog:{}", game.id))
+            .collect();
+        assert_eq!(keys, expected);
+        for request in &requests {
+            let expected_root = (request.display_name == games[0].name).then_some(root.as_path());
+            assert_eq!(request.install_root.as_deref(), expected_root);
+        }
         let _ = std::fs::remove_dir_all(root);
     }
 

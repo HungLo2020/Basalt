@@ -33,11 +33,15 @@ launch it, and what Basalt can do with it. Games that follow [STANDARDS.md](STAN
 replace on update, what to back up and what to sync, and provides update, backup, restore, sync,
 sync up, sync down and clear cache for them. Their entries can relabel, disable or reconfigure any
 of these, replace one with a script that ships in the release, or add their own script actions.
-The bundled catalog contains MattMC, MicroMages and Jackal, all following the standard. MattMC's
-release zip wraps `app/` in a `MattMC/` folder, named by `source.archive_root`; MicroMages and
-Jackal ship `app/` at the zip root, and Jackal links its cover for the Install page with
-`artwork.cover_url`. Entries in the original `schema_version: 1` format keep working unchanged (see
-STANDARDS.md, section 11).
+Every `resources/games/*.json` file is discovered and embedded automatically when Basalt is
+built. Adding or removing an entry requires no Rust list or game-count changes; `basalt catalog`
+shows the available games, and the Install page and artwork requests use that same catalog.
+Local entries in `~/.config/basalt/games/*.json` are discovered at runtime and can add games or
+override bundled entries without rebuilding Basalt.
+
+A release can wrap `app/` in a folder named by `source.archive_root`, or ship `app/` at the zip
+root. Entries can link covers for the Install page with `artwork.cover_url`. Entries in the
+original `schema_version: 1` format keep working unchanged (see STANDARDS.md, section 11).
 
 ```sh
 basalt catalog
