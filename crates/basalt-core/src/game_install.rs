@@ -242,6 +242,11 @@ fn fetch_latest_release_at(
         return Err(CoreError::new(format!("GitHub HTTP {status}: {message}")));
     }
 
+    // Private repositories cannot use the public HTML rate-limit fallback.
+    if token.is_some() {
+        return Err(CoreError::new(format!("GitHub API rate limit reached ({status}); private release lookup cannot use the public HTML fallback")));
+    }
+
     // Public release pages and asset downloads do not use the REST API quota. Resolve
     // GitHub's latest redirect, then read its asset fragment using the same strict selector.
     progress.report_step("GitHub API rate limit reached; checking public release page");
