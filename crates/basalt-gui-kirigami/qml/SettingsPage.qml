@@ -113,6 +113,46 @@ Kirigami.ScrollablePage {
 
         Kirigami.Separator {
             Kirigami.FormData.isSection: true
+            Kirigami.FormData.label: "GitHub"
+        }
+
+        Controls.Label {
+            Kirigami.FormData.label: "Authentication:"
+            text: Backend.githubAuthStatus
+            wrapMode: Text.Wrap
+        }
+
+        RowLayout {
+            Controls.Button {
+                text: "Sign in with GitHub"
+                enabled: !Backend.jobActive
+                onClicked: Backend.githubLogin()
+            }
+            Controls.Button {
+                text: "Sign out"
+                enabled: !Backend.jobActive
+                onClicked: Backend.githubLogout()
+            }
+        }
+
+        Controls.Label {
+            visible: Backend.githubDeviceCode !== ""
+            text: "Visit " + Backend.githubVerificationUrl + " and enter code " + Backend.githubDeviceCode
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            font.bold: true
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 24
+        }
+
+        Controls.Label {
+            text: "Login is optional for public games. Private releases use saved credentials automatically. The Linux Secret Service (KWallet-compatible) is required to save the login."
+            wrapMode: Text.Wrap
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 24
+            opacity: 0.7
+        }
+
+        Kirigami.Separator {
+            Kirigami.FormData.isSection: true
             Kirigami.FormData.label: "About"
         }
 
