@@ -1,10 +1,17 @@
 use basalt_core::{self as core, CoreResult, DiscoverResult, DiscoverRunner};
 
 use super::progress_printer::ProgressPrinter;
-use super::{Command, LibraryCommand};
+use super::{Command, LibraryCommand, GithubCommand};
 
 pub(super) fn run(command: Command) -> CoreResult<()> {
     match command {
+        Command::Github { action } => match action {
+            GithubCommand::Login => core::github_login_device(|url, code| {
+                println!("Open {url} and enter GitHub code: {code}");
+            })?,
+            GithubCommand::Status => println!("{}", core::github_auth_status()),
+            GithubCommand::Logout => core::github_logout()?,
+        },
         Command::Catalog => {
             for game in core::catalog_games()? {
                 println!("{}\t{}\t{}", game.id, game.name, game.source.repository);
