@@ -14,6 +14,7 @@ mod error;
 mod file_index;
 mod game_data;
 mod game_install;
+mod github;
 mod game_layout;
 mod game_service;
 mod libraries;
@@ -37,6 +38,7 @@ pub use catalog::{
 pub use discovery::{discover_games, discover_with_runners};
 pub use error::{CoreError, CoreResult};
 pub use game_install::{GameInstallReport, install_game};
+pub use github::{login_device as github_login_device, logout as github_logout, auth_status as github_auth_status};
 pub use game_service::{
     add_game, add_game_to_playlist, launch_game, list_games, list_playlists, remove_all_games,
     remove_game, remove_game_from_playlist,

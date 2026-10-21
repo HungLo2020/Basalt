@@ -129,7 +129,7 @@ Priority: optional
 Architecture: amd64
 Maintainer: Basalt Maintainers
 Depends: $shlib_depends, qml6-module-org-kde-kirigami, qml6-module-qtquick-controls, qml6-module-qtquick-layouts, qt6-svg-plugins
-Recommends: qml6-module-org-kde-desktop, breeze-icon-theme, rsync
+Recommends: qml6-module-org-kde-desktop, breeze-icon-theme, rsync, libsecret-tools
 Description: Basalt game launcher (basalt CLI and basalt-gui)
 EOF
 

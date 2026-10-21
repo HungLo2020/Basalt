@@ -28,6 +28,9 @@ pub mod qobject {
         #[qproperty(QString, library_status)]
         #[qproperty(QString, install_status)]
         #[qproperty(QString, settings_status)]
+        #[qproperty(QString, github_auth_status)]
+        #[qproperty(QString, github_device_code)]
+        #[qproperty(QString, github_verification_url)]
         // The single background job slot.
         #[qproperty(bool, job_active)]
         #[qproperty(QString, job_message)]
@@ -96,6 +99,10 @@ pub mod qobject {
         fn save_sync_remote(self: Pin<&mut Backend>, path: &QString);
         #[qinvokable]
         fn save_backup_keep(self: Pin<&mut Backend>, keep: i32);
+        #[qinvokable]
+        fn github_login(self: Pin<&mut Backend>);
+        #[qinvokable]
+        fn github_logout(self: Pin<&mut Backend>);
 
         /// Image URL for an artwork key, or "" while unresolved.
         #[qinvokable]
@@ -154,6 +161,9 @@ pub struct BackendRust {
     library_status: QString,
     install_status: QString,
     settings_status: QString,
+    github_auth_status: QString,
+    github_device_code: QString,
+    github_verification_url: QString,
     job_active: bool,
     job_message: QString,
     job_fraction: f64,
@@ -191,6 +201,9 @@ impl Default for BackendRust {
             library_status: QString::from("Loading games..."),
             install_status: QString::default(),
             settings_status: QString::default(),
+            github_auth_status: qs(basalt_core::github_auth_status()),
+            github_device_code: QString::default(),
+            github_verification_url: QString::default(),
             job_active: false,
             job_message: QString::default(),
             job_fraction: -1.0,
@@ -726,6 +739,50 @@ impl qobject::Backend {
     }
 
     // ----- settings --------------------------------------------------------------------------
+
+    fn github_login(mut self: Pin<&mut Self>) {
+        if *self.job_active() {
+            self.as_mut().set_settings_status(qs("Another operation is already running"));
+            return;
+        }
+        self.as_mut().set_settings_status(qs("Waiting for GitHub login"));
+        self.as_mut().set_github_device_code(QString::default());
+        self.as_mut().set_github_verification_url(QString::default());
+        let qt = self.qt_thread();
+        self.as_mut().start_job(
+            StatusTarget::Install,
+            "Signing in to GitHub".into(),
+            move |_progress| {
+                basalt_core::github_login_device(|url, code| {
+                    let url = qs(url);
+                    let code = qs(code);
+                    let _ = qt.queue(move |mut backend: Pin<&mut qobject::Backend>| {
+                        backend.as_mut().set_github_verification_url(url);
+                        backend.as_mut().set_github_device_code(code);
+                        backend.as_mut().set_settings_status(qs("Open GitHub verification URL and enter the displayed code"));
+                    });
+                })
+            },
+            |mut backend, result| {
+                backend.as_mut().set_github_device_code(QString::default());
+                backend.as_mut().set_github_verification_url(QString::default());
+                backend.as_mut().set_github_auth_status(qs(basalt_core::github_auth_status()));
+                backend.as_mut().set_settings_status(qs(match result {
+                    Ok(()) => "GitHub account connected".to_string(),
+                    Err(error) => format!("GitHub login failed: {error}"),
+                }));
+            },
+        );
+    }
+
+    fn github_logout(mut self: Pin<&mut Self>) {
+        let result = basalt_core::github_logout();
+        self.as_mut().set_github_auth_status(qs(basalt_core::github_auth_status()));
+        self.as_mut().set_settings_status(qs(match result {
+            Ok(()) => "GitHub login cleared".to_string(),
+            Err(error) => format!("Logout failed: {error}"),
+        }));
+    }
 
     fn save_backup_keep(mut self: Pin<&mut Self>, keep: i32) {
         let result = u32::try_from(keep)
