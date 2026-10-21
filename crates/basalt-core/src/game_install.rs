@@ -199,12 +199,18 @@ fn fetch_latest_release_at(
     web: &str,
 ) -> CoreResult<Value> {
     progress.check_cancelled()?;
-    let mut response = ureq::get(format!(
+    let token = crate::github::token();
+    let mut request = ureq::get(format!(
         "{api}/repos/{}/releases/latest",
         game.source.repository
     ))
     .header("Accept", "application/vnd.github+json")
     .header("User-Agent", "Basalt-Installer")
+    .header("X-GitHub-Api-Version", "2022-11-28");
+    if let Some(token) = &token {
+        request = request.header("Authorization", format!("Bearer {token}"));
+    }
+    let mut response = request
     .config()
     .http_status_as_error(false)
     .build()
@@ -230,6 +236,9 @@ fn fetch_latest_release_at(
     if !matches!(status.as_u16(), 403 | 429)
         || !(limited || message.to_ascii_lowercase().contains("rate limit"))
     {
+        if matches!(status.as_u16(), 401 | 403 | 404) {
+            return Err(CoreError::new(format!("GitHub HTTP {status}: {message}. If this repository is private, configure GH_TOKEN/GITHUB_TOKEN or sign in with the optional GitHub CLI (gh auth login).")));
+        }
         return Err(CoreError::new(format!("GitHub HTTP {status}: {message}")));
     }
 
@@ -326,7 +335,14 @@ fn select_asset(game: &GameDefinition, release: &Value) -> CoreResult<(String, S
         .as_str()
         .filter(|url| url.starts_with("https://"))
         .ok_or_else(|| CoreError::new("Release asset has no HTTPS download URL"))?;
-    Ok((tag.into(), url.into()))
+    // Release API asset IDs are available for private and public repositories.
+    // Downloading through the API is necessary for private assets.
+    let url = if let Some(id) = matches[0]["id"].as_u64() {
+        crate::github::asset_url(&game.source.repository, id)
+    } else {
+        url.to_owned()
+    };
+    Ok((tag.into(), url))
 }
 
 struct Stage(PathBuf);
