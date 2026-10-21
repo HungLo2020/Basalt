@@ -14,6 +14,7 @@ mod error;
 mod file_index;
 mod game_data;
 mod game_install;
+mod github;
 mod game_layout;
 mod game_service;
 mod libraries;
