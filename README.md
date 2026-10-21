@@ -189,8 +189,7 @@ For private releases, Basalt resolves credentials in this order:
 GitHub CLI is **not** a required dependency. For native login, the Basalt
 maintainer must register a GitHub **OAuth App** at
 [GitHub Developer Settings](https://github.com/settings/developers), enable
-**Device Flow**, and provide its public Client ID as `BASALT_GITHUB_CLIENT_ID`
-in the application environment, or as a build-time environment variable to embed it in packaged releases. The OAuth App must
+**Device Flow**, The public Client ID `Ov23likSQpJPk474GXMn` is already built into Basalt as the default. An optional `BASALT_GITHUB_CLIENT_ID` environment variable can override it at build or run time. The OAuth App must
 have permission to access private repositories via the `repo` scope. This
 Client ID is public and is not a secret.
 
