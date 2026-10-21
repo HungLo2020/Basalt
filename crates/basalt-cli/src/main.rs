@@ -95,8 +95,18 @@ enum Command {
         clear: bool,
     },
 
+    /// GitHub authentication (native login does not require gh)
+    Github { #[command(subcommand)] action: GithubCommand },
+
     /// Clear cached artwork metadata and images
     RefreshMetadata,
+}
+
+#[derive(Subcommand)]
+enum GithubCommand {
+    Login,
+    Status,
+    Logout,
 }
 
 #[derive(Subcommand)]
