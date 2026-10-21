@@ -20,8 +20,23 @@ pub(crate) fn download_to_writer(
     progress.check_cancelled()?;
     progress.report(message, 0, None, ProgressUnit::Bytes);
 
-    let response = ureq::get(url)
-        .header("User-Agent", user_agent)
+    // Credentials are only ever attached to GitHub API endpoints, never to
+    // arbitrary catalog URLs or CDN redirect destinations.
+    let api_asset = url.starts_with("https://api.github.com/repos/")
+        && url.contains("/releases/assets/");
+    let mut request = ureq::get(url)
+        .header("User-Agent", user_agent);
+    if api_asset {
+        request = request.header("Accept", "application/octet-stream");
+        if let Some(token) = crate::github::token() {
+            request = request.header("Authorization", format!("Bearer {token}"));
+        }
+    }
+    // ureq does not forward Authorization to redirects by default.
+    let response = request
+        .config()
+        .https_only(api_asset)
+        .build()
         .call()
         .map_err(|error| CoreError::new(format!("Failed to download {}: {}", url, error)))?;
     let total = response.body().content_length();
