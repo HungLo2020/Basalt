@@ -992,6 +992,14 @@ mod tests {
         let release = serde_json::json!({"tag_name": "v1", "assets": [
             asset("MattMC-Client-v1-windows-x64.zip"), asset("MattMC-Client-v1-linux-x64.zip")]});
         assert_eq!(select_asset(&game, &release).unwrap().0, "v1");
+        // API asset IDs must override browser URLs so private releases download
+        // from GitHub's authenticated asset endpoint without manifest changes.
+        let mut private_release = release.clone();
+        private_release["assets"][1]["id"] = serde_json::json!(1234);
+        assert_eq!(
+            select_asset(&game, &private_release).unwrap().1,
+            "https://api.github.com/repos/HungLo2020/MattMC/releases/assets/1234"
+        );
         let mut ambiguous = release.clone();
         ambiguous["assets"]
             .as_array_mut()
