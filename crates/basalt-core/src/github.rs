@@ -49,7 +49,9 @@ fn save(creds: &Credentials) -> CoreResult<()> {
 fn oauth_request(fields: &[(&str, &str)], url: &str) -> CoreResult<serde_json::Value> {
     let mut response = ureq::post(url).header("Accept", "application/json")
         .send_form(fields).map_err(|_| CoreError::new("GitHub authentication request failed"))?;
-    response.body_mut().read_json().map_err(|_| CoreError::new("Invalid GitHub authentication response"))
+    let payload = response.body_mut().read_to_string()
+        .map_err(|_| CoreError::new("Cannot read GitHub authentication response"))?;
+    serde_json::from_str(&payload).map_err(|_| CoreError::new("Invalid GitHub authentication response"))
 }
 
 fn parse_credentials(value: &serde_json::Value) -> CoreResult<Credentials> {
