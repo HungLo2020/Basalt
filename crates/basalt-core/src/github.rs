@@ -22,7 +22,9 @@ fn now() -> u64 {
 }
 
 fn client_id() -> CoreResult<String> {
-    std::env::var("BASALT_GITHUB_CLIENT_ID").ok().filter(|s| !s.trim().is_empty())
+    std::env::var("BASALT_GITHUB_CLIENT_ID").ok()
+        .or_else(|| option_env!("BASALT_GITHUB_CLIENT_ID").map(str::to_owned))
+        .filter(|s| !s.trim().is_empty())
         .ok_or_else(|| CoreError::new("Native GitHub sign-in requires BASALT_GITHUB_CLIENT_ID (register Basalt as a GitHub OAuth App and enable Device Flow)."))
 }
 
