@@ -71,6 +71,14 @@ fn project_dirs() -> CoreResult<ProjectDirs> {
 
 // ----- processes ---------------------------------------------------------------------------
 
+pub(crate) fn env_var(name: &str) -> Option<String> {
+    env::var(name).ok()
+}
+
+pub(crate) fn env_var_os(name: &str) -> Option<std::ffi::OsString> {
+    env::var_os(name)
+}
+
 pub fn command_exists(command_name: &str) -> bool {
     let Some(path_value) = env::var_os("PATH") else {
         return false;
@@ -85,6 +93,55 @@ pub fn run_command(command_name: &str, args: &[&str]) -> CoreResult<Output> {
         .args(args)
         .output()
         .map_err(|error| CoreError::new(format!("Failed to execute {}: {}", command_name, error)))
+}
+
+/// Supplies private input to a command without exposing its output or input in errors.
+pub(crate) fn run_command_with_private_input(
+    command_name: &str,
+    args: &[&str],
+    input: &[u8],
+) -> CoreResult<ExitStatus> {
+    let mut child = Command::new(command_name)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| CoreError::new(format!("Cannot start {command_name}: {error}")))?;
+    let written = child
+        .stdin
+        .take()
+        .ok_or_else(|| CoreError::new("Missing command input"))
+        .and_then(|mut stdin| {
+            stdin
+                .write_all(input)
+                .map_err(|error| CoreError::new(format!("Cannot supply command input: {error}")))
+        });
+    let status = child
+        .wait()
+        .map_err(|error| CoreError::new(format!("Cannot wait for {command_name}: {error}")));
+    written?;
+    status
+}
+
+#[cfg(test)]
+mod private_input_tests {
+    use super::run_command_with_private_input;
+
+    #[test]
+    fn command_receives_input_and_returns_its_exit_status() {
+        let args = ["-c", "test \"$(cat)\" = 'test credential'"];
+        assert!(
+            run_command_with_private_input("sh", &args, b"test credential")
+                .unwrap()
+                .success()
+        );
+        assert!(
+            !run_command_with_private_input("sh", &args, b"different credential")
+                .unwrap()
+                .success()
+        );
+    }
 }
 
 /// Runs an executable that ships next to the current one (falling back to PATH),

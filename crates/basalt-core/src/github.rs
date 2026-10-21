@@ -1,10 +1,8 @@
 //! Optional, manifest-independent GitHub authentication.
 //! Environment tokens take precedence. OAuth credentials live only in the Linux
 //! Secret Service (KWallet/GNOME Keyring), never in JSON or game manifests.
-use crate::{CoreError, CoreResult};
+use crate::{CoreError, CoreResult, platform};
 use serde::{Deserialize, Serialize};
-use std::io::Write;
-use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -22,7 +20,7 @@ fn now() -> u64 {
 }
 
 fn client_id() -> CoreResult<String> {
-    std::env::var("BASALT_GITHUB_CLIENT_ID").ok()
+    platform::env_var("BASALT_GITHUB_CLIENT_ID")
         .or_else(|| option_env!("BASALT_GITHUB_CLIENT_ID").map(str::to_owned))
         .or_else(|| Some("Ov23likSQpJPk474GXMn".to_owned()))
         .filter(|s| !s.trim().is_empty())
@@ -30,20 +28,18 @@ fn client_id() -> CoreResult<String> {
 }
 
 fn load() -> Option<Credentials> {
-    let output = Command::new("secret-tool").args(["lookup", "application", "basalt", "service", "github"]).output().ok()?;
+    let output = platform::run_command("secret-tool", &["lookup", "application", "basalt", "service", "github"]).ok()?;
     if !output.status.success() { return None; }
     serde_json::from_slice(&output.stdout).ok()
 }
 
 fn save(creds: &Credentials) -> CoreResult<()> {
     let data = serde_json::to_vec(creds).map_err(|e| CoreError::new(e.to_string()))?;
-    let mut child = Command::new("secret-tool").args([
+    let status = platform::run_command_with_private_input("secret-tool", &[
         "store", "--label=Basalt GitHub account", "application", "basalt", "service", "github"
-    ]).stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()
+    ], &data)
         .map_err(|e| CoreError::new(format!("Cannot access Secret Service (secret-tool): {e}")))?;
-    child.stdin.take().ok_or_else(|| CoreError::new("Missing keyring input"))?
-        .write_all(&data).map_err(|e| CoreError::new(format!("Keyring write failed: {e}")))?;
-    if !child.wait().map_err(|e| CoreError::new(e.to_string()))?.success() {
+    if !status.success() {
         return Err(CoreError::new("Keyring rejected GitHub credentials; login was not saved"));
     }
     Ok(())
@@ -84,7 +80,7 @@ fn refresh(creds: &Credentials) -> CoreResult<Credentials> {
 /// Obtain an optional token; never log or include tokens in an error.
 pub(crate) fn token() -> Option<String> {
     for name in ["GH_TOKEN", "GITHUB_TOKEN"] {
-        if let Some(value) = std::env::var_os(name) {
+        if let Some(value) = platform::env_var_os(name) {
             let value = value.to_string_lossy().trim().to_string();
             if !value.is_empty() && !value.contains(['\r', '\n']) { return Some(value); }
         }
@@ -102,7 +98,7 @@ pub(crate) fn token() -> Option<String> {
         }
     }
     // Optional compatibility with existing developer setup; not a dependency.
-    let output = Command::new("gh").args(["auth", "token", "--hostname", "github.com"]).output().ok()?;
+    let output = platform::run_command("gh", &["auth", "token", "--hostname", "github.com"]).ok()?;
     if !output.status.success() { return None; }
     let value = String::from_utf8(output.stdout).ok()?.trim().to_string();
     (!value.is_empty() && !value.contains(['\r', '\n'])).then_some(value)
@@ -141,13 +137,13 @@ pub fn login_device(on_code: impl FnOnce(&str, &str)) -> CoreResult<()> {
 }
 
 pub fn logout() -> CoreResult<()> {
-    let status = Command::new("secret-tool").args(["clear", "application", "basalt", "service", "github"])
-        .status().map_err(|e| CoreError::new(format!("Cannot clear GitHub keyring entry: {e}")))?;
-    if status.success() { Ok(()) } else { Err(CoreError::new("Could not remove saved GitHub login")) }
+    let output = platform::run_command("secret-tool", &["clear", "application", "basalt", "service", "github"])
+        .map_err(|e| CoreError::new(format!("Cannot clear GitHub keyring entry: {e}")))?;
+    if output.status.success() { Ok(()) } else { Err(CoreError::new("Could not remove saved GitHub login")) }
 }
 
 pub fn auth_status() -> String {
-    if std::env::var("GH_TOKEN").is_ok() || std::env::var("GITHUB_TOKEN").is_ok() {
+    if platform::env_var("GH_TOKEN").is_some() || platform::env_var("GITHUB_TOKEN").is_some() {
         "GitHub token provided by environment".to_string()
     } else if let Some(saved) = load() {
         if saved.expires_at.is_some_and(|expiry| expiry <= now()) {
