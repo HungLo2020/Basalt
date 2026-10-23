@@ -12,6 +12,7 @@ mod discovery;
 mod download;
 mod error;
 mod file_index;
+mod flatpak;
 mod game_data;
 mod game_install;
 mod github;

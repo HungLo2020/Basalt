@@ -22,7 +22,25 @@ use zip::ZipArchive;
 pub struct GameInstallReport {
     pub game_name: String,
     pub release_tag: String,
-    pub install_dir: PathBuf,
+    /// None for applications managed by Flatpak.
+    pub install_dir: Option<PathBuf>,
+}
+
+impl GameInstallReport {
+    pub fn message(&self) -> String {
+        match &self.install_dir {
+            Some(path) => format!(
+                "Installed {} release '{}' into {}",
+                self.game_name,
+                self.release_tag,
+                path.display()
+            ),
+            None => format!(
+                "Installed {} using Flatpak ({})",
+                self.game_name, self.release_tag
+            ),
+        }
+    }
 }
 
 /// Install the latest matching release into a registered library. Existing user data wins
@@ -35,6 +53,12 @@ pub fn install_game(
     progress: &Progress,
 ) -> CoreResult<GameInstallReport> {
     let game = crate::catalog::find_game(game_id)?;
+    if game.is_flatpak() {
+        if !library_id.is_empty() {
+            return Err(CoreError::InvalidInput("Flatpak manages its own installation location; omit --library".into()));
+        }
+        return crate::flatpak::install(&game, progress);
+    }
     let target = crate::libraries::install_directory(library_id, &game.id)?;
     let library = target
         .parent()
@@ -175,7 +199,7 @@ fn install_into(
     Ok(GameInstallReport {
         game_name: game.name,
         release_tag: tag,
-        install_dir: target,
+        install_dir: Some(target),
     })
 }
 

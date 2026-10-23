@@ -8,6 +8,7 @@ pub enum RunnerKind {
     Bash,
     Catalog,
     Steam,
+    Flatpak,
 }
 
 pub struct ResolvedTarget {
@@ -21,6 +22,7 @@ impl RunnerKind {
             RunnerKind::Bash => "bash",
             RunnerKind::Catalog => "catalog",
             RunnerKind::Steam => "steam",
+            RunnerKind::Flatpak => "flatpak",
         }
     }
 
@@ -29,6 +31,7 @@ impl RunnerKind {
             "bash" => Some(RunnerKind::Bash),
             "catalog" => Some(RunnerKind::Catalog),
             "steam" => Some(RunnerKind::Steam),
+            "flatpak" => Some(RunnerKind::Flatpak),
             _ => None,
         }
     }
@@ -54,5 +57,6 @@ pub fn launch(runner_kind: RunnerKind, launch_target: &str) -> CoreResult<()> {
         RunnerKind::Bash => platform::launch_script(launch_target),
         RunnerKind::Catalog => crate::catalog_launch::launch(launch_target),
         RunnerKind::Steam => steam::launch(launch_target),
+        RunnerKind::Flatpak => crate::flatpak::launch(launch_target),
     }
 }

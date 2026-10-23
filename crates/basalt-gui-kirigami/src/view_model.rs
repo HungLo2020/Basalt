@@ -57,8 +57,9 @@ pub struct InstallTileView {
     pub key: String,
     pub title: String,
     pub description: String,
-    /// "game" or "core".
+    /// Catalog game tile.
     pub kind: &'static str,
+    pub uses_library: bool,
     pub system: String,
     pub supports_save_sync: bool,
     pub category: &'static str,
@@ -80,7 +81,16 @@ pub fn games_json(games: &[GameEntry], playlists: &[Playlist]) -> String {
             GameView {
                 name: game.name.clone(),
                 runner: game.runner_kind.as_str(),
-                target: game.launch_target.clone(),
+                target: if game.runner_kind == RunnerKind::Flatpak {
+                    serde_json::from_str::<serde_json::Value>(&game.launch_target)
+                        .ok()
+                        .and_then(|target| {
+                            Some(format!("{} ({})", target["app_id"].as_str()?, target["branch"].as_str()?))
+                        })
+                        .unwrap_or_else(|| game.launch_target.clone())
+                } else {
+                    game.launch_target.clone()
+                },
                 category_order,
                 category,
                 artwork_key: core::ArtworkRequest::for_game(game)
@@ -139,14 +149,19 @@ pub fn install_tiles_json() -> String {
         .map(|game| InstallTileView {
             key: game.id.clone(),
             title: game.name.clone(),
-            description: format!(
-                "Install the latest release of {} from {}. Existing game data is preserved.",
-                game.name, game.source.repository
-            ),
+            description: if game.is_flatpak() {
+                format!("Install {} from {} using Flatpak. Flatpak manages packages and runtimes for your user. The remote must already be configured.", game.name, game.source.remote)
+            } else {
+                format!(
+                    "Install the latest release of {} from {}. Existing game data is preserved.",
+                    game.name, game.source.repository
+                )
+            },
             kind: "game",
+            uses_library: !game.is_flatpak(),
             system: String::new(),
             supports_save_sync: false,
-            category: MY_GAMES_CATEGORY,
+            category: if game.is_flatpak() { "Flatpak" } else { MY_GAMES_CATEGORY },
             // Same key as the installed game's tile (see ArtworkRequest::for_catalog).
             artwork_key: format!("catalog:{}", game.id),
         })
@@ -172,6 +187,7 @@ pub fn backups_json(game_id: &str) -> String {
 /// Category name and sort key.
 fn game_category(game: &GameEntry) -> (String, String) {
     match game.runner_kind {
+        RunnerKind::Flatpak => ("Flatpak".to_string(), "2".to_string()),
         RunnerKind::Steam => (STEAM_CATEGORY.to_string(), "0".to_string()),
         RunnerKind::Bash | RunnerKind::Catalog => (MY_GAMES_CATEGORY.to_string(), "1".to_string()),
     }
@@ -239,6 +255,21 @@ mod tests {
             ["update", "backup", "restore", "sync", "sync_up", "sync_down", "clear_cache"]
         );
         assert_eq!(json[0]["actions"][2]["needsSnapshot"], true);
+    }
+
+    #[test]
+    fn flatpak_tiles_and_library_entries_have_their_own_category_and_update_action() {
+        let definition = core::find_game("SuperTuxKart").unwrap();
+        let games = [game(&definition.name, RunnerKind::Flatpak, "unused")];
+        let views: Value = serde_json::from_str(&games_json(&games, &[])).unwrap();
+        assert_eq!(views[0]["category"], "Flatpak");
+        assert_eq!(views[0]["actions"].as_array().unwrap().len(), 1);
+        assert_eq!(views[0]["actions"][0]["name"], "update");
+        assert_eq!(views[0]["artworkKey"], "catalog:SuperTuxKart");
+        let tiles: Value = serde_json::from_str(&install_tiles_json()).unwrap();
+        let tile = tiles.as_array().unwrap().iter().find(|tile| tile["key"] == "SuperTuxKart").unwrap();
+        assert_eq!(tile["category"], "Flatpak");
+        assert_eq!(tile["usesLibrary"], false);
     }
 
     #[test]

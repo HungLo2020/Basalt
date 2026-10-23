@@ -457,3 +457,117 @@ pub(crate) fn run_game_script(
         other => other,
     }
 }
+
+/// Runs a game attached to the caller's terminal, preserving game output.
+pub(crate) fn run_attached_command(program: &str, args: &[&str]) -> CoreResult<()> {
+    let status = Command::new(program)
+        .args(args)
+        .status()
+        .map_err(|error| CoreError::new(format!("Failed to run {program}: {error}")))?;
+    if !status.success() {
+        return Err(CoreError::new(format!("{program} exited with {status}")));
+    }
+    Ok(())
+}
+
+/// Drains diagnostics while polling cancellation, so a verbose child cannot fill its pipe.
+/// Flatpak owns transaction recovery; a cancelled transaction can be retried or discovered.
+pub(crate) fn run_cancellable_command(
+    program: &str,
+    args: &[&str],
+    progress: &crate::Progress,
+) -> CoreResult<()> {
+    use std::io::Read;
+    use std::{thread, time::Duration};
+    progress.check_cancelled()?;
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| CoreError::new(format!("Failed to run {program}: {error}")))?;
+    let mut stderr = child.stderr.take().expect("piped stderr");
+    let reader = thread::spawn(move || {
+        let mut diagnostic = Vec::new();
+        let mut buffer = [0; 4096];
+        while let Ok(count) = stderr.read(&mut buffer) {
+            if count == 0 {
+                break;
+            }
+            let keep = count.min(16384_usize.saturating_sub(diagnostic.len()));
+            diagnostic.extend_from_slice(&buffer[..keep]);
+        }
+        String::from_utf8_lossy(&diagnostic).into_owned()
+    });
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {}
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = reader.join();
+                return Err(CoreError::new(format!(
+                    "Failed to wait for {program}: {error}"
+                )));
+            }
+        }
+        if let Err(error) = progress.check_cancelled() {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = reader.join();
+            return Err(error);
+        }
+        thread::sleep(Duration::from_millis(100));
+    };
+    let diagnostic = reader.join().unwrap_or_default();
+    if !status.success() {
+        return Err(CoreError::new(format!(
+            "{program} failed ({status}): {}",
+            diagnostic.trim()
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod cancellable_process_tests {
+    use super::*;
+    use crate::{CancelToken, Progress};
+    use std::{
+        thread,
+        time::{Duration, Instant},
+    };
+
+    #[test]
+    fn cancellation_stops_and_reaps_the_child() {
+        let cancel = CancelToken::new();
+        let progress = Progress::new(|_| {}, cancel.clone());
+        let worker = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(150));
+            cancel.cancel();
+        });
+        let start = Instant::now();
+        let result = run_cancellable_command("/bin/sh", &["-c", "while :; do :; done"], &progress);
+        worker.join().unwrap();
+        assert!(matches!(result, Err(CoreError::Cancelled)));
+        assert!(start.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn drains_verbose_errors_and_checks_cancellation_before_spawn() {
+        let result = run_cancellable_command("/bin/sh", &["-c",
+            "i=0; while [ $i -lt 10000 ]; do printf 'verbose failure diagnostic\\n' >&2; i=$((i+1)); done; exit 1"
+        ], &Progress::none()).unwrap_err().to_string();
+        assert!(result.contains("verbose failure diagnostic"));
+        assert!(result.len() < 17000);
+        let cancel = CancelToken::new();
+        cancel.cancel();
+        let progress = Progress::new(|_| {}, cancel);
+        assert!(matches!(
+            run_cancellable_command("/must-not-be-spawned", &[], &progress),
+            Err(CoreError::Cancelled)
+        ));
+    }
+}

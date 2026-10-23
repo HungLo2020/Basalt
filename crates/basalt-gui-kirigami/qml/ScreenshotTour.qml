@@ -21,10 +21,14 @@ QtObject {
         { name: "02-library-details", run: () => selectFirst(window.libraryPage, item => item.artworkKey !== "") },
         { name: "03-library-mattmc", run: () => selectFirst(window.libraryPage, item => item.isMattmc) },
         { name: "03b-library-standard-game", run: () => selectFirst(window.libraryPage, item => item.name === "Sample Quest") },
+        { name: "03c-library-flatpak", run: () => selectFirst(window.libraryPage, item => item.runner === "flatpak") },
+        { name: "03d-flatpak-filter", run: () => { window.libraryPage.selectedPlaylist = "Flatpak"; } },
+        { name: "03e-all-games", run: () => { window.libraryPage.selectedPlaylist = ""; } },
         { name: "04-install", run: () => window.showSection("install") },
         { name: "05-install-mattmc", run: () => selectFirst(window.installPage, item => item.kind === "game" && item.key === "MattMC") },
         { name: "06-install-micromages", run: () => selectFirst(window.installPage, item => item.key === "MicroMages") },
         { name: "07-install-jackal", run: () => selectFirst(window.installPage, item => item.key === "Jackal") },
+        { name: "07b-install-flatpak", run: () => selectFirst(window.installPage, item => item.key === "SuperTuxKart") },
         { name: "08-settings", run: () => window.showSection("settings") },
         { name: "09-library-again", run: () => window.showSection("library") },
         { name: "10-narrow", run: () => { window.width = window.minimumWidth; } },
@@ -52,6 +56,14 @@ QtObject {
 
     function capture() {
         const name = steps[step].name;
+        if (name === "03d-flatpak-filter") {
+            const library = window.libraryPage;
+            if (!library.playlists.some(playlist => playlist.name === "Flatpak")
+                    || library.filteredGames.length === 0
+                    || library.filteredGames.some(game => game.runner !== "flatpak")) {
+                console.error("FAILED: Flatpak library filter did not select only Flatpak games");
+            }
+        }
         // windowGrabber is a context property the launcher provides only for this tour.
         const saved = windowGrabber.grab(window, outputDir + "/" + name + ".png"); // qmllint disable unqualified
         console.info("screenshot", name, saved ? "saved" : "FAILED");

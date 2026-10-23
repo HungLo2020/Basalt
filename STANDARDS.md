@@ -475,3 +475,30 @@ as before. Their archives may still wrap everything in one top-level folder, whi
 looking for the launch executable; `source.archive_root` is not used with them. To adopt the standard, a game moves to the layout in [section 1](#1-install-directory-layout)
 (or describes its own with `layout`) and its entry changes to `schema_version: 2` with
 `standard_version: 1`, replacing `maintenance` with `actions` and dropping `persistent_directory`.
+
+
+## Flatpak catalog entries (schema 3)
+
+Flatpak catalog entries are a separate installation format; they do not claim compliance with the
+standard's `app/` and `data/` layout. Existing schema 1 and 2 entries keep their behavior.
+
+```json
+{
+  "schema_version": 3,
+  "id": "SuperTuxKart",
+  "name": "SuperTuxKart",
+  "source": {
+    "kind": "flatpak",
+    "remote": "flathub",
+    "app_id": "net.supertuxkart.SuperTuxKart",
+    "branch": "stable"
+  }
+}
+```
+
+`remote` names an already configured user remote; it is not a URL. `app_id` identifies the application.
+`branch` is optional and defaults to `stable`. Flatpak games use the user installation, appear in the
+Flatpak category and support install, discovery, launch and update. They do not use game libraries,
+`standard_version`, `launch`, ZIP source fields, `layout`, `persistent_directory`, `maintenance` or
+`actions`. These fields must be absent or empty. Optional `artwork.cover_url` works as with other
+catalog entries. Flatpak games have no automatic Basalt backup/sync/cache actions.

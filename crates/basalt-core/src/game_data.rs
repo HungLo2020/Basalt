@@ -58,7 +58,7 @@ impl Installation {
                 .components()
                 .count()
                 .saturating_sub(1),
-            crate::RunnerKind::Steam => {
+            crate::RunnerKind::Steam | crate::RunnerKind::Flatpak => {
                 return Err(CoreError::InvalidInput(
                     "Game does not have a local catalog installation".into(),
                 ));

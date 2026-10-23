@@ -24,6 +24,10 @@ Kirigami.ScrollablePage {
     property string selectedPlaylist: ""
     property string searchText: ""
 
+    onSelectedPlaylistChanged: {
+        playlistBox.currentIndex = playlists.findIndex(playlist => playlist.name === selectedPlaylist) + 1;
+    }
+
     readonly property var filteredGames: {
         const playlist = playlists.find(entry => entry.name === selectedPlaylist);
         const members = playlist ? new Set(playlist.games) : null;
@@ -99,7 +103,7 @@ Kirigami.ScrollablePage {
         Kirigami.Action {
             text: "Discover"
             icon.name: "edit-find"
-            tooltip: "Find Steam and installed native games"
+            tooltip: "Find Steam and installed catalog games, including Flatpaks"
             enabled: !Backend.jobActive
             onTriggered: Backend.discover()
         },

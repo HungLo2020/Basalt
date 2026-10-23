@@ -1,0 +1,14 @@
+{
+  "schema_version": 3,
+  "id": "SuperTuxKart",
+  "name": "SuperTuxKart",
+  "source": {
+    "kind": "flatpak",
+    "remote": "flathub",
+    "app_id": "net.supertuxkart.SuperTuxKart",
+    "branch": "stable"
+  },
+  "artwork": {
+    "cover_url": "https://dl.flathub.org/media/net/supertuxkart/SuperTuxKart/ed6e8f73eecfb93757794648174bcf0e/icons/128x128/net.supertuxkart.SuperTuxKart.png"
+  }
+}

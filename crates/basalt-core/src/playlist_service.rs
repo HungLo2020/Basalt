@@ -11,6 +11,7 @@ use super::types::Playlist;
 const PLAYLISTS_FILE_NAME: &str = "playlists.tsv";
 pub const FAVORITES_PLAYLIST_NAME: &str = "Favorites";
 pub const STEAM_PLAYLIST_NAME: &str = "Steam";
+pub const FLATPAK_PLAYLIST_NAME: &str = "Flatpak";
 
 // Callers must hold `storage::with_data_lock`; the public entry points in game_service do.
 
@@ -29,6 +30,12 @@ pub fn list_playlists() -> CoreResult<Vec<Playlist>> {
         .into_iter()
         .collect();
 
+    let flatpak_games = memberships
+        .remove(FLATPAK_PLAYLIST_NAME)
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+
     let mut playlists = vec![
         Playlist {
             name: FAVORITES_PLAYLIST_NAME.to_string(),
@@ -37,6 +44,10 @@ pub fn list_playlists() -> CoreResult<Vec<Playlist>> {
         Playlist {
             name: STEAM_PLAYLIST_NAME.to_string(),
             game_names: steam_games,
+        },
+        Playlist {
+            name: FLATPAK_PLAYLIST_NAME.to_string(),
+            game_names: flatpak_games,
         },
     ];
 
@@ -147,24 +158,33 @@ pub(super) fn sync_automatic_playlists() -> CoreResult<()> {
     let entries = registry::load_entries()?;
 
     let mut steam_games = BTreeSet::new();
+    let mut flatpak_games = BTreeSet::new();
 
     for entry in entries {
         match entry.runner_kind {
             RunnerKind::Steam => {
                 steam_games.insert(entry.name);
             }
+            RunnerKind::Flatpak => {
+                flatpak_games.insert(entry.name);
+            }
             RunnerKind::Bash | RunnerKind::Catalog => {}
         }
     }
 
-    let steam_changed = memberships
-        .get(STEAM_PLAYLIST_NAME)
-        .map(|existing| existing != &steam_games)
-        .unwrap_or(!steam_games.is_empty());
+    let mut changed = false;
+    for (name, games) in [
+        (STEAM_PLAYLIST_NAME, steam_games),
+        (FLATPAK_PLAYLIST_NAME, flatpak_games),
+    ] {
+        changed |= memberships
+            .get(name)
+            .map(|existing| existing != &games)
+            .unwrap_or(!games.is_empty());
+        memberships.insert(name.to_string(), games);
+    }
 
-    memberships.insert(STEAM_PLAYLIST_NAME.to_string(), steam_games);
-
-    if steam_changed {
+    if changed {
         save_playlist_memberships(&memberships)?;
     }
 
@@ -204,6 +224,9 @@ fn resolve_playlist_name(
     }
     if trimmed.eq_ignore_ascii_case(STEAM_PLAYLIST_NAME) {
         return Ok(STEAM_PLAYLIST_NAME.to_string());
+    }
+    if trimmed.eq_ignore_ascii_case(FLATPAK_PLAYLIST_NAME) {
+        return Ok(FLATPAK_PLAYLIST_NAME.to_string());
     }
 
     for existing_name in memberships.keys() {
@@ -320,6 +343,10 @@ No Game\t
         assert_eq!(
             resolve_playlist_name("cozy games", &memberships).unwrap(),
             "Cozy Games"
+        );
+        assert_eq!(
+            resolve_playlist_name("flatpak", &memberships).unwrap(),
+            FLATPAK_PLAYLIST_NAME
         );
         assert!(resolve_playlist_name("Missing", &memberships).is_err());
     }

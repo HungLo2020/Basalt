@@ -1,0 +1,14 @@
+{
+  "schema_version": 3,
+  "id": "SuperTux",
+  "name": "SuperTux",
+  "source": {
+    "kind": "flatpak",
+    "remote": "flathub",
+    "app_id": "org.supertuxproject.SuperTux",
+    "branch": "stable"
+  },
+  "artwork": {
+    "cover_url": "https://dl.flathub.org/media/org/supertuxproject/SuperTux/4f6b0552fdc2366441e0bdc30b86f123/icons/128x128@2/org.supertuxproject.SuperTux.png"
+  }
+}

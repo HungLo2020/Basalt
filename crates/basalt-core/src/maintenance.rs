@@ -147,6 +147,12 @@ fn label_for(name: &str) -> String {
 
 /// The actions a catalog entry offers, built-ins first.
 pub fn game_actions(definition: &GameDefinition) -> Vec<GameAction> {
+    if definition.is_flatpak() {
+        return vec![GameAction {
+            name: "update".into(), label: "Update".into(), builtin: Some(BuiltinAction::Update),
+            script: None, options: ActionOptions::default(), legacy: false,
+        }];
+    }
     if !definition.follows_standard() {
         return definition
             .maintenance
@@ -256,6 +262,9 @@ pub fn run_game_action(
                 definition.name
             ))
         })?;
+    if definition.is_flatpak() {
+        return crate::flatpak::update(&definition, progress);
+    }
     let installation = Installation::locate(game_id)?;
     let name = definition.name.clone();
 

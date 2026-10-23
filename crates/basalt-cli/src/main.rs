@@ -51,9 +51,10 @@ enum Command {
     /// List games available from the bundled catalog
     Catalog,
 
-    /// Install/reinstall a catalog game; prompts for a library unless --library is supplied
+    /// Install/reinstall a catalog game; Flatpaks manage their own location
     Install {
         game: String,
+        /// ZIP games: library ID (prompts if omitted). Not applicable to Flatpaks.
         #[arg(long)]
         library: Option<String>,
     },

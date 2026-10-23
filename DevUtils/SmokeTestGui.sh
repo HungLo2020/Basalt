@@ -38,6 +38,19 @@ make_script() {
   printf '%s' "$path"
 }
 
+# Use a fake Flatpak backend: discover a catalog app without touching host installations.
+mkdir -p "$home/bin"
+cat > "$home/bin/flatpak" <<'EOF'
+#!/bin/sh
+if [ "$1" = list ]; then
+  printf 'net.supertuxkart.SuperTuxKart\tstable\tflathub\n'
+  exit 0
+fi
+exit 1
+EOF
+chmod +x "$home/bin/flatpak"
+export PATH="$home/bin:$PATH"
+
 log "Creating fixtures in $home"
 art_dir="$home/.local/share/basalt/artwork"
 sample_art="$repo_root/resources/gameartwork/Pokemon Radical Red.jpeg"
@@ -65,6 +78,7 @@ basalt discover --catalog
 basalt add-to-playlist Favorites Celeste
 # Local artwork override, so the run needs no network.
 cp "$sample_art" "$art_dir/Portal 2.jpeg"
+cp "$sample_art" "$art_dir/SuperTuxKart.jpeg"
 
 # Without network where the system allows it (unprivileged user namespaces).
 isolate=()

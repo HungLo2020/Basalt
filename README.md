@@ -106,6 +106,32 @@ Moving worlds and settings from `run/` into `data/` is up to MattMC.
 To try a catalog entry before it ships with Basalt, put it in `~/.config/basalt/games/`; a local
 entry with the same id replaces the bundled one.
 
+## Flatpak catalog games
+
+SuperTuxKart, SuperTux, Chocolate Doom and Space Cadet Pinball are available in the regular catalog
+as Flatpak games. Both the Install page and Library group these games under **Flatpak**. Install Flatpak and configure Flathub for your user:
+
+```sh
+flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+basalt install SuperTuxKart
+basalt launch SuperTuxKart
+basalt maintain SuperTuxKart update
+```
+
+Basalt uses the user installation (`--user`); system-wide Flatpaks are not adopted. Flatpak owns
+installation locations and shared runtimes, so omit `--library` for these games. Basalt does not add
+remotes or install Flatpak itself. A missing Flatpak executable or remote is reported as an error.
+`basalt discover --catalog` also registers matching user-installed catalog Flatpaks, checking the
+application ID, branch and origin remote. Removing a Basalt entry leaves the Flatpak installed;
+Discover can register it again.
+
+Flatpak games currently offer **Update**, not the Basalt standard's backup, restore, sync or cache
+actions. Their saves and settings use the application's Flatpak data paths rather than Basalt's
+standard folder layout. Artwork supports the same catalog cover URLs and user overrides as other
+games. Installation and updates report an indeterminate progress step and can be cancelled; if a
+Flatpak transaction completed before cancellation or Basalt registration failed, use Discover to
+register the installed game. Package changes are managed by Flatpak rather than Basalt's ZIP rollback.
+
 ## Design Principles
 
 - Minimal UI and minimal configuration complexity.

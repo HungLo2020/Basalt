@@ -31,7 +31,12 @@ fn library_configuration_and_noninteractive_install_selection() {
         .map(|path| {
             let game: basalt_core::GameDefinition =
                 serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-            format!("{}\t{}\t{}\n", game.id, game.name, game.source.repository)
+            let source = if game.is_flatpak() {
+                &game.source.app_id
+            } else {
+                &game.source.repository
+            };
+            format!("{}\t{}\t{}\n", game.id, game.name, source)
         })
         .collect();
     assert_eq!(catalog, expected);

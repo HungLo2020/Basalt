@@ -1,0 +1,14 @@
+{
+  "schema_version": 3,
+  "id": "ChocolateDoom",
+  "name": "Chocolate Doom",
+  "source": {
+    "kind": "flatpak",
+    "remote": "flathub",
+    "app_id": "org.chocolate_doom.ChocolateDoom",
+    "branch": "stable"
+  },
+  "artwork": {
+    "cover_url": "https://dl.flathub.org/media/org/chocolate_doom/ChocolateDoom/5cbcd5e68acf1e76c28f90b7a7c18bcb/icons/128x128/org.chocolate_doom.ChocolateDoom.png"
+  }
+}

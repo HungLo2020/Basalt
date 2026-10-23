@@ -14,7 +14,7 @@ pub(super) fn run(command: Command) -> CoreResult<()> {
         },
         Command::Catalog => {
             for game in core::catalog_games()? {
-                println!("{}\t{}\t{}", game.id, game.name, game.source.repository);
+                println!("{}\t{}\t{}", game.id, game.name, if game.is_flatpak() { &game.source.app_id } else { &game.source.repository });
             }
         }
         Command::Libraries { action } => match action {
@@ -29,20 +29,16 @@ pub(super) fn run(command: Command) -> CoreResult<()> {
             }
         },
         Command::Install { game, library } => {
-            core::find_game(game.trim())?;
+            let definition = core::find_game(game.trim())?;
             let library = match library {
                 Some(id) => id,
+                None if definition.is_flatpak() => String::new(),
                 None => select_install_library()?,
             };
             let printer = ProgressPrinter::new();
             let report = core::install_game(game.trim(), library.trim(), &printer.progress())?;
             printer.finish();
-            println!(
-                "Installed {} release '{}' into {}",
-                report.game_name,
-                report.release_tag,
-                report.install_dir.display()
-            );
+            println!("{}", report.message());
         }
         Command::Add { name, target } => {
             core::add_game(name.trim(), target.trim())?;

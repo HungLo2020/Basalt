@@ -60,12 +60,15 @@ impl ArtworkRequest {
                     cover_url: None,
                 })
             }
-            RunnerKind::Bash | RunnerKind::Catalog => {
+            RunnerKind::Bash | RunnerKind::Catalog | RunnerKind::Flatpak => {
                 let definition = crate::catalog_games()
                     .ok()?
                     .into_iter()
                     .find(|definition| definition.name == game.name)?;
-                Some(Self::for_catalog(&definition, Some(installation_root(game))))
+                Some(Self::for_catalog(
+                    &definition,
+                    (game.runner_kind != RunnerKind::Flatpak).then(|| installation_root(game)),
+                ))
             }
         }
     }
@@ -94,7 +97,7 @@ impl ArtworkRequest {
             .map(|definition| {
                 let root = games
                     .iter()
-                    .find(|game| game.name == definition.name && game.runner_kind != RunnerKind::Steam)
+                    .find(|game| game.name == definition.name && matches!(game.runner_kind, RunnerKind::Bash | RunnerKind::Catalog))
                     .map(installation_root);
                 Self::for_catalog(definition, root)
             })

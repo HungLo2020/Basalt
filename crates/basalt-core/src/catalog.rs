@@ -3,6 +3,7 @@
 //! `schema_version` 1 is the original format (one preserved `persistent_directory` plus
 //! game-owned `maintenance` scripts). `schema_version` 2 entries follow STANDARDS.md: Basalt's
 //! default layout and built-in actions, overridable through `layout` and `actions`.
+//! Schema 3 describes user-level Flatpak apps, whose packages and updates Flatpak manages.
 use crate::error::{CoreError, CoreResult};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -18,6 +19,7 @@ pub struct GameDefinition {
     pub id: String,
     pub name: String,
     pub source: ReleaseSource,
+    #[serde(default)]
     pub launch: LaunchDefinition,
     /// Schema 1 only: game-owned scripts keyed by action name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -47,8 +49,18 @@ pub struct ArtworkDefinition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReleaseSource {
     pub kind: String,
+    #[serde(default)]
+    pub remote: String,
+    #[serde(default)]
+    pub app_id: String,
+    /// Flatpak branch; omitted means stable.
+    #[serde(default)]
+    pub branch: String,
+    #[serde(default)]
     pub repository: String,
+    #[serde(default)]
     pub asset_prefix: String,
+    #[serde(default)]
     pub asset_suffix: String,
     /// Required substrings, for example the release platform triplet.
     #[serde(default)]
@@ -58,7 +70,7 @@ pub struct ReleaseSource {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archive_root: Option<String>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LaunchDefinition {
     pub executable: String,
     #[serde(default)]
@@ -173,7 +185,19 @@ fn valid_label(label: &str) -> bool {
 impl GameDefinition {
     /// True for entries that follow STANDARDS.md (schema 2).
     pub fn follows_standard(&self) -> bool {
-        self.schema_version >= 2
+        self.schema_version == 2
+    }
+
+    pub fn is_flatpak(&self) -> bool {
+        self.source.kind == "flatpak"
+    }
+
+    pub fn flatpak_branch(&self) -> &str {
+        if self.source.branch.is_empty() {
+            "stable"
+        } else {
+            &self.source.branch
+        }
     }
 
     /// Schema 1 preserved directory.
@@ -185,6 +209,15 @@ impl GameDefinition {
         let invalid = || {
             CoreError::InvalidInput(format!("Invalid game catalog entry: {}", self.id))
         };
+        if self.is_flatpak() {
+            return self.validate_flatpak();
+        }
+        if !self.source.remote.is_empty()
+            || !self.source.app_id.is_empty()
+            || !self.source.branch.is_empty()
+        {
+            return Err(invalid());
+        }
         if !(1..=2).contains(&self.schema_version)
             || self.id.is_empty()
             || !self
@@ -214,16 +247,7 @@ impl GameDefinition {
         {
             return Err(invalid());
         }
-        if let Some(url) = self.artwork.as_ref().and_then(|a| a.cover_url.as_deref())
-            && (!url.starts_with("https://")
-                || url.len() <= "https://".len()
-                || url.chars().any(|c| c.is_whitespace() || c.is_control()))
-        {
-            return Err(CoreError::InvalidInput(format!(
-                "Invalid catalog entry {}: artwork.cover_url must be an https:// URL",
-                self.id
-            )));
-        }
+        self.validate_artwork()?;
         if let Some(archive_root) = &self.source.archive_root {
             if !self.follows_standard() {
                 return Err(CoreError::InvalidInput(format!(
@@ -244,6 +268,49 @@ impl GameDefinition {
         } else {
             self.validate_legacy()
         }
+    }
+
+    fn validate_artwork(&self) -> CoreResult<()> {
+        if let Some(url) = self.artwork.as_ref().and_then(|a| a.cover_url.as_deref())
+            && (!url.starts_with("https://")
+                || url.len() <= "https://".len()
+                || url.chars().any(|c| c.is_whitespace() || c.is_control()))
+        {
+            return Err(CoreError::InvalidInput(format!(
+                "Invalid catalog entry {}: artwork.cover_url must be an https:// URL",
+                self.id
+            )));
+        }
+        Ok(())
+    }
+
+    fn validate_flatpak(&self) -> CoreResult<()> {
+        let valid = self.schema_version == 3
+            && !self.id.is_empty()
+            && self.id.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+            && valid_label(&self.name)
+            && crate::flatpak::valid_app_id(&self.source.app_id)
+            && crate::flatpak::valid_component(&self.source.remote)
+            && crate::flatpak::valid_component(self.flatpak_branch())
+            && self.source.repository.is_empty()
+            && self.source.asset_prefix.is_empty()
+            && self.source.asset_suffix.is_empty()
+            && self.source.asset_contains.is_empty()
+            && self.source.archive_root.is_none()
+            && self.standard_version.is_none()
+            && self.layout.is_none()
+            && self.persistent_directory.is_none()
+            && self.actions.is_empty()
+            && self.maintenance.is_empty()
+            && self.launch.executable.is_empty()
+            && self.launch.arguments.is_empty()
+            && self.launch.working_directory.is_empty();
+        if !valid {
+            return Err(CoreError::InvalidInput(format!(
+                "Invalid Flatpak catalog entry: {}", self.id
+            )));
+        }
+        self.validate_artwork()
     }
 
     fn validate_legacy(&self) -> CoreResult<()> {

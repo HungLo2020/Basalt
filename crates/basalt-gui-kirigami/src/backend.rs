@@ -626,12 +626,7 @@ impl qobject::Backend {
                 let message = match result {
                     Ok(report) => {
                         backend.as_mut().reload_library();
-                        format!(
-                            "Installed {} release '{}' into {}",
-                            report.game_name,
-                            report.release_tag,
-                            report.install_dir.display()
-                        )
+                        report.message()
                     }
                     Err(error) => failure_message("Install", &error),
                 };

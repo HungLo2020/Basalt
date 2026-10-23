@@ -1,0 +1,14 @@
+{
+  "schema_version": 3,
+  "id": "SpaceCadetPinball",
+  "name": "Space Cadet Pinball",
+  "source": {
+    "kind": "flatpak",
+    "remote": "flathub",
+    "app_id": "com.github.k4zmu2a.spacecadetpinball",
+    "branch": "stable"
+  },
+  "artwork": {
+    "cover_url": "https://dl.flathub.org/media/com/github/k4zmu2a.spacecadetpinball/6f98dd7f691cbc07a9c0a891902e7f89/icons/128x128/com.github.k4zmu2a.spacecadetpinball.png"
+  }
+}

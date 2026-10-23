@@ -27,7 +27,7 @@ Kirigami.ScrollablePage {
 
         ColumnLayout {
             Layout.fillWidth: true
-            visible: details.tile !== null && details.tile.kind === "game"
+            visible: details.tile !== null && details.tile.kind === "game" && details.tile.usesLibrary
             Controls.Label { text: "Install location" }
             Controls.ComboBox {
                 id: libraryPicker
@@ -64,6 +64,23 @@ Kirigami.ScrollablePage {
                 text: "Add library"
                 enabled: !Backend.jobActive && libraryId.text.trim() !== "" && libraryPath.text.trim() !== ""
                 onClicked: Backend.addGameLibrary(libraryId.text, libraryPath.text)
+            }
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            visible: details.tile !== null && !details.tile.usesLibrary
+            Controls.Label {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                text: "Installed for your user. Flatpak manages the installation location."
+            }
+            Controls.Button {
+                text: "Install / update " + (details.tile ? details.tile.title : "game")
+                icon.name: "run-build-install"
+                enabled: !Backend.jobActive && details.tile !== null
+                    && !JSON.parse(Backend.runningGamesJson).includes(details.tile.title)
+                onClicked: Backend.installGame(details.tile.key, "")
             }
         }
 
