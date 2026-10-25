@@ -2,6 +2,10 @@
 
 Basalt is a minimal, focused game launcher for Linux.
 
+This project follows the
+[CODING-STANDARDS.md](https://github.com/HungLo2020/LinuxScripts/blob/master/CODING-STANDARDS.md)
+from HungLo2020/LinuxScripts.
+
 ## Install
 
 On a system with the MattPackages apt repository configured:
@@ -181,6 +185,8 @@ The offscreen renderer does not draw every KDE control (progress bars, for one);
 
 `python3 DevUtils/PublishMattOSPackage.py publish` builds the `.deb` and uploads it to MattPackages. It refuses to run unless the `[workspace.package]` version in `Cargo.toml` is newer than every published version, because apt ignores a re-uploaded version.
 
+To bump the version, commit and push, wait for every GitHub Actions workflow, and publish in one verified sequence, invoke the `release-deb` skill explicitly. Publishing only happens after CI is green.
+
 GitHub releases are not used for distribution. The manual "Build Linux amd64 DEB" workflow builds the `.deb` in a clean Ubuntu container when you want one built off your machine. Dependabot proposes dependency and GitHub Actions updates weekly.
 
 ## Rust and Cargo Basics
@@ -239,3 +245,32 @@ Already installed games remain playable if authentication is unavailable.
 
 For CI/headless installations, use a GitHub read-only access token in an
 environment variable; a desktop keyring is unnecessary.
+
+## AGENTS
+
+`AGENTS.md` is a symbolic link to this README; the README is the single source
+of truth for agent instructions.
+
+- Read this document, [STANDARDS.md](STANDARDS.md), and the linked coding
+  standards before changing the project.
+- Keep game-specific behavior out of the launcher. Installation, layout,
+  actions, and artwork belong in `resources/games/*.json` and are governed by
+  `STANDARDS.md`.
+- Keep platform-specific calls behind `basalt-core`'s platform modules. The
+  `clippy.toml` boundary lints are enforced in CI and must stay green.
+- Never modify another project or repository as part of work here.
+- Preserve user data: installation and update code must leave `data/` and
+  game-owned paths untouched unless the catalog explicitly categorizes them.
+- Run the checks in [Tests](#tests) before finishing. At minimum:
+  `cargo clippy --locked --workspace --all-targets -- -D clippy::disallowed_methods -D clippy::disallowed_types`,
+  `cargo test --locked --workspace`,
+  `bash DevUtils/LintQml.sh`,
+  `bash DevUtils/SmokeTestGui.sh`, and
+  `python3 -m unittest discover -s tests`. `cargo fmt --all -- --check` is
+  advisory until the existing formatting drift is cleaned up; do not mix a
+  repo-wide reformat into an unrelated change.
+- To commit, push, bump the version, verify every GitHub Actions workflow, and
+  publish the `.deb` to MattPackages, invoke the `release-deb` skill explicitly.
+  Do not run that workflow unless the user asks for a release.
+- Update this README and the relevant skill when a workflow or release step
+  changes.

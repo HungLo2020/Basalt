@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "standard_version": 1,
+  "id": "ClassicClassics",
+  "name": "Classic Classics",
+  "source": {
+    "kind": "github_release",
+    "repository": "HungLo2020/ClassicClassics",
+    "asset_prefix": "ClassicClassics-",
+    "asset_suffix": ".zip",
+    "asset_contains": ["linux-x64"]
+  },
+  "launch": {
+    "executable": "app/bin/classicclassics"
+  },
+  "artwork": {
+    "cover_url": "https://raw.githubusercontent.com/HungLo2020/ClassicClassics/main/app/basalt/cover.png"
+  }
+}
