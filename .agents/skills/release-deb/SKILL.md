@@ -44,16 +44,18 @@ gh auth status
 python3 DevUtils/PublishMattOSPackage.py doctor
 ```
 
-Publishing needs a token in one of these places:
+`doctor` reporting `token_configured: False` is informational, not a blocker:
+the MattPackages server currently accepts uploads from the trusted tailnet
+without a token. Do not stop a release solely because of that line. If the
+upload later returns HTTP 401 or 403, configure a token in one of these places
+and retry:
 
 - `MATTOS_REPOSITORY_TOKEN` in the environment
 - `~/.config/mattos-repository/token`
 - `/etc/mattos-repository/client-token`
 
-If none is available, tell the user that the commit and workflow checks can
-still be run but the publish step cannot. Ask whether to proceed with a
-commit-and-push-only release, or wait for the token. Never invent a token or
-claim a package was published without verifying the repository index.
+Never invent a token or claim a package was published without verifying the
+repository index.
 
 ## 2. Choose and apply the version
 
