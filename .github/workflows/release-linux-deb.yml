@@ -68,6 +68,7 @@ jobs:
       - name: Upload Linux DEB workflow artifact
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 3
           name: basalt-linux-amd64-deb
           path: ${{ steps.metadata.outputs.artifact_path }}
           if-no-files-found: error
