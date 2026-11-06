@@ -15,4 +15,4 @@ steamlocate = "2"
 thiserror = "2"
 ureq = "3"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
