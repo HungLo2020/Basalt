@@ -196,7 +196,7 @@ mod tests {
         let cli = Cli::try_parse_from(["basalt", "maintain", "MattMC", "sync", "--verify"]).unwrap();
         assert!(matches!(cli.command, Some(Command::Maintain { verify: true, .. })));
         let cli = Cli::try_parse_from([
-            "basalt", "maintain", "Jackal", "restore", "--snapshot", "20260101T000000.000Z-manual",
+            "basalt", "maintain", "ClassicClassics", "restore", "--snapshot", "20260101T000000.000Z-manual",
         ])
         .unwrap();
         assert!(matches!(cli.command, Some(Command::Maintain { snapshot: Some(_), .. })));

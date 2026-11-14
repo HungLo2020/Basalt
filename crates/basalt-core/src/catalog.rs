@@ -568,7 +568,7 @@ mod tests {
     }
     #[test]
     fn rejects_escaping_executables() {
-        let mut game = find_game("Jackal").unwrap();
+        let mut game = standard_game(json!({}));
         game.launch.executable = "../evil".into();
         assert!(game.validate().is_err());
     }

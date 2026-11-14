@@ -26,8 +26,7 @@ QtObject {
         { name: "03e-all-games", run: () => { window.libraryPage.selectedPlaylist = ""; } },
         { name: "04-install", run: () => window.showSection("install") },
         { name: "05-install-mattmc", run: () => selectFirst(window.installPage, item => item.kind === "game" && item.key === "MattMC") },
-        { name: "06-install-micromages", run: () => selectFirst(window.installPage, item => item.key === "MicroMages") },
-        { name: "07-install-jackal", run: () => selectFirst(window.installPage, item => item.key === "Jackal") },
+        { name: "06-install-classicclassics", run: () => selectFirst(window.installPage, item => item.key === "ClassicClassics") },
         { name: "07b-install-flatpak", run: () => selectFirst(window.installPage, item => item.key === "SuperTuxKart") },
         { name: "08-settings", run: () => window.showSection("settings") },
         { name: "09-library-again", run: () => window.showSection("library") },
@@ -41,8 +40,8 @@ QtObject {
         { name: "12-navigate-right", run: () => window.libraryPage.navigate(1, 0) },
         { name: "13-job-progress", waitForProgress: true, run: () => {
             window.showSection("install");
-            selectFirst(window.installPage, item => item.key === "Jackal");
-            Backend.installGame("Jackal", "default");
+            selectFirst(window.installPage, item => item.key === "ClassicClassics");
+            Backend.installGame("ClassicClassics", "default");
         } },
         { name: "14-job-cancelled", run: () => Backend.cancelJob() },
     ]

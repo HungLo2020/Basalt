@@ -287,11 +287,11 @@ mod catalog_tests {
     #[test]
     fn catalog_games_get_requests_rooted_at_their_installation() {
         let root = temp_root("art-request");
-        let installed = entry("MicroMages", RunnerKind::Catalog, &root.join(".basalt-game.json"));
+        let installed = entry("MattMC", RunnerKind::Catalog, &root.join(".basalt-game.json"));
         let request = ArtworkRequest::for_game(&installed).unwrap();
-        assert_eq!(request.key, "catalog:MicroMages");
+        assert_eq!(request.key, "catalog:MattMC");
         assert_eq!(request.kind, ArtworkKind::Catalog);
-        assert!(!request.has_bundled_icon());
+        assert!(request.has_bundled_icon());
         assert!(!request.needs_download(), "no cover_url in the bundled entry");
         // Nothing shipped yet: no artwork at all.
         assert!(request.cached_path().is_none() && request.fetch().is_none());
@@ -333,7 +333,7 @@ mod catalog_tests {
     #[test]
     fn cover_url_makes_a_request_download_but_a_shipped_cover_wins() {
         let root = temp_root("art-url");
-        let mut definition = crate::find_game("MicroMages").unwrap();
+        let mut definition = crate::catalog::standard_game(serde_json::json!({}));
         definition.artwork = Some(crate::ArtworkDefinition {
             cover_url: Some("https://example.invalid/cover.png".into()),
         });

@@ -731,9 +731,26 @@ fn copy_data(source: &Path, target: &Path, progress: &Progress) -> CoreResult<()
 mod tests {
     use super::*;
     use std::io::Write;
+
+    /// A MicroMages-shaped catalog entry for testing public release asset selection.
+    fn micro_mages() -> GameDefinition {
+        crate::catalog::standard_game(serde_json::json!({
+            "id": "MicroMages",
+            "name": "MicroMages",
+            "source": {
+                "kind": "github_release",
+                "repository": "HungLo2020/MicroMages",
+                "asset_prefix": "MicroMages-",
+                "asset_suffix": ".zip",
+                "asset_contains": ["linux-x64"]
+            },
+            "launch": { "executable": "app/bin/micromages" }
+        }))
+    }
+
     #[test]
     fn public_release_assets_keep_platform_filter_and_reject_ambiguity() {
-        let game = crate::find_game("MicroMages").unwrap();
+        let game = micro_mages();
         let html = r#"
             <a href="/HungLo2020/MicroMages/releases/download/v1%2Fstable/MicroMages-v1-linux-x64.zip">Linux</a>
             <a href="/HungLo2020/MicroMages/releases/download/v1%2Fstable/MicroMages-v1-linux-x64.zip">Duplicate link</a>
@@ -852,7 +869,7 @@ mod tests {
                     stream.write_all(response.as_bytes()).unwrap();
                 }
             });
-            let game = crate::find_game("MicroMages").unwrap();
+            let game = micro_mages();
             let result = fetch_latest_release_at(&game, &Progress::none(), &base, &base, token);
             if status == 404 {
                 assert!(result.unwrap_err().to_string().contains("Test API error"));
@@ -870,7 +887,7 @@ mod tests {
     #[test]
     #[ignore = "queries live GitHub release metadata without installing anything"]
     fn live_public_release_lookup() {
-        for id in ["MicroMages", "Jackal"] {
+        for id in ["ClassicClassics", "MattMC"] {
             let game = crate::find_game(id).unwrap();
             let release = fetch_latest_release(&game, &Progress::none()).unwrap();
             let (tag, url) = select_asset(&game, &release).unwrap();
@@ -1058,7 +1075,9 @@ mod tests {
     #[test]
     fn payload_can_be_flat_or_wrapped_without_stripping_app_directory() {
         let stage = Stage::new(&std::env::temp_dir()).unwrap();
-        let game = crate::catalog::find_game("Jackal").unwrap();
+        let game = crate::catalog::standard_game(serde_json::json!({
+            "launch": { "executable": "app/bin/jackal" }
+        }));
         let flat = stage.0.join("flat");
         write(&flat.join("app/bin/jackal"), "binary");
         assert_eq!(payload_root(&flat, &game).unwrap(), flat);
