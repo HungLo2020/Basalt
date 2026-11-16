@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "standard_version": 1,
+  "id": "Planetfall",
+  "name": "Planetfall",
+  "source": {
+    "kind": "github_release",
+    "repository": "HungLo2020/Planetfall",
+    "asset_prefix": "Planetfall-",
+    "asset_suffix": ".zip",
+    "asset_contains": ["linux-x64"]
+  },
+  "launch": {
+    "executable": "app/bin/planetfall"
+  },
+  "artwork": {
+    "cover_url": "https://raw.githubusercontent.com/HungLo2020/Planetfall/main/assets/basalt/cover.png"
+  }
+}
